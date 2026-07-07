@@ -17,9 +17,7 @@ html {
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at top left, rgba(23, 195, 165, 0.08), transparent 32rem),
-    linear-gradient(180deg, #ffffff 0%, #f8fafc 36%, #eef4f8 100%);
+  background: #f8fafc;
   color: #0f172a;
   font-family:
     Inter,
@@ -30,5 +28,27 @@ body {
 }
 
 ::selection {
-  background: rgba(23, 195, 165, 0.25);
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes growUp {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--h);
+  }
+}
+
+.bar-grow {
+  animation: growUp 1s ease-out forwards;
 }

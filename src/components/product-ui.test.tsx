@@ -3,8 +3,10 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { AppHeader } from "./app-header";
+import { ActionWindowPage } from "./action-window-page";
 import { CalculatorPanel } from "./calculator-panel";
 import { HomePage } from "./home-page";
+import { NeighborhoodsPage } from "./neighborhoods-page";
 import { TemplatesPage } from "./templates-page";
 
 describe("AppHeader", () => {
@@ -21,7 +23,6 @@ describe("AppHeader", () => {
       "目标小区",
       "出手窗口",
       "判断方法",
-      "工具模板",
       "我的观察池",
     ]) {
       expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
@@ -62,6 +63,29 @@ describe("CalculatorPanel", () => {
 
     expect(screen.getByText("月供压力：危险")).toBeInTheDocument();
     expect(screen.getByText("暂缓改善")).toBeInTheDocument();
+  });
+});
+
+describe("NeighborhoodsPage", () => {
+  it("matches the reference community signal summary", () => {
+    render(createElement(NeighborhoodsPage));
+
+    expect(screen.getByText("更新时间: 今天 10:30")).toBeInTheDocument();
+    expect(screen.getByText("综合研判结论")).toBeInTheDocument();
+    expect(screen.getByText("适合试探性砍价")).toBeInTheDocument();
+    expect(screen.getByText("降价提醒")).toBeInTheDocument();
+    expect(screen.getByText("带看转定率")).toBeInTheDocument();
+  });
+});
+
+describe("ActionWindowPage", () => {
+  it("matches the reference action window recommendation", () => {
+    render(createElement(ActionWindowPage));
+
+    expect(screen.getByText("当前核心策略")).toBeInTheDocument();
+    expect(screen.getByText("积极看房，大胆砍价")).toBeInTheDocument();
+    expect(screen.getByText("策略执行信心")).toBeInTheDocument();
+    expect(screen.getByText("风险警示")).toBeInTheDocument();
   });
 });
 

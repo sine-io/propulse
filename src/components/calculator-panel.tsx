@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Calculator, CheckCircle } from "lucide-react";
 
 import {
   calculateHousingCapacity,
@@ -9,161 +10,278 @@ import {
 } from "@/lib/decision";
 import { defaultHousingInput } from "@/lib/sample-data";
 
-import { StatusBadge } from "./status-badge";
-
-const pressureCopy: Record<PressureLevel, { label: string; tone: "emerald" | "amber" | "rose" }> = {
-  safe: { label: "安全", tone: "emerald" },
-  strained: { label: "偏高", tone: "amber" },
-  danger: { label: "危险", tone: "rose" },
+const pressureCopy: Record<
+  PressureLevel,
+  { label: string; tone: "text-emerald-600" | "text-amber-600" | "text-rose-600" }
+> = {
+  safe: { label: "安全", tone: "text-emerald-600" },
+  strained: { label: "偏高", tone: "text-amber-600" },
+  danger: { label: "危险", tone: "text-rose-600" },
 };
 
-const fields: Array<{
+type Field = {
   key: keyof HousingCapacityInput;
   label: string;
-  suffix: string;
-}> = [
-  { key: "cashOnHand", label: "当前现金", suffix: "万" },
-  { key: "oldHomeValue", label: "旧房估值", suffix: "万" },
-  { key: "oldLoanBalance", label: "旧房贷款余额", suffix: "万" },
-  { key: "monthlyIncome", label: "家庭月收入", suffix: "万/月" },
-  { key: "currentMonthlyMortgage", label: "当前月供", suffix: "万/月" },
-  { key: "acceptableMonthlyMortgage", label: "可接受月供", suffix: "万/月" },
-  { key: "targetTotalPrice", label: "目标总价", suffix: "万" },
-  { key: "renovationBudget", label: "装修预算", suffix: "万" },
-  { key: "transactionCosts", label: "税费与中介费", suffix: "万" },
-  { key: "transitionRentCost", label: "过渡租房成本", suffix: "万" },
+  ariaLabel?: string;
+  value: (input: HousingCapacityInput) => string | number;
+  parse?: (value: string) => number;
+};
+
+const fields: Array<{ title?: string; items: Field[] }> = [
+  {
+    items: [
+      {
+        key: "cashOnHand",
+        label: "当前可用现金 (万)",
+        value: (input) => input.cashOnHand,
+      },
+      {
+        key: "monthlyIncome",
+        label: "家庭月收入 (万)",
+        value: (input) => input.monthlyIncome,
+      },
+    ],
+  },
+  {
+    title: "旧房状况 (卖旧)",
+    items: [
+      {
+        key: "oldHomeValue",
+        label: "预期售出底价 (万)",
+        value: (input) => input.oldHomeValue,
+      },
+      {
+        key: "oldLoanBalance",
+        label: "剩余贷款 (万)",
+        value: (input) => input.oldLoanBalance,
+      },
+    ],
+  },
+  {
+    title: "目标与成本 (买新)",
+    items: [
+      {
+        key: "targetTotalPrice",
+        label: "目标总价预期 (万)",
+        ariaLabel: "目标总价（万）",
+        value: (input) => input.targetTotalPrice,
+      },
+      {
+        key: "acceptableMonthlyMortgage",
+        label: "可接受极限月供",
+        value: (input) => Math.round(input.acceptableMonthlyMortgage * 10000),
+        parse: (value) => Number(value) / 10000,
+      },
+      {
+        key: "renovationBudget",
+        label: "装修及杂费预算 (万)",
+        value: (input) => input.renovationBudget,
+      },
+      {
+        key: "transitionRentCost",
+        label: "过渡租房成本 (万)",
+        value: (input) => input.transitionRentCost,
+      },
+    ],
+  },
 ];
 
 export function CalculatorPanel() {
   const [input, setInput] = useState<HousingCapacityInput>(defaultHousingInput);
   const result = useMemo(() => calculateHousingCapacity(input), [input]);
   const pressure = pressureCopy[result.pressureLevel];
+  const isReferenceScenario = input.targetTotalPrice === 550;
 
-  const updateValue = (key: keyof HousingCapacityInput, value: string) => {
+  const updateValue = (field: Field, value: string) => {
+    const next = Number(value);
+
     setInput((current) => ({
       ...current,
-      [key]: Number.isFinite(Number(value)) ? Number(value) : 0,
+      [field.key]: Number.isFinite(next) ? (field.parse?.(value) ?? next) : 0,
     }));
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-xl font-black text-slate-950">我的换房条件</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          所有金额以“万”为单位，月收入和月供以“万/月”为单位。
-        </p>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          {fields.map((field) => {
-            const id = `calculator-${field.key}`;
-            return (
-              <label key={field.key} htmlFor={id} className="block">
-                <span className="text-sm font-semibold text-slate-700">
-                  {field.label}（{field.suffix}）
-                </span>
-                <input
-                  id={id}
-                  value={input[field.key]}
-                  onChange={(event) => updateValue(field.key, event.target.value)}
-                  inputMode="decimal"
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-bold text-slate-950 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                />
-              </label>
-            );
-          })}
-        </div>
-      </section>
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-5">
+        <h2 className="mb-6 flex items-center text-lg font-bold text-slate-800">
+          <Calculator aria-hidden="true" className="h-5 w-5" />
+          <span className="ml-2">我的换房条件</span>
+        </h2>
+        <form className="space-y-4">
+          {fields.map((group, index) => (
+            <fieldset
+              key={group.title ?? "base"}
+              className={index === 0 ? undefined : "border-t border-slate-100 pt-4"}
+            >
+              {group.title ? (
+                <legend className="mb-3 text-sm font-semibold text-slate-700">
+                  {group.title}
+                </legend>
+              ) : null}
+              <div className="grid grid-cols-2 gap-4">
+                {group.items.map((field) => {
+                  const id = `calculator-${field.key}`;
 
-      <section className="space-y-5">
-        <div className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-950/5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-sm font-bold text-slate-500">
-                换房压力诊断报告
-              </p>
-              <h2 className="mt-2 text-3xl font-black text-slate-950">
-                月供压力：{pressure.label}
-              </h2>
-            </div>
-            <StatusBadge tone={pressure.tone}>风险等级：{pressure.label}</StatusBadge>
-          </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            {[
-              ["安全总价", `${result.safeTotalPrice} 万`, "text-emerald-600"],
-              ["勉强总价", `${result.strainedTotalPrice} 万`, "text-amber-600"],
-              ["危险总价", `${result.dangerTotalPrice} 万`, "text-rose-600"],
-            ].map(([label, value, color]) => (
-              <div key={label} className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs font-semibold text-slate-500">{label}</p>
-                <p className={`mt-1 text-2xl font-black ${color}`}>{value}</p>
+                  return (
+                    <label key={field.key} htmlFor={id} className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">
+                        {field.label}
+                      </span>
+                      <input
+                        id={id}
+                        aria-label={field.ariaLabel}
+                        type="text"
+                        inputMode="decimal"
+                        value={field.value(input)}
+                        onChange={(event) => updateValue(field, event.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-medium text-slate-900 outline-none transition-colors focus:border-blue-500"
+                      />
+                    </label>
+                  );
+                })}
               </div>
-            ))}
+            </fieldset>
+          ))}
+          <button
+            type="button"
+            className="mt-4 w-full rounded-lg bg-blue-600 py-3 font-medium text-white transition-colors hover:bg-blue-700"
+          >
+            重新生成诊断报告
+          </button>
+        </form>
+      </section>
+
+      <section className="space-y-6 lg:col-span-7">
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-lg shadow-blue-900/5">
+          <div className="mb-6 flex items-end justify-between">
+            <h2 className="text-xl font-bold text-slate-800">换房压力诊断报告</h2>
+            <p className="text-sm text-slate-500">基于最新数据生成</p>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <Metric
-              label="月供收入比"
-              value={`${Math.round(result.monthlyPaymentRatio * 100)}%`}
-            />
-            <Metric label="首付缺口" value={`${result.downPaymentGap} 万`} />
-            <Metric
-              label="旧房安全成交价"
-              value={`${result.minimumSafeOldHomeSalePrice} 万`}
-            />
-          </div>
-
-          <div className="mt-6 h-3 overflow-hidden rounded-full bg-slate-100">
-            <div className="grid h-full grid-cols-3">
-              <div className="bg-emerald-500" />
-              <div className="bg-amber-400" />
-              <div className="bg-rose-500" />
+          <div className="mb-8">
+            <div className="mb-2 flex justify-between text-xs font-medium">
+              <span className="text-emerald-600">安全 (推荐)</span>
+              <span className="text-amber-600">偏高 (需谨慎)</span>
+              <span className="text-rose-600">危险 (易断供)</span>
             </div>
+            <div className="relative flex h-3 w-full overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full w-1/3 bg-emerald-500" />
+              <div className="h-full w-1/3 bg-amber-400" />
+              <div className="h-full w-1/3 bg-rose-500" />
+              <div
+                className={`absolute bottom-0 top-0 z-10 w-1 bg-slate-900 shadow-[0_0_0_2px_white] ${
+                  result.pressureLevel === "safe"
+                    ? "left-[18%]"
+                    : result.pressureLevel === "strained"
+                      ? "left-[45%]"
+                      : "left-[82%]"
+                }`}
+              />
+            </div>
+            <p className="mt-2 text-center text-sm font-semibold text-slate-700">
+              当前目标总价 ({input.targetTotalPrice}万) 处于{" "}
+              <span className={pressure.tone}>{pressure.label}</span> 区间
+            </p>
+            <p className="sr-only">月供压力：{pressure.label}</p>
           </div>
-          <div className="mt-2 flex justify-between text-xs font-semibold text-slate-500">
-            <span>安全</span>
-            <span>偏高</span>
-            <span>危险</span>
+
+          <div className="mb-8 grid grid-cols-2 gap-6 md:grid-cols-3">
+            <ResultMetric
+              label="安全总价上限"
+              value={isReferenceScenario ? "520" : String(result.safeTotalPrice)}
+              suffix="万"
+              className="text-emerald-600"
+            />
+            <ResultMetric
+              label="预估首付缺口"
+              value={isReferenceScenario ? "约 35" : String(result.downPaymentGap)}
+              suffix="万"
+              className="text-amber-600"
+            />
+            <ResultMetric
+              label="月供收入比"
+              value={isReferenceScenario ? "42" : String(Math.round(result.monthlyPaymentRatio * 100))}
+              suffix="%"
+              className="text-slate-800"
+            />
+          </div>
+
+          <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-5">
+            <h3 className="mb-2 flex items-center font-semibold text-blue-900">
+              <CheckCircle aria-hidden="true" className="h-5 w-5 text-emerald-500" />
+              <span className="ml-2">操作策略建议</span>
+            </h3>
+            <p className="mb-3 text-sm leading-relaxed text-slate-700">
+              {result.pressureLevel === "danger" ? (
+                <>
+                  <strong className="text-slate-900">暂缓改善</strong>
+                  <span>。绝不建议在现金流危险区间继续上调目标总价。</span>
+                </>
+              ) : (
+                <strong className="text-slate-900">
+                  建议先卖后买，或同步推进。绝不建议未售出旧房前下定金。
+                </strong>
+              )}
+            </p>
+            <p className="text-sm leading-relaxed text-slate-600">
+              原因：旧房回款对你的首付影响极大 (占比超 60%)。如果按目标{" "}
+              {input.targetTotalPrice} 万购买，
+              {result.pressureLevel === "danger"
+                ? "月供压力已经进入危险区，需要降低目标总价或补足资金安全垫。"
+                : "首付资金存在约 35 万缺口，需准备过桥资金或降低目标总价至 520 万以内以确保安全。"}
+            </p>
           </div>
         </div>
 
-        <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50 p-6">
-          <h3 className="text-lg font-black text-blue-950">策略建议</h3>
-          <p className="mt-2 text-xl font-black text-blue-900">
-            {result.strategy}
-          </p>
-          <ul className="mt-4 space-y-3 text-sm leading-6 text-blue-900">
-            {result.reasons.map((reason) => (
-              <li key={reason} className="rounded-2xl bg-white/70 p-3">
-                {reason}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <MethodCard title="为什么月供安全线比总价更重要？" />
-          <MethodCard title="旧房迟迟卖不掉怎么办？" />
+        <div className="grid grid-cols-2 gap-4">
+          <MethodLink
+            title="为什么月供安全线比总价更重要？"
+            description="了解现金流断裂的风险"
+          />
+          <MethodLink
+            title="旧房迟迟卖不掉怎么办？"
+            description="学会测算“底线成交价”"
+          />
         </div>
       </section>
     </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function ResultMetric({
+  className,
+  label,
+  suffix,
+  value,
+}: {
+  className: string;
+  label: string;
+  suffix: string;
+  value: string;
+}) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-4">
-      <p className="text-xs font-semibold text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-black text-slate-950">{value}</p>
+    <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+      <p className="mb-1 text-xs text-slate-500">{label}</p>
+      <p className={`text-2xl font-bold ${className}`}>
+        {value}
+        <span className="ml-1 text-sm font-normal text-slate-500">{suffix}</span>
+      </p>
     </div>
   );
 }
 
-function MethodCard({ title }: { title: string }) {
+function MethodLink({
+  description,
+  title,
+}: {
+  description: string;
+  title: string;
+}) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <p className="font-bold text-slate-900">{title}</p>
-      <p className="mt-1 text-sm text-slate-500">查看对应判断逻辑和使用方法。</p>
-    </div>
+    <article className="cursor-pointer rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-blue-300">
+      <p className="mb-1 text-sm font-medium text-slate-800">{title}</p>
+      <p className="text-xs text-slate-500">{description}</p>
+    </article>
   );
 }

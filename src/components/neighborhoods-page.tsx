@@ -1,15 +1,41 @@
 import {
+  Activity,
+  AlertCircle,
+  Bell,
+  BookOpen,
+  Plus,
+  Target,
+  TrendingUp,
+  type LucideIcon,
+} from "lucide-react";
+import type { CSSProperties } from "react";
+
+import {
   evaluateNeighborhoodSignal,
   type NeighborhoodSignalInput,
 } from "@/lib/decision";
-import {
-  alternateNeighborhoods,
-  defaultNeighborhoodInput,
-} from "@/lib/sample-data";
+import { defaultNeighborhoodInput } from "@/lib/sample-data";
 
 import { StatusBadge } from "./status-badge";
 
 const trend = [20, 22, 25, 24, 30, 35, 38, 42];
+const metrics: Array<[string, string, string, string, boolean]> = [
+  ["当前挂牌价区间", "520-620", "万", "较上月 -2%", false],
+  ["近90天成交区间", "495-545", "万", "价差约 8.5%", false],
+  ["当前在售套数", "42", "套", "较上月 +18%", true],
+  ["本周降价房源", "11", "套", "占比 26%", true],
+  ["平均成交周期", "78", "天", "逐渐拉长", false],
+  ["带看转定率", "2.4", "%", "成交偏弱", false],
+];
+const reasons: Array<[string, string, LucideIcon]> = [
+  ["1. 供应显著增加", "在售套数连续 4 周攀升，突破历史均值。", AlertCircle],
+  [
+    "2. 降价意愿增强",
+    "本周 11 套降价，降价房源占比提升，说明部分房东急售。",
+    AlertCircle,
+  ],
+  ["3. 成交尚未放量", "买方仍在观望，价格支撑力度弱。", Activity],
+];
 
 export function NeighborhoodsPage({
   input = defaultNeighborhoodInput,
@@ -19,153 +45,134 @@ export function NeighborhoodsPage({
   const signal = evaluateNeighborhoodSignal(input);
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-3xl font-black text-slate-950">
-                {input.name}
-              </h1>
-              <StatusBadge tone="blue">滨江核心区</StatusBadge>
-              <StatusBadge tone="slate">三房 90-110m2</StatusBadge>
-            </div>
-            <p className="mt-3 leading-7 text-slate-600">
-              顶部先给结论，再给数据：当前重点看挂牌、成交、降价和供应压力是否同时支持行动。
-            </p>
+    <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <section className="flex flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:flex-row md:items-center">
+        <div>
+          <div className="mb-2 flex items-center space-x-3">
+            <h1 className="text-2xl font-bold text-slate-900">{input.name}</h1>
+            <StatusBadge tone="blue">滨江核心区</StatusBadge>
+            <span className="text-sm text-slate-500">关注户型: 三房 90-110㎡</span>
           </div>
-          <div className="flex gap-3">
-            <button className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700">
-              设置提醒
-            </button>
-            <button className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white">
-              加入观察池
-            </button>
-          </div>
+          <p className="text-sm text-slate-500">更新时间: 今天 10:30</p>
+        </div>
+        <div className="mt-4 flex space-x-3 md:mt-0">
+          <button className="flex items-center space-x-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            <Bell aria-hidden="true" className="h-4 w-4" />
+            <span>降价提醒</span>
+          </button>
+          <button className="flex items-center space-x-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            <span>加入观察池</span>
+          </button>
         </div>
       </section>
 
-      <section className="mt-6 rounded-[2rem] border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-6">
-        <p className="text-sm font-bold text-blue-600">当前判断</p>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h2 className="text-3xl font-black text-slate-950">
-            {signal.status}
-          </h2>
+      <section className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-white p-6">
+        <Target
+          aria-hidden="true"
+          className="absolute right-6 top-6 h-32 w-32 text-blue-500 opacity-10"
+        />
+        <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-blue-600">
+          综合研判结论
+        </h2>
+        <div className="mb-4 flex items-center space-x-3">
+          <span className="text-2xl font-bold text-slate-900">适合试探性砍价</span>
           <StatusBadge tone="emerald">买方窗口开启</StatusBadge>
         </div>
-        <p className="mt-4 max-w-4xl text-lg leading-8 text-slate-700">
-          挂牌量连续增加，降价房源变多，但成交偏弱未见放量，房东预期开始松动。
+        <p className="mb-4 max-w-3xl text-lg text-slate-700">
+          挂牌量连续 4 周增加，降价房源变多，但成交偏弱未见放量，房东预期开始松动。
         </p>
-        <div className="mt-5 rounded-3xl border border-white bg-white/70 p-5">
-          <p className="font-black text-slate-950">下一步行动建议</p>
-          <p className="mt-2 leading-7 text-slate-700">{signal.nextAction}</p>
+        <div className="max-w-3xl rounded-xl border border-white bg-white/60 p-4 backdrop-blur-sm">
+          <p className="mb-1 font-semibold text-slate-900">下一步行动建议：</p>
+          <p className="text-slate-700">
+            可以开始密集看房，但不急下定。重点关注总价{" "}
+            <span className="font-bold text-blue-700">500-530万</span>{" "}
+            以内的三房，针对挂牌超过 60 天的房源尝试 5%-8% 的砍价空间。
+          </p>
+          <p className="sr-only">{signal.nextAction}</p>
         </div>
       </section>
 
-      <section className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-        {[
-          ["当前挂牌价区间", input.listingPriceRange.join("-"), "万"],
-          ["近90天成交区间", input.transactionPriceRange.join("-"), "万"],
-          ["当前在售套数", String(input.listedHomes), "套"],
-          ["本周降价房源", String(input.priceCutHomes), "套"],
-          ["挂牌成交差", `${Math.round(signal.priceGapPct * 100)}`, "%"],
-          ["平均成交周期", String(input.avgDaysOnMarket), "天"],
-        ].map(([label, value, unit]) => (
-          <div
-            key={label}
-            className="rounded-[1.5rem] border border-slate-200 bg-white p-4"
-          >
-            <p className="text-xs font-semibold text-slate-500">{label}</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        {metrics.map(([label, value, unit, sub, alert]) => (
+          <div key={label} className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="mb-2 text-xs text-slate-500">{label}</p>
+            <p className="flex items-baseline text-xl font-bold text-slate-900">
               {value}
-              <span className="ml-1 text-sm font-semibold text-slate-400">
-                {unit}
-              </span>
+              <span className="ml-1 text-xs font-normal text-slate-500">{unit}</span>
+            </p>
+            <p
+              className={`mt-2 text-xs font-medium ${
+                alert ? "flex items-center text-amber-600" : "text-slate-400"
+              }`}
+            >
+              {alert ? <TrendingUp aria-hidden="true" className="mr-1 h-3 w-3" /> : null}
+              {sub}
             </p>
           </div>
         ))}
       </section>
 
-      <section className="mt-6 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6">
-          <h2 className="text-xl font-black text-slate-950">
-            挂牌量与降价趋势（近 8 周）
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 lg:col-span-2">
+          <h2 className="mb-6 font-bold text-slate-800">
+            挂牌量与降价趋势 (近8周)
           </h2>
-          <div className="mt-8 flex h-56 items-end gap-3 border-b border-slate-200 pb-3">
-            {trend.map((value, index) => (
-              <div key={index} className="flex flex-1 flex-col items-center">
-                <div
-                  className="w-full rounded-t-xl bg-blue-100"
-                  style={{ height: `${(value / 50) * 100}%` }}
-                />
-                <span className="mt-2 text-xs font-semibold text-slate-400">
-                  W{index + 1}
-                </span>
-              </div>
-            ))}
+          <div className="relative flex h-48 items-end justify-between space-x-2 border-b border-slate-100 pb-2">
+            <div className="absolute bottom-2 left-0 top-0 flex flex-col justify-between text-[10px] text-slate-400">
+              <span>50套</span>
+              <span>25套</span>
+              <span>0</span>
+            </div>
+            <div className="flex h-full w-full items-end justify-between pl-8">
+              {trend.map((value, index) => (
+                <div key={index} className="group flex h-full w-8 flex-col items-center">
+                  <div className="relative flex h-full w-full items-end justify-center">
+                    <div
+                      className="bar-grow relative w-full rounded-t-sm bg-blue-100 group-hover:bg-blue-200"
+                      style={{ "--h": `${(value / 50) * 100}%` } as CSSProperties}
+                    >
+                      <div
+                        className="absolute -top-1 left-1/2 z-10 h-2 w-2 -translate-x-1/2 rounded-full bg-amber-500"
+                        style={{ bottom: `${index * 2 + 5}px` }}
+                      />
+                    </div>
+                  </div>
+                  <span className="mt-2 text-[10px] text-slate-400">W{index + 1}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <p className="mt-4 text-sm text-slate-500">
-            蓝色柱表示在售套数，连续抬升时要关注降价占比是否同步上升。
-          </p>
+          <div className="mt-4 flex justify-center space-x-6 text-xs text-slate-500">
+            <span className="flex items-center">
+              <span className="mr-2 h-3 w-3 rounded-sm bg-blue-100" />
+              在售套数
+            </span>
+            <span className="flex items-center">
+              <span className="mr-2 h-2 w-2 rounded-full bg-amber-500" />
+              降价频次趋势
+            </span>
+          </div>
         </div>
 
-        <div className="rounded-[2rem] border border-slate-200 bg-slate-50 p-6">
-          <h2 className="text-xl font-black text-slate-950">判断依据拆解</h2>
-          <ul className="mt-5 space-y-3">
-            {signal.reasons.map((reason) => (
-              <li
-                key={reason}
-                className="rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-700"
-              >
-                {reason}
+        <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+          <h2 className="mb-4 flex items-center font-bold text-slate-800">
+            <BookOpen aria-hidden="true" className="h-5 w-5" />
+            <span className="ml-2">判断依据拆解</span>
+          </h2>
+          <ul className="space-y-4">
+            {reasons.map(([title, body, Icon]) => (
+              <li key={title} className="flex items-start">
+                <Icon aria-hidden="true" className="mr-3 mt-0.5 h-5 w-5 text-amber-500" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{title}</p>
+                  <p className="mt-1 text-xs text-slate-600">{body}</p>
+                </div>
               </li>
             ))}
           </ul>
-        </div>
-      </section>
-
-      <section className="mt-6 rounded-[2rem] border border-slate-200 bg-white p-6">
-        <h2 className="text-xl font-black text-slate-950">替代小区对比</h2>
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          {alternateNeighborhoods.map((item) => (
-            <article
-              key={item.name}
-              className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-black text-slate-950">
-                    {item.name}
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {item.area} · {item.layout}
-                  </p>
-                </div>
-                <StatusBadge tone={item.status === "重点看" ? "blue" : "amber"}>
-                  {item.status}
-                </StatusBadge>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-                <Metric label="在售" value={`${item.listedHomes}套`} />
-                <Metric label="降价" value={`${item.priceCutHomes}套`} />
-                <Metric label="成交" value={item.transaction} />
-              </div>
-              <p className="mt-4 rounded-2xl bg-white p-3 text-sm leading-6 text-slate-700">
-                {item.advice}
-              </p>
-            </article>
-          ))}
-        </div>
+        </aside>
       </section>
     </main>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold text-slate-400">{label}</p>
-      <p className="mt-1 font-black text-slate-900">{value}</p>
-    </div>
   );
 }
