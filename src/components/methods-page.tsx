@@ -1,112 +1,143 @@
 import Link from "next/link";
 
-import { methodTopics } from "@/lib/sample-data";
+const topics = [
+  "挂牌变多但成交弱，说明什么？",
+  "为什么不能只看挂牌均价？",
+  "什么是真正的“买方窗口”？",
+  "降价房源变多，一定会大跌吗？",
+  "改善换房为什么要看新旧差？",
+  "为什么月供安全线比总价重要？",
+];
 
 export function MethodsPage() {
-  const [primary, ...rest] = methodTopics;
-
   return (
-    <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <section className="mx-auto max-w-3xl text-center">
-        <h1 className="text-4xl font-black tracking-tight text-slate-950">
-          不是记术语，而是学会判断
+    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <section className="mx-auto mb-8 max-w-2xl text-center">
+        <h1 className="text-3xl font-bold text-slate-900">
+          不是死记术语，而是学会判断
         </h1>
-        <p className="mt-4 text-lg leading-8 text-slate-600">
-          每个方法都从真实问题出发：先指出常见误判，再给出正确看法，最后落到下一步行动。
+        <p className="mt-3 text-slate-500">
+          每一个判断方法都对应一个真实的买房难题。掌握底层逻辑，你就不再需要听信中介的涨跌预测。
         </p>
       </section>
 
-      <section className="mt-10 grid gap-6 lg:grid-cols-[0.35fr_0.65fr]">
-        <aside className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="font-black text-slate-950">问题式目录</h2>
-          <nav className="mt-4 space-y-2" aria-label="判断方法目录">
-            {methodTopics.map((topic, index) => (
-              <a
-                key={topic.title}
-                href={`#method-${index}`}
-                className={`block rounded-2xl px-4 py-3 text-sm font-bold ${
-                  index === 0
-                    ? "bg-blue-50 text-blue-700"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {topic.title}
-              </a>
-            ))}
-          </nav>
+      <section className="flex flex-col gap-8 md:flex-row">
+        <aside className="w-full md:w-1/3 lg:w-1/4">
+          <div className="sticky top-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <h2 className="border-b border-slate-100 bg-slate-50 p-4 font-semibold text-slate-800">
+              问题场景目录
+            </h2>
+            <nav className="text-sm font-medium text-slate-600" aria-label="问题场景目录">
+              {topics.map((topic, index) => (
+                <a
+                  key={topic}
+                  href="#main-method"
+                  className={`block cursor-pointer border-l-4 px-4 py-3 transition-colors ${
+                    index === 0
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : "border-transparent hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  {topic}
+                </a>
+              ))}
+            </nav>
+          </div>
         </aside>
 
-        <article
-          id="method-0"
-          className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"
-        >
-          <h2 className="text-3xl font-black text-slate-950">
-            {primary.title}
-          </h2>
-          <div className="mt-6 space-y-6">
-            <MethodSection tone="rose" title="常见误判" body={primary.wrong} />
-            <MethodSection tone="emerald" title="正确看法" body={primary.right} />
-            <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5">
-              <h3 className="font-black text-blue-950">你应该怎么用</h3>
-              <p className="mt-2 leading-7 text-blue-900">{primary.action}</p>
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section className="mt-6 grid gap-5 md:grid-cols-2">
-        {rest.map((topic, index) => (
+        <div className="w-full space-y-6 md:w-2/3 lg:w-3/4">
           <article
-            id={`method-${index + 1}`}
-            key={topic.title}
-            className="rounded-[1.75rem] border border-slate-200 bg-white p-6"
+            id="main-method"
+            className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
           >
-            <h2 className="text-xl font-black text-slate-950">{topic.title}</h2>
-            <p className="mt-3 text-sm font-semibold text-rose-600">
-              常见误判：{topic.wrong}
-            </p>
-            <p className="mt-3 leading-7 text-slate-700">{topic.right}</p>
-            <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-700">
-              行动：{topic.action}
-            </p>
-          </article>
-        ))}
-      </section>
+            <h2 className="mb-6 text-2xl font-bold text-slate-900">
+              挂牌变多但成交弱，说明什么？
+            </h2>
 
-      <section className="mt-6 rounded-[2rem] bg-slate-950 p-7 text-center text-white">
-        <h2 className="text-2xl font-black">学以致用：本周复盘练习</h2>
-        <p className="mx-auto mt-3 max-w-2xl leading-7 text-slate-300">
-          去目标小区页记录本周挂牌、降价和成交变化，写下你的行动判断：看 / 等 / 砍价 / 出手。
-        </p>
-        <Link
-          href="/neighborhoods"
-          className="mt-5 inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-bold text-slate-950"
-        >
-          前往目标小区实践
-        </Link>
+            <div className="space-y-8">
+              <section>
+                <h3 className="mb-2 flex items-center font-bold text-rose-600">
+                  <span className="mr-2 flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-sm">
+                    x
+                  </span>
+                  常见误判
+                </h3>
+                <p className="rounded-lg border border-slate-100 bg-slate-50 p-3 italic text-slate-600">
+                  “小区挂牌量越来越多了，供大于求，房价肯定马上要暴跌，我再等等。”
+                </p>
+              </section>
+
+              <section>
+                <h3 className="mb-2 flex items-center font-bold text-emerald-600">
+                  <span className="mr-2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-sm">
+                    ✓
+                  </span>
+                  正确看法
+                </h3>
+                <p className="leading-relaxed text-slate-700">
+                  单纯看挂牌量增加是没有意义的，必须要结合
+                  <strong className="text-slate-900">成交量</strong>
+                  一起看。如果挂牌持续增加，但成交量没有同步放大（甚至萎缩），这意味着
+                  <strong className="bg-blue-100 px-1 text-blue-800">
+                    库存积压严重，房东的竞争加剧
+                  </strong>
+                  。这时候，部分急缺资金的房东为了成交，会率先打破价格僵局，你的议价空间（砍价余地）被打开了。
+                </p>
+              </section>
+
+              <section>
+                <h3 className="mb-3 border-b border-slate-200 pb-2 font-bold text-slate-800">
+                  你需要盯住的关键指标
+                </h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-lg border border-slate-100 bg-white p-3">
+                    <p className="text-sm font-semibold text-slate-800">在售套数增幅</p>
+                    <p className="mt-1 text-xs text-slate-500">连续四周增加是个强信号。</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-white p-3">
+                    <p className="text-sm font-semibold text-slate-800">降价房源占比</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      超过 20% 的在售房源下调过报价。
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-blue-100 bg-blue-50 p-5">
+                <h3 className="mb-2 font-bold text-blue-900">
+                  你应该怎么用这个知识？
+                </h3>
+                <p className="text-sm leading-relaxed text-blue-800">
+                  当在你的目标小区看到这个信号时：
+                  <br />
+                  1. <strong className="text-blue-900">开始看房：</strong>{" "}
+                  因为房源多，你有充分的挑选余地。
+                  <br />
+                  2. <strong className="text-blue-900">不急下定：</strong>{" "}
+                  不要怕被别人抢走，耐心挑瑕疵。
+                  <br />
+                  3. <strong className="text-blue-900">大胆砍价：</strong>{" "}
+                  专挑挂牌时间长、有过降价记录的房源，按照成交底价再往下砍 3%-5%
+                  试探底线。
+                </p>
+              </section>
+            </div>
+          </article>
+
+          <section className="rounded-2xl bg-slate-900 p-6 text-center text-white">
+            <h3 className="mb-2 font-bold">学以致用：本周复盘练习</h3>
+            <p className="mb-4 text-sm text-slate-400">
+              去你的目标小区详情页，记录本周的挂牌和成交变化，写下你的行动判断。
+            </p>
+            <Link
+              href="/neighborhoods"
+              className="inline-flex rounded-lg bg-white px-6 py-2 font-medium text-slate-900 transition-colors hover:bg-slate-100"
+            >
+              前往目标小区实践
+            </Link>
+          </section>
+        </div>
       </section>
     </main>
-  );
-}
-
-function MethodSection({
-  title,
-  body,
-  tone,
-}: {
-  title: string;
-  body: string;
-  tone: "rose" | "emerald";
-}) {
-  const toneClass =
-    tone === "rose"
-      ? "border-rose-100 bg-rose-50 text-rose-900"
-      : "border-emerald-100 bg-emerald-50 text-emerald-900";
-
-  return (
-    <section className={`rounded-3xl border p-5 ${toneClass}`}>
-      <h3 className="font-black">{title}</h3>
-      <p className="mt-2 leading-7">{body}</p>
-    </section>
   );
 }

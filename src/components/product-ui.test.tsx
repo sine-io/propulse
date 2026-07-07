@@ -6,8 +6,10 @@ import { AppHeader } from "./app-header";
 import { ActionWindowPage } from "./action-window-page";
 import { CalculatorPanel } from "./calculator-panel";
 import { HomePage } from "./home-page";
+import { MethodsPage } from "./methods-page";
 import { NeighborhoodsPage } from "./neighborhoods-page";
 import { TemplatesPage } from "./templates-page";
+import { WatchlistPage } from "./watchlist-page";
 
 describe("AppHeader", () => {
   it("exposes all MVP navigation entries", () => {
@@ -86,6 +88,28 @@ describe("ActionWindowPage", () => {
     expect(screen.getByText("积极看房，大胆砍价")).toBeInTheDocument();
     expect(screen.getByText("策略执行信心")).toBeInTheDocument();
     expect(screen.getByText("风险警示")).toBeInTheDocument();
+  });
+});
+
+describe("MethodsPage", () => {
+  it("matches the reference methodology article structure", () => {
+    render(createElement(MethodsPage));
+
+    expect(screen.getByText("问题场景目录")).toBeInTheDocument();
+    expect(screen.getByText("常见误判")).toBeInTheDocument();
+    expect(screen.getByText("你需要盯住的关键指标")).toBeInTheDocument();
+    expect(screen.getByText("前往目标小区实践")).toBeInTheDocument();
+  });
+});
+
+describe("WatchlistPage", () => {
+  it("matches the reference observation pool summary", () => {
+    render(createElement(WatchlistPage));
+
+    expect(screen.getByText("导出本周报表")).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getByText("小区动态 (本周变化)")).toBeInTheDocument();
+    expect(screen.getByText("保存复盘记录")).toBeInTheDocument();
   });
 });
 
