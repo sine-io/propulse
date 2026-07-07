@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>房脉 proppulse - 房产决策工具</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f8fafc; color: #0f172a; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        /* Custom chart animations */
+        @keyframes growUp { from { height: 0; } to { height: var(--h); } }
+        .bar-grow { animation: growUp 1s ease-out forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const Icons = {
+            Logo: () => <svg className="w-8 h-8 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v8"/><polyline points="8 17 8 13 12 13 12 17"/><polyline points="12 13 16 13 16 17"/></svg>,
+            Home: () => <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+            Calculator: () => <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>,
+            Target: () => <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
+            Activity: () => <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
+            BookOpen: () => <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
+            Eye: () => <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>,
+            CheckCircle: () => <svg className="w-5 h-5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
+            AlertCircle: () => <svg className="w-5 h-5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>,
+            XCircle: () => <svg className="w-5 h-5 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></svg>,
+            TrendingDown: () => <svg className="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>,
+            TrendingUp: () => <svg className="w-4 h-4 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>,
+            Bell: () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
+            Plus: () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>,
+            ChevronRight: () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        };
+
+        const StatusBadge = ({ type, text }) => {
+            const styles = {
+                success: "bg-emerald-100 text-emerald-700 border-emerald-200",
+                warning: "bg-amber-100 text-amber-700 border-amber-200",
+                danger: "bg-rose-100 text-rose-700 border-rose-200",
+                neutral: "bg-slate-100 text-slate-700 border-slate-200",
+                primary: "bg-blue-100 text-blue-700 border-blue-200"
+            };
+            return (
+                <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${styles[type] || styles.neutral}`}>
+                    {text}
+                </span>
+            );
+        };
+
+        const HomeView = ({ setCurrentView }) => (
+            <div className="max-w-7xl mx-auto space-y-12 pb-12">
+                {/* Hero Section */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mt-8">
+                    <div className="space-y-8">
+                        <h1 className="text-5xl font-bold leading-tight text-slate-900 tracking-tight">
+                            想买房或换房，<br/>先算清压力，<span className="text-blue-600">再判断时机</span>
+                        </h1>
+                        <p className="text-xl text-slate-600 leading-relaxed max-w-lg">
+                            输入你的预算和目标小区，判断现在能不能买、压力有多大、是否适合看房、等待、砍价或出手。
+                        </p>
+                        <div className="flex space-x-4">
+                            <button onClick={() => setCurrentView('calc')} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl font-medium transition-colors shadow-lg shadow-blue-600/20 text-lg">
+                                开始换房测算
+                            </button>
+                            <button onClick={() => setCurrentView('neighborhood')} className="bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-700 px-8 py-4 rounded-xl font-medium transition-colors text-lg flex items-center space-x-2">
+                                <Icons.Plus /> <span>添加目标小区</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Dashboard Composite Card */}
+                    <div className="bg-white rounded-2xl p-8 shadow-xl border border-slate-100 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -z-10 opacity-50"></div>
+                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-6">决策仪表盘 预览</h3>
+                        
+                        <div className="space-y-6 relative z-10">
+                            {/* 换房压力卡 */}
+                            <div className="border border-slate-100 rounded-xl p-5 bg-slate-50/50 hover:bg-white transition-colors group">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="font-semibold text-slate-800 flex items-center"><Icons.Calculator /> <span className="ml-2">换房能力</span></h4>
+                                    <StatusBadge type="success" text="月供偏安全" />
+                                </div>
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                    <div><p className="text-slate-500">安全总价</p><p className="font-bold text-slate-900 text-lg">520 万</p></div>
+                                    <div><p className="text-slate-500">勉强总价</p><p className="font-bold text-amber-600 text-lg">580 万</p></div>
+                                    <div><p className="text-slate-500">危险总价</p><p className="font-bold text-rose-600 text-lg">620万+</p></div>
+                                </div>
+                            </div>
+
+                            {/* 目标小区信号卡 */}
+                            <div className="border border-slate-100 rounded-xl p-5 bg-slate-50/50 hover:bg-white transition-colors">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="font-semibold text-slate-800 flex items-center"><Icons.Target /> <span className="ml-2">青枫花园 信号</span></h4>
+                                    <StatusBadge type="warning" text="房东预期松动" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm">
+                                    <div className="flex items-center text-slate-600"><Icons.TrendingUp /> <span className="ml-2">挂牌连续增加</span></div>
+                                    <div className="flex items-center text-slate-600"><Icons.TrendingUp /> <span className="ml-2">降价房源变多</span></div>
+                                    <div className="flex items-center text-slate-600"><Icons.TrendingDown /> <span className="ml-2">成交量偏弱</span></div>
+                                    <div className="flex items-center text-slate-600"><Icons.Activity /> <span className="ml-2">议价空间扩大</span></div>
+                                </div>
+                            </div>
+
+                            {/* 行动建议卡 */}
+                            <div className="bg-blue-50 border border-blue-100 rounded-xl p-5">
+                                <h4 className="font-semibold text-blue-900 mb-2">当前综合建议</h4>
+                                <p className="text-blue-800 font-medium text-lg mb-1">可以开始看房，但不急下定</p>
+                                <p className="text-blue-600/80 text-sm">下一步：重点关注 500-530 万三房，针对挂牌超 60 天房源尝试砍价。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Bottom Modules */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 border-t border-slate-200">
+                    <div className="space-y-4">
+                        <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center mb-4"><Icons.Calculator /></div>
+                        <h3 className="text-xl font-bold text-slate-900">测算换房能力</h3>
+                        <p className="text-slate-600 text-sm">告别模糊估算。精准计算安全总价、月供压力和资金缺口，知道自己“能买多大的房”。</p>
+                    </div>
+                    <div className="space-y-4">
+                        <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mb-4"><Icons.Eye /></div>
+                        <h3 className="text-xl font-bold text-slate-900">追踪小区情绪</h3>
+                        <p className="text-slate-600 text-sm">不看营销软文，只看真实数据。追踪挂牌、成交、降价频率，判断房东预期和供应压力。</p>
+                    </div>
+                    <div className="space-y-4 cursor-pointer group" onClick={() => setCurrentView('methodology')}>
+                        <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-200 transition-colors"><Icons.BookOpen /></div>
+                        <h3 className="text-xl font-bold text-slate-900 flex items-center">边用边学方法 <Icons.ChevronRight className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"/></h3>
+                        <ul className="text-slate-600 text-sm space-y-2">
+                            <li className="flex items-center"><div className="w-1.5 h-1.5 rounded-full bg-slate-400 mr-2"></div>为什么不能只看挂牌价？</li>
+                            <li className="flex items-center"><div className="w-1.5 h-1.5 rounded-full bg-slate-400 mr-2"></div>什么是买方窗口？</li>
+                            <li className="flex items-center"><div className="w-1.5 h-1.5 rounded-full bg-slate-400 mr-2"></div>改善为什么要看新旧差？</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const CalcView = () => (
+            <div className="max-w-7xl mx-auto">
+                <div className="mb-8">
+                    <h1 className="text-3xl font-bold text-slate-900">先算清楚：你现在能不能换，换完压力有多大</h1>
+                    <p className="text-slate-500 mt-2">像体检一样，扫描你的财务健康状况，定位安全预算区间。</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    {/* Form Left */}
+                    <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                        <h2 className="text-lg font-bold text-slate-800 mb-6 flex items-center"><Icons.Calculator /> <span className="ml-2">我的换房条件</span></h2>
+                        <form className="space-y-4" onSubmit={e=>e.preventDefault()}>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">当前可用现金 (万)</label>
+                                    <input type="text" defaultValue="150" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 text-slate-900 font-medium"/>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">家庭月收入 (万)</label>
+                                    <input type="text" defaultValue="3.5" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 text-slate-900 font-medium"/>
+                                </div>
+                            </div>
+                            
+                            <div className="pt-4 border-t border-slate-100">
+                                <h3 className="text-sm font-semibold text-slate-700 mb-3">旧房状况 (卖旧)</h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-500 mb-1">预期售出底价 (万)</label>
+                                        <input type="text" defaultValue="320" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 text-slate-900 font-medium"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-500 mb-1">剩余贷款 (万)</label>
+                                        <input type="text" defaultValue="80" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 text-slate-900 font-medium"/>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-100">
+                                <h3 className="text-sm font-semibold text-slate-700 mb-3">目标与成本 (买新)</h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-500 mb-1">目标总价预期 (万)</label>
+                                        <input type="text" defaultValue="550" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 text-slate-900 font-medium"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-500 mb-1">可接受极限月供</label>
+                                        <input type="text" defaultValue="15000" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 text-slate-900 font-medium"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-500 mb-1">装修及杂费预算 (万)</label>
+                                        <input type="text" defaultValue="40" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 text-slate-900 font-medium"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-500 mb-1">过渡租房成本 (万)</label>
+                                        <input type="text" defaultValue="5" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 text-slate-900 font-medium"/>
+                                    </div>
+                                </div>
+                            </div>
+                            <button className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-medium transition-colors">重新生成诊断报告</button>
+                        </form>
+                    </div>
+
+                    {/* Results Right */}
+                    <div className="lg:col-span-7 space-y-6">
+                        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg shadow-blue-900/5">
+                            <div className="flex justify-between items-end mb-6">
+                                <h2 className="text-xl font-bold text-slate-800">换房压力诊断报告</h2>
+                                <p className="text-sm text-slate-500">基于最新数据生成</p>
+                            </div>
+                            
+                            {/* Pressure Bar */}
+                            <div className="mb-8">
+                                <div className="flex justify-between text-xs font-medium mb-2">
+                                    <span className="text-emerald-600">安全 (推荐)</span>
+                                    <span className="text-amber-600">偏高 (需谨慎)</span>
+                                    <span className="text-rose-600">危险 (易断供)</span>
+                                </div>
+                                <div className="h-3 w-full bg-slate-100 rounded-full flex overflow-hidden relative">
+                                    <div className="h-full bg-emerald-500 w-1/3"></div>
+                                    <div className="h-full bg-amber-400 w-1/3"></div>
+                                    <div className="h-full bg-rose-500 w-1/3"></div>
+                                    {/* Indicator */}
+                                    <div className="absolute top-0 bottom-0 w-1 bg-slate-900 left-[45%] shadow-[0_0_0_2px_white] z-10"></div>
+                                </div>
+                                <div className="mt-2 text-center text-sm font-semibold text-slate-700">当前目标总价 (550万) 处于 <span className="text-amber-600">偏高</span> 区间</div>
+                            </div>
+
+                            {/* Key Metrics */}
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                    <p className="text-xs text-slate-500 mb-1">安全总价上限</p>
+                                    <p className="text-2xl font-bold text-emerald-600">520<span className="text-sm font-normal ml-1 text-slate-500">万</span></p>
+                                </div>
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                    <p className="text-xs text-slate-500 mb-1">预估首付缺口</p>
+                                    <p className="text-2xl font-bold text-amber-600">约 35<span className="text-sm font-normal ml-1 text-slate-500">万</span></p>
+                                </div>
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                    <p className="text-xs text-slate-500 mb-1">月供收入比</p>
+                                    <p className="text-2xl font-bold text-slate-800">42<span className="text-sm font-normal ml-1 text-slate-500">%</span></p>
+                                </div>
+                            </div>
+
+                            {/* Strategy Card */}
+                            <div className="bg-blue-50/50 border border-blue-100 p-5 rounded-xl">
+                                <h3 className="font-semibold text-blue-900 mb-2 flex items-center"><Icons.CheckCircle /> <span className="ml-2">操作策略建议</span></h3>
+                                <p className="text-slate-700 text-sm leading-relaxed mb-3">
+                                    <strong className="text-slate-900">建议先卖后买，或同步推进。绝不建议未售出旧房前下定金。</strong>
+                                </p>
+                                <p className="text-slate-600 text-sm leading-relaxed">
+                                    原因：旧房回款对你的首付影响极大 (占比超 60%)。如果按目标 550 万购买，首付资金存在约 35 万缺口，需准备过桥资金或降低目标总价至 520 万以内以确保安全。
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Method Links */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
+                                <p className="text-sm font-medium text-slate-800 mb-1">为什么月供安全线比总价更重要？</p>
+                                <p className="text-xs text-slate-500">了解现金流断裂的风险</p>
+                            </div>
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
+                                <p className="text-sm font-medium text-slate-800 mb-1">旧房迟迟卖不掉怎么办？</p>
+                                <p className="text-xs text-slate-500">学会测算“底线成交价”</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const NeighborhoodView = () => (
+            <div className="max-w-7xl mx-auto space-y-6">
+                {/* Header */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div>
+                        <div className="flex items-center space-x-3 mb-2">
+                            <h1 className="text-2xl font-bold text-slate-900">青枫花园</h1>
+                            <StatusBadge type="primary" text="滨江核心区" />
+                            <span className="text-sm text-slate-500">关注户型: 三房 90-110㎡</span>
+                        </div>
+                        <p className="text-slate-500 text-sm">更新时间: 今天 10:30</p>
+                    </div>
+                    <div className="mt-4 md:mt-0 flex space-x-3">
+                        <button className="flex items-center space-x-2 bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50 font-medium text-sm">
+                            <Icons.Bell /> <span>降价提醒</span>
+                        </button>
+                        <button className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium text-sm">
+                            <Icons.Plus /> <span>加入观察池</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Core Judgment */}
+                <div className="bg-gradient-to-r from-blue-50 to-white p-6 rounded-2xl border border-blue-100 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-6 opacity-10"><Icons.Target className="w-32 h-32 text-blue-500"/></div>
+                    <h2 className="text-sm font-bold text-blue-600 uppercase tracking-wider mb-2">综合研判结论</h2>
+                    <div className="flex items-center space-x-3 mb-4">
+                        <span className="text-2xl font-bold text-slate-900">适合试探性砍价</span>
+                        <StatusBadge type="success" text="买方窗口开启" />
+                    </div>
+                    <p className="text-slate-700 text-lg mb-4 max-w-3xl">
+                        挂牌量连续 4 周增加，降价房源变多，但成交偏弱未见放量，房东预期开始松动。
+                    </p>
+                    <div className="bg-white/60 p-4 rounded-xl border border-white max-w-3xl backdrop-blur-sm">
+                        <p className="font-semibold text-slate-900 mb-1">下一步行动建议：</p>
+                        <p className="text-slate-700">可以开始密集看房，但不急下定。重点关注总价 <span className="font-bold text-blue-700">500-530万</span> 以内的三房，针对挂牌超过 60 天的房源尝试 5%-8% 的砍价空间。</p>
+                    </div>
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    {[
+                        { label: '当前挂牌价区间', value: '520-620', unit: '万', sub: '较上月 -2%' },
+                        { label: '近90天成交区间', value: '495-545', unit: '万', sub: '价差约 8.5%' },
+                        { label: '当前在售套数', value: '42', unit: '套', sub: '较上月 +18%', alert: true },
+                        { label: '本周降价房源', value: '11', unit: '套', sub: '占比 26%', alert: true },
+                        { label: '平均成交周期', value: '78', unit: '天', sub: '逐渐拉长' },
+                        { label: '带看转定率', value: '2.4', unit: '%', sub: '成交偏弱' },
+                    ].map((m, i) => (
+                        <div key={i} className="bg-white p-4 rounded-xl border border-slate-200">
+                            <p className="text-xs text-slate-500 mb-2">{m.label}</p>
+                            <p className="text-xl font-bold text-slate-900 flex items-baseline">
+                                {m.value} <span className="text-xs font-normal text-slate-500 ml-1">{m.unit}</span>
+                            </p>
+                            <p className={`text-xs mt-2 font-medium ${m.alert ? 'text-amber-600 flex items-center' : 'text-slate-400'}`}>
+                                {m.alert && <Icons.TrendingUp className="mr-1 w-3 h-3" />} {m.sub}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Charts Area (CSS Simulated) & Logic */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200">
+                        <h3 className="font-bold text-slate-800 mb-6">挂牌量与降价趋势 (近8周)</h3>
+                        {/* Simulated Bar Chart */}
+                        <div className="h-48 flex items-end justify-between space-x-2 border-b border-slate-100 pb-2 relative">
+                            {/* Y axis labels */}
+                            <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-[10px] text-slate-400 pb-2">
+                                <span>50套</span><span>25套</span><span>0</span>
+                            </div>
+                            <div className="pl-8 flex w-full justify-between items-end h-full">
+                                {[20, 22, 25, 24, 30, 35, 38, 42].map((val, idx) => (
+                                    <div key={idx} className="flex flex-col items-center w-8 group">
+                                        {/* Tooltip trigger area */}
+                                        <div className="relative flex justify-center w-full h-full items-end">
+                                            <div style={{'--h': `${(val/50)*100}%`}} className="w-full bg-blue-100 group-hover:bg-blue-200 rounded-t-sm bar-grow relative">
+                                                {/* Simulated line chart point for price drops */}
+                                                <div className="absolute -top-1 left-1/2 w-2 h-2 bg-amber-500 rounded-full transform -translate-x-1/2 z-10" style={{bottom: `${(idx * 2) + 5}px`}}></div>
+                                            </div>
+                                        </div>
+                                        <span className="text-[10px] text-slate-400 mt-2">W{idx+1}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex justify-center space-x-6 mt-4 text-xs text-slate-500">
+                            <span className="flex items-center"><div className="w-3 h-3 bg-blue-100 rounded-sm mr-2"></div>在售套数</span>
+                            <span className="flex items-center"><div className="w-2 h-2 bg-amber-500 rounded-full mr-2"></div>降价频次趋势</span>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                        <h3 className="font-bold text-slate-800 mb-4 flex items-center"><Icons.BookOpen /> <span className="ml-2">判断依据拆解</span></h3>
+                        <ul className="space-y-4">
+                            <li className="flex items-start">
+                                <div className="mt-0.5 mr-3 text-amber-500"><Icons.AlertCircle /></div>
+                                <div>
+                                    <p className="font-semibold text-sm text-slate-800">1. 供应显著增加</p>
+                                    <p className="text-xs text-slate-600 mt-1">在售套数连续 4 周攀升，突破历史均值。</p>
+                                </div>
+                            </li>
+                            <li className="flex items-start">
+                                <div className="mt-0.5 mr-3 text-amber-500"><Icons.AlertCircle /></div>
+                                <div>
+                                    <p className="font-semibold text-sm text-slate-800">2. 降价意愿增强</p>
+                                    <p className="text-xs text-slate-600 mt-1">本周 11 套降价，降价房源占比提升，说明部分房东急售。</p>
+                                </div>
+                            </li>
+                            <li className="flex items-start">
+                                <div className="mt-0.5 mr-3 text-slate-400"><Icons.Activity /></div>
+                                <div>
+                                    <p className="font-semibold text-sm text-slate-800">3. 成交尚未放量</p>
+                                    <p className="text-xs text-slate-600 mt-1">买方仍在观望，价格支撑力度弱。</p>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const ActionWindowView = () => (
+            <div className="max-w-7xl mx-auto space-y-6">
+                <div className="mb-8">
+                    <h1 className="text-3xl font-bold text-slate-900">现在适合看、等、砍价，还是出手？</h1>
+                    <p className="text-slate-500 mt-2">结合你的资金预算与目标小区的市场行情，生成的动态决策建议。</p>
+                </div>
+
+                {/* Top Recommendation */}
+                <div className="bg-white p-8 rounded-2xl border-l-4 border-l-blue-600 shadow-md">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between mb-4">
+                        <div>
+                            <p className="text-sm font-semibold text-slate-500 uppercase mb-1">当前核心策略</p>
+                            <h2 className="text-3xl font-bold text-slate-900">积极看房，大胆砍价</h2>
+                        </div>
+                        <div className="mt-4 md:mt-0 text-right">
+                            <p className="text-sm font-semibold text-slate-500 uppercase mb-1">策略执行信心</p>
+                            <StatusBadge type="success" text="中高 (75%)" />
+                        </div>
+                    </div>
+                    <p className="text-slate-700 text-lg leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        你的预算目前处于偏安全区间。目标小区（青枫花园）供应增加且降价房源变多，属于典型的<strong className="text-blue-700">买方窗口初期</strong>。当前更适合广泛看房、试探底价，<strong>但不建议追高或不还价直接成交</strong>。
+                    </p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Decision Matrix */}
+                    <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <div className="p-5 border-b border-slate-100 bg-slate-50"><h3 className="font-bold text-slate-800">决策影响因子矩阵</h3></div>
+                        <div className="divide-y divide-slate-100">
+                            {[
+                                { factor: '自身预算是否安全', status: '偏安全', color: 'green', desc: '首付充裕，月供压力可控' },
+                                { factor: '旧房置换回款风险', status: '需观察', color: 'yellow', desc: '旧房挂牌中，看房量一般' },
+                                { factor: '目标小区价格预期', status: '明显松动', color: 'green', desc: '降价房源连续三周增加' },
+                                { factor: '近期成交量支撑', status: '偏弱', color: 'green', desc: '成交未放量，买家话语权高' },
+                                { factor: '目标户型稀缺度', status: '中等', color: 'yellow', desc: '同户型在售约 12 套，有挑选余地' },
+                                { factor: '是否存在备选小区', status: '有备选', color: 'green', desc: '已添加 2 个同板块可替代小区' },
+                            ].map((row, i) => (
+                                <div key={i} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                                    <div className="flex-1">
+                                        <p className="font-medium text-slate-800">{row.factor}</p>
+                                        <p className="text-xs text-slate-500 mt-1">{row.desc}</p>
+                                    </div>
+                                    <div className="ml-4 flex-shrink-0 w-24 text-right">
+                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                            ${row.color === 'green' ? 'bg-emerald-100 text-emerald-800' : 
+                                              row.color === 'yellow' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'}`}>
+                                            <div className={`w-1.5 h-1.5 rounded-full mr-1.5 
+                                                ${row.color === 'green' ? 'bg-emerald-500' : 
+                                                  row.color === 'yellow' ? 'bg-amber-500' : 'bg-rose-500'}`}></div>
+                                            {row.status}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Action Checklist & Risks */}
+                    <div className="space-y-6">
+                        <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg">
+                            <h3 className="font-bold text-lg mb-4 flex items-center"><Icons.CheckCircle /> <span className="ml-2">本周行动清单</span></h3>
+                            <ul className="space-y-4 text-sm text-slate-300">
+                                <li className="flex items-start">
+                                    <div className="w-5 h-5 rounded border border-slate-600 flex-shrink-0 mr-3 mt-0.5"></div>
+                                    <span>约看 3 套总价在 500-530 万以内的三房。</span>
+                                </li>
+                                <li className="flex items-start">
+                                    <div className="w-5 h-5 rounded border border-slate-600 flex-shrink-0 mr-3 mt-0.5"></div>
+                                    <span>对挂牌时间超过 60 天的 2 套房源，尝试让中介报价砍 5%-8%。</span>
+                                </li>
+                                <li className="flex items-start">
+                                    <div className="w-5 h-5 rounded border border-slate-600 flex-shrink-0 mr-3 mt-0.5"></div>
+                                    <span>检视自己旧房的挂牌价，如果看房量少于每周 2 组，考虑下调 2%。</span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div className="bg-rose-50 p-6 rounded-2xl border border-rose-100">
+                            <h3 className="font-bold text-rose-800 mb-3 flex items-center text-sm uppercase tracking-wide"><Icons.XCircle /> <span className="ml-2">风险警示</span></h3>
+                            <ul className="space-y-2 text-sm text-rose-700/80 list-disc list-inside">
+                                <li>如果旧房最终低于 310 万成交，建议立即返回首页重新测算安全总价。</li>
+                                <li>如果目标小区成交量突然连续两周放大，砍价窗口可能随时关闭。</li>
+                                <li>单套极低价房源可能是“钓鱼房”或有硬伤，不代表小区整体见底。</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const MethodologyView = () => (
+            <div className="max-w-7xl mx-auto">
+                <div className="mb-8 text-center max-w-2xl mx-auto">
+                    <h1 className="text-3xl font-bold text-slate-900">不是死记术语，而是学会判断</h1>
+                    <p className="text-slate-500 mt-3">
+                        每一个判断方法都对应一个真实的买房难题。掌握底层逻辑，你就不再需要听信中介的涨跌预测。
+                    </p>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-8">
+                    {/* Sidebar */}
+                    <div className="w-full md:w-1/3 lg:w-1/4">
+                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden sticky top-6">
+                            <div className="p-4 bg-slate-50 border-b border-slate-100 font-semibold text-slate-800">问题场景目录</div>
+                            <ul className="text-sm font-medium text-slate-600">
+                                <li className="px-4 py-3 bg-blue-50 text-blue-700 border-l-4 border-blue-600 cursor-pointer">挂牌变多但成交弱，说明什么？</li>
+                                <li className="px-4 py-3 hover:bg-slate-50 border-l-4 border-transparent hover:border-slate-300 cursor-pointer transition-colors">为什么不能只看挂牌均价？</li>
+                                <li className="px-4 py-3 hover:bg-slate-50 border-l-4 border-transparent hover:border-slate-300 cursor-pointer transition-colors">什么是真正的“买方窗口”？</li>
+                                <li className="px-4 py-3 hover:bg-slate-50 border-l-4 border-transparent hover:border-slate-300 cursor-pointer transition-colors">降价房源变多，一定会大跌吗？</li>
+                                <li className="px-4 py-3 hover:bg-slate-50 border-l-4 border-transparent hover:border-slate-300 cursor-pointer transition-colors">改善换房为什么要看新旧差？</li>
+                                <li className="px-4 py-3 hover:bg-slate-50 border-l-4 border-transparent hover:border-slate-300 cursor-pointer transition-colors">为什么月供安全线比总价重要？</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    {/* Main Content Article */}
+                    <div className="w-full md:w-2/3 lg:w-3/4 space-y-6">
+                        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
+                            <h2 className="text-2xl font-bold text-slate-900 mb-6">挂牌变多但成交弱，说明什么？</h2>
+                            
+                            <div className="space-y-8">
+                                <section>
+                                    <h3 className="flex items-center text-rose-600 font-bold mb-2">
+                                        <span className="w-6 h-6 rounded-full bg-rose-100 flex items-center justify-center mr-2 text-sm">✕</span>
+                                        常见误判
+                                    </h3>
+                                    <p className="text-slate-600 italic bg-slate-50 p-3 rounded-lg border border-slate-100">“小区挂牌量越来越多了，供大于求，房价肯定马上要暴跌，我再等等。”</p>
+                                </section>
+
+                                <section>
+                                    <h3 className="flex items-center text-emerald-600 font-bold mb-2">
+                                        <span className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center mr-2 text-sm">✓</span>
+                                        正确看法
+                                    </h3>
+                                    <p className="text-slate-700 leading-relaxed">
+                                        单纯看挂牌量增加是没有意义的，必须要结合<strong className="text-slate-900">成交量</strong>一起看。如果挂牌持续增加，但成交量没有同步放大（甚至萎缩），这意味着<strong className="bg-blue-100 px-1 text-blue-800">库存积压严重，房东的竞争加剧</strong>。这时候，部分急缺资金的房东为了成交，会率先打破价格僵局，你的议价空间（砍价余地）被打开了。
+                                    </p>
+                                </section>
+
+                                <section>
+                                    <h3 className="font-bold text-slate-800 mb-3 border-b border-slate-200 pb-2">你需要盯住的关键指标</h3>
+                                    <div className="grid sm:grid-cols-2 gap-4">
+                                        <div className="border border-slate-100 p-3 rounded-lg bg-white">
+                                            <p className="font-semibold text-slate-800 text-sm">在售套数增幅</p>
+                                            <p className="text-xs text-slate-500 mt-1">连续四周增加是个强信号。</p>
+                                        </div>
+                                        <div className="border border-slate-100 p-3 rounded-lg bg-white">
+                                            <p className="font-semibold text-slate-800 text-sm">降价房源占比</p>
+                                            <p className="text-xs text-slate-500 mt-1">超过 20% 的在售房源下调过报价。</p>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className="bg-blue-50 p-5 rounded-xl border border-blue-100">
+                                    <h3 className="font-bold text-blue-900 mb-2">你应该怎么用这个知识？</h3>
+                                    <p className="text-blue-800 text-sm leading-relaxed">
+                                        当在你的目标小区看到这个信号时：<br/>
+                                        1. <strong className="text-blue-900">开始看房：</strong> 因为房源多，你有充分的挑选余地。<br/>
+                                        2. <strong className="text-blue-900">不急下定：</strong> 不要怕被别人抢走，耐心挑瑕疵。<br/>
+                                        3. <strong className="text-blue-900">大胆砍价：</strong> 专挑挂牌时间长、有过降价记录的房源，按照成交底价再往下砍 3%-5% 试探底线。
+                                    </p>
+                                </section>
+                            </div>
+                        </div>
+
+                        {/* Practice Card */}
+                        <div className="bg-slate-900 rounded-2xl p-6 text-white text-center">
+                            <h3 className="font-bold mb-2">学以致用：本周复盘练习</h3>
+                            <p className="text-slate-400 text-sm mb-4">去你的目标小区详情页，记录本周的挂牌和成交变化，写下你的行动判断。</p>
+                            <button onClick={() => setCurrentView('neighborhood')} className="bg-white text-slate-900 px-6 py-2 rounded-lg font-medium hover:bg-slate-100 transition-colors">
+                                前往目标小区实践
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const ObservationView = () => (
+            <div className="max-w-7xl mx-auto">
+                <div className="flex justify-between items-end mb-8">
+                    <div>
+                        <h1 className="text-3xl font-bold text-slate-900">我的观察池</h1>
+                        <p className="text-slate-500 mt-2">每周跟踪，不错过买方窗口期。</p>
+                    </div>
+                    <button className="text-blue-600 font-medium text-sm hover:underline">导出本周报表</button>
+                </div>
+
+                {/* Top Summary Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <div className="bg-white p-4 rounded-xl border border-slate-200">
+                        <p className="text-xs text-slate-500 mb-1">本周关注小区</p>
+                        <p className="text-2xl font-bold text-slate-800">5 <span className="text-sm font-normal text-slate-400">个</span></p>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-slate-200">
+                        <p className="text-xs text-slate-500 mb-1">出现降价信号</p>
+                        <p className="text-2xl font-bold text-amber-600">2 <span className="text-sm font-normal text-slate-400">个</span></p>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/50">
+                        <p className="text-xs text-blue-600 mb-1">进入可砍价窗口</p>
+                        <p className="text-2xl font-bold text-blue-700">1 <span className="text-sm font-normal text-blue-400">个</span></p>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-slate-200">
+                        <p className="text-xs text-slate-500 mb-1">价格仍偏硬</p>
+                        <p className="text-2xl font-bold text-slate-600">2 <span className="text-sm font-normal text-slate-400">个</span></p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* List Grid */}
+                    <div className="lg:col-span-2 space-y-4">
+                        <h2 className="font-bold text-slate-800 mb-4">小区动态 (本周变化)</h2>
+                        
+                        {/* Card 1 */}
+                        <div className="bg-white p-5 rounded-xl border border-blue-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
+                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                            <div className="flex justify-between items-start mb-3">
+                                <div>
+                                    <h3 className="font-bold text-lg text-slate-900">青枫花园 <span className="text-xs font-normal text-slate-500 ml-2">滨江核心 · 三房</span></h3>
+                                </div>
+                                <StatusBadge type="success" text="适合砍价" />
+                            </div>
+                            <div className="flex space-x-6 text-sm mb-4">
+                                <div><span className="text-slate-500">在售：</span><span className="font-medium text-slate-800">42套</span> <span className="text-amber-500 text-xs">(+8)</span></div>
+                                <div><span className="text-slate-500">降价：</span><span className="font-medium text-slate-800">11套</span></div>
+                                <div><span className="text-slate-500">成交：</span><span className="font-medium text-slate-800">偏弱</span></div>
+                            </div>
+                            <div className="bg-slate-50 p-3 rounded-lg text-sm text-slate-700 border border-slate-100 flex items-start">
+                                <Icons.CheckCircle className="w-4 h-4 mr-2 mt-0.5 text-blue-500"/>
+                                <span>建议：约看 500-530 万三房，尝试砍价，窗口期已打开。</span>
+                            </div>
+                        </div>
+
+                        {/* Card 2 */}
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-start mb-3">
+                                <div>
+                                    <h3 className="font-bold text-lg text-slate-900">云澜府 <span className="text-xs font-normal text-slate-500 ml-2">城东新区 · 四房</span></h3>
+                                </div>
+                                <StatusBadge type="warning" text="继续观察" />
+                            </div>
+                            <div className="flex space-x-6 text-sm mb-4">
+                                <div><span className="text-slate-500">在售：</span><span className="font-medium text-slate-800">28套</span> <span className="text-slate-400 text-xs">(-)</span></div>
+                                <div><span className="text-slate-500">降价：</span><span className="font-medium text-slate-800">2套</span></div>
+                                <div><span className="text-slate-500">成交：</span><span className="font-medium text-slate-800">平稳</span></div>
+                            </div>
+                            <div className="bg-slate-50 p-3 rounded-lg text-sm text-slate-700 border border-slate-100 flex items-start">
+                                <Icons.Eye className="w-4 h-4 mr-2 mt-0.5 text-slate-400"/>
+                                <span>建议：挂牌价无明显松动，且超出安全预算，建议暂缓约看。</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Sidebar / Weekly Review */}
+                    <div className="space-y-6">
+                        {/* Alerts */}
+                        <div className="bg-amber-50 rounded-xl p-5 border border-amber-100">
+                            <h3 className="font-bold text-amber-900 mb-3 flex items-center"><Icons.Bell className="mr-2"/> 异动提醒</h3>
+                            <ul className="space-y-3 text-sm">
+                                <li className="flex items-start">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 mr-2 flex-shrink-0"></div>
+                                    <span className="text-amber-800">青枫花园 新增 2 套目标户型，挂牌价处于低位。</span>
+                                </li>
+                                <li className="flex items-start">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 mr-2 flex-shrink-0"></div>
+                                    <span className="text-amber-800">星河湾 有 1 套房源单次降价 30 万。</span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        {/* Review Form */}
+                        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                            <h3 className="font-bold text-slate-800 mb-4">本周行动复盘</h3>
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="text-xs font-medium text-slate-500 block mb-1">我看了哪些房？感觉如何？</label>
+                                    <textarea className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500" rows="2" placeholder="记录实地看房感受..."></textarea>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-slate-500 block mb-1">下周行动计划</label>
+                                    <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500" placeholder="例如：约看青枫花园3套底价房"/>
+                                </div>
+                                <button className="w-full bg-slate-900 text-white rounded-lg py-2 text-sm font-medium hover:bg-slate-800 transition-colors mt-2">保存复盘记录</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const App = () => {
+            const [currentView, setCurrentView] = React.useState('home');
+
+            const renderView = () => {
+                switch(currentView) {
+                    case 'home': return <HomeView setCurrentView={setCurrentView} />;
+                    case 'calc': return <CalcView />;
+                    case 'neighborhood': return <NeighborhoodView />;
+                    case 'action': return <ActionWindowView />;
+                    case 'methodology': return <MethodologyView setCurrentView={setCurrentView} />;
+                    case 'observation': return <ObservationView />;
+                    default: return <HomeView setCurrentView={setCurrentView} />;
+                }
+            };
+
+            const NavItem = ({ id, label, icon: Icon }) => (
+                <button 
+                    onClick={() => setCurrentView(id)}
+                    className={`flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${currentView === id ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
+                >
+                    <Icon className="w-4 h-4" /> <span>{label}</span>
+                </button>
+            );
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* Navigation */}
+                    <nav className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div className="flex justify-between h-16">
+                                <div className="flex items-center space-x-8">
+                                    {/* Logo */}
+                                    <div className="flex items-center space-x-2 cursor-pointer" onClick={() => setCurrentView('home')}>
+                                        <Icons.Logo />
+                                        <span className="text-xl font-bold text-slate-900 tracking-tight">房脉 <span className="font-light text-slate-500">proppulse</span></span>
+                                    </div>
+                                    {/* Main Nav */}
+                                    <div className="hidden md:flex space-x-2">
+                                        <NavItem id="calc" label="换房测算" icon={Icons.Calculator} />
+                                        <NavItem id="neighborhood" label="目标小区" icon={Icons.Target} />
+                                        <NavItem id="action" label="出手窗口" icon={Icons.Activity} />
+                                        <NavItem id="methodology" label="判断方法" icon={Icons.BookOpen} />
+                                        <NavItem id="observation" label="我的观察池" icon={Icons.Eye} />
+                                    </div>
+                                </div>
+                                {/* Right Actions */}
+                                <div className="flex items-center space-x-4">
+                                    <button className="text-slate-500 hover:text-slate-900 font-medium text-sm hidden sm:block">登录</button>
+                                    <button onClick={() => setCurrentView('calc')} className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-md">
+                                        开始测算
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+
+                    {/* Main Content Area */}
+                    <main className="flex-grow p-4 sm:p-6 lg:p-8 overflow-y-auto">
+                        {/* Sub-navigation hints for prototype evaluation */}
+                        <div className="max-w-7xl mx-auto mb-6 flex space-x-2 overflow-x-auto hide-scrollbar pb-2 md:hidden">
+                           <button onClick={()=>setCurrentView('calc')} className="px-3 py-1 bg-slate-200 rounded-full text-xs whitespace-nowrap">测算</button>
+                           <button onClick={()=>setCurrentView('neighborhood')} className="px-3 py-1 bg-slate-200 rounded-full text-xs whitespace-nowrap">小区</button>
+                           <button onClick={()=>setCurrentView('action')} className="px-3 py-1 bg-slate-200 rounded-full text-xs whitespace-nowrap">窗口</button>
+                           <button onClick={()=>setCurrentView('methodology')} className="px-3 py-1 bg-slate-200 rounded-full text-xs whitespace-nowrap">方法</button>
+                           <button onClick={()=>setCurrentView('observation')} className="px-3 py-1 bg-slate-200 rounded-full text-xs whitespace-nowrap">观察池</button>
+                        </div>
+                        
+                        <div className="animate-fade-in-up">
+                            {renderView()}
+                        </div>
+                    </main>
+                    
+                    {/* Simple Footer */}
+                    <footer className="border-t border-slate-200 bg-white py-6 mt-auto">
+                        <div className="max-w-7xl mx-auto px-4 text-center text-slate-400 text-sm">
+                            &copy; 2026 房脉 proppulse Prototype. 高端数据驱动的房产决策辅助系统。
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

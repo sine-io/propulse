@@ -1,0 +1,13 @@
+.next/
+node_modules/
+out/
+dist/
+coverage/
+.env
+.env.local
+.env.*.local
+*.log
+pnpm-debug.log*
+*.tsbuildinfo
+.DS_Store
+.vercel/
