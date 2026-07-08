@@ -183,7 +183,6 @@ export function CalculatorPanel() {
               当前目标总价 ({input.targetTotalPrice}万) 处于{" "}
               <span className={pressure.tone}>{pressure.label}</span> 区间
             </p>
-            <p className="sr-only">月供压力：{pressure.label}</p>
           </div>
 
           <div className="mb-8 grid grid-cols-2 gap-6 md:grid-cols-3">

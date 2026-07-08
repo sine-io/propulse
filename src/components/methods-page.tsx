@@ -58,7 +58,7 @@ export function MethodsPage() {
               <section>
                 <h3 className="mb-2 flex items-center font-bold text-rose-600">
                   <span className="mr-2 flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-sm">
-                    x
+                    ✕
                   </span>
                   常见误判
                 </h3>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
@@ -30,6 +30,24 @@ describe("AppHeader", () => {
       expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
     }
   });
+
+  it("exposes the prototype mobile quick navigation", () => {
+    render(createElement(AppHeader));
+
+    const quickNav = screen.getByRole("navigation", { name: "移动快捷导航" });
+
+    for (const [label, href] of [
+      ["测算", "/calculator"],
+      ["小区", "/neighborhoods"],
+      ["窗口", "/action-window"],
+      ["方法", "/methods"],
+      ["观察池", "/watchlist"],
+    ]) {
+      expect(
+        within(quickNav).getByRole("link", { name: label }),
+      ).toHaveAttribute("href", href);
+    }
+  });
 });
 
 describe("HomePage", () => {
@@ -57,13 +75,13 @@ describe("CalculatorPanel", () => {
   it("updates the diagnosis when target price becomes unsafe", () => {
     render(createElement(CalculatorPanel));
 
-    expect(screen.getByText("月供压力：偏高")).toBeInTheDocument();
+    expect(screen.queryByText(/^月供压力：/)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("目标总价（万）"), {
       target: { value: "720" },
     });
 
-    expect(screen.getByText("月供压力：危险")).toBeInTheDocument();
+    expect(screen.getByText("危险")).toBeInTheDocument();
     expect(screen.getByText("暂缓改善")).toBeInTheDocument();
   });
 });
@@ -77,6 +95,11 @@ describe("NeighborhoodsPage", () => {
     expect(screen.getByText("适合试探性砍价")).toBeInTheDocument();
     expect(screen.getByText("降价提醒")).toBeInTheDocument();
     expect(screen.getByText("带看转定率")).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "重点看 495-545 万成交区间附近房源，对挂牌久、降价过的房源试探底价。",
+      ),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -96,6 +119,8 @@ describe("MethodsPage", () => {
     render(createElement(MethodsPage));
 
     expect(screen.getByText("问题场景目录")).toBeInTheDocument();
+    expect(screen.getByText("✕")).toBeInTheDocument();
+    expect(screen.queryByText("x")).not.toBeInTheDocument();
     expect(screen.getByText("常见误判")).toBeInTheDocument();
     expect(screen.getByText("你需要盯住的关键指标")).toBeInTheDocument();
     expect(screen.getByText("前往目标小区实践")).toBeInTheDocument();
@@ -109,6 +134,12 @@ describe("WatchlistPage", () => {
     expect(screen.getByText("导出本周报表")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText("小区动态 (本周变化)")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "青枫花园 滨江核心 · 三房" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "云澜府 城东新区 · 四房" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("保存复盘记录")).toBeInTheDocument();
   });
 });

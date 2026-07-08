@@ -159,7 +159,7 @@ function CommunityCard({
       {emphasized ? <div className="absolute bottom-0 left-0 top-0 w-1 bg-blue-500" /> : null}
       <div className="mb-3 flex items-start justify-between">
         <h3 className="text-lg font-bold text-slate-900">
-          {name}
+          {name}{" "}
           <span className="ml-2 text-xs font-normal text-slate-500">{meta}</span>
         </h3>
         <StatusBadge tone={statusTone}>{status}</StatusBadge>

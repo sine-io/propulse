@@ -11,7 +11,6 @@ import {
 import type { CSSProperties } from "react";
 
 import {
-  evaluateNeighborhoodSignal,
   type NeighborhoodSignalInput,
 } from "@/lib/decision";
 import { defaultNeighborhoodInput } from "@/lib/sample-data";
@@ -42,8 +41,6 @@ export function NeighborhoodsPage({
 }: {
   input?: NeighborhoodSignalInput;
 }) {
-  const signal = evaluateNeighborhoodSignal(input);
-
   return (
     <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <section className="flex flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:flex-row md:items-center">
@@ -89,7 +86,6 @@ export function NeighborhoodsPage({
             <span className="font-bold text-blue-700">500-530万</span>{" "}
             以内的三房，针对挂牌超过 60 天的房源尝试 5%-8% 的砍价空间。
           </p>
-          <p className="sr-only">{signal.nextAction}</p>
         </div>
       </section>
 
