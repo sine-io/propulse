@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import RootLayout, { metadata } from "@/app/layout";
 import { AppHeader } from "./app-header";
 import { ActionWindowPage } from "./action-window-page";
 import { CalculatorPanel } from "./calculator-panel";
@@ -15,7 +17,7 @@ describe("AppHeader", () => {
   it("exposes all MVP navigation entries", () => {
     render(createElement(AppHeader));
 
-    expect(screen.getByRole("link", { name: /房脉 proppulse/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /房脉 propulse/ })).toHaveAttribute(
       "href",
       "/",
     );
@@ -47,6 +49,31 @@ describe("AppHeader", () => {
         within(quickNav).getByRole("link", { name: label }),
       ).toHaveAttribute("href", href);
     }
+  });
+});
+
+describe("RootLayout", () => {
+  it("uses the corrected propulse product name in metadata and footer", () => {
+    const markup = renderToStaticMarkup(
+      createElement(RootLayout, null, createElement("main", null, "短页面")),
+    );
+
+    const misspelledProductName = "prop" + "pulse";
+
+    expect(metadata.title).toBe("房脉 propulse - 房产决策工具");
+    expect(markup).toContain("© 2026 房脉 propulse Prototype");
+    expect(markup).not.toContain(misspelledProductName);
+  });
+
+  it("allows the footer to sit at the viewport bottom on short pages", () => {
+    const markup = renderToStaticMarkup(
+      createElement(RootLayout, null, createElement("main", null, "短页面")),
+    );
+
+    expect(markup).toMatch(
+      /<body class="[^"]*\bflex\b[^"]*\bmin-h-screen\b[^"]*\bflex-col\b/,
+    );
+    expect(markup).toMatch(/<footer class="[^"]*\bmt-auto\b/);
   });
 });
 

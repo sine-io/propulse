@@ -1,4 +1,4 @@
-# PRD v1：房脉 / proppulse
+# PRD v1：房脉 / propulse
 
 ## 1. 背景
 

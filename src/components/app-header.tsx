@@ -43,7 +43,7 @@ export function AppHeader() {
             </svg>
             <span className="text-xl font-bold tracking-tight text-slate-900">
               房脉{" "}
-              <span className="font-light text-slate-500">proppulse</span>
+              <span className="font-light text-slate-500">propulse</span>
             </span>
           </Link>
 
