@@ -50,6 +50,7 @@ type ImportManualListingsResult struct {
 
 func (s *Service) ImportManualListings(ctx context.Context, command ImportManualListingsCommand) (ImportManualListingsResult, error) {
 	command.SourceType = strings.TrimSpace(command.SourceType)
+	command.SourceRef = strings.TrimSpace(command.SourceRef)
 	command.NeighborhoodID = strings.TrimSpace(command.NeighborhoodID)
 	if err := validateImport(command); err != nil {
 		return ImportManualListingsResult{}, err
@@ -101,6 +102,9 @@ func (s *Service) ImportManualListings(ctx context.Context, command ImportManual
 
 func validateImport(command ImportManualListingsCommand) error {
 	if command.SourceType != manualJSONSourceType {
+		return ErrInvalidRequest
+	}
+	if command.SourceRef == "" {
 		return ErrInvalidRequest
 	}
 	if command.NeighborhoodID == "" {

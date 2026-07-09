@@ -72,6 +72,8 @@ func TestImportManualListingsValidatesRequest(t *testing.T) {
 		wantErr error
 	}{
 		{name: "source type", mutate: func(c *ImportManualListingsCommand) { c.SourceType = "crawler" }, wantErr: ErrInvalidRequest},
+		{name: "missing source ref", mutate: func(c *ImportManualListingsCommand) { c.SourceRef = "" }, wantErr: ErrInvalidRequest},
+		{name: "blank source ref", mutate: func(c *ImportManualListingsCommand) { c.SourceRef = " \t\n " }, wantErr: ErrInvalidRequest},
 		{name: "neighborhood id", mutate: func(c *ImportManualListingsCommand) { c.NeighborhoodID = "" }, wantErr: ErrInvalidRequest},
 		{name: "missing records", mutate: func(c *ImportManualListingsCommand) { c.Records = nil }, wantErr: ErrInvalidRequest},
 		{name: "too many records", mutate: func(c *ImportManualListingsCommand) {
@@ -100,6 +102,27 @@ func TestImportManualListingsValidatesRequest(t *testing.T) {
 				t.Fatalf("repository was called for invalid request")
 			}
 		})
+	}
+}
+
+func TestImportManualListingsTrimsSourceRefBeforeSaving(t *testing.T) {
+	repo := &fakeRepository{neighborhoods: map[string]bool{"neighborhood_1": true}}
+	service := NewService(repo, time.Now, func() string { return "id" })
+
+	_, err := service.ImportManualListings(context.Background(), ImportManualListingsCommand{
+		SourceType:     "manual_json",
+		SourceRef:      "  demo-weekly-import  ",
+		NeighborhoodID: "neighborhood_1",
+		Records:        []ManualListingRecord{{ListingPrice: 520, DaysOnMarket: 0}},
+	})
+	if err != nil {
+		t.Fatalf("ImportManualListings() error = %v", err)
+	}
+	if len(repo.rawRecords) != 1 {
+		t.Fatalf("raw records = %d, want 1", len(repo.rawRecords))
+	}
+	if repo.rawRecords[0].SourceRef != "demo-weekly-import" {
+		t.Fatalf("SourceRef = %q, want demo-weekly-import", repo.rawRecords[0].SourceRef)
 	}
 }
 
