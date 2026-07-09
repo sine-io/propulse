@@ -1,0 +1,36 @@
+package router
+
+import (
+	"context"
+	"sync"
+
+	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+)
+
+type inMemoryCalculationRepository struct {
+	mu      sync.RWMutex
+	records map[string]appcapacity.CalculationRecord
+}
+
+func newInMemoryCalculationRepository() *inMemoryCalculationRepository {
+	return &inMemoryCalculationRepository{
+		records: map[string]appcapacity.CalculationRecord{},
+	}
+}
+
+func (r *inMemoryCalculationRepository) Save(_ context.Context, record appcapacity.CalculationRecord) (appcapacity.CalculationRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.records[record.ID] = record
+	return record, nil
+}
+
+func (r *inMemoryCalculationRepository) Find(_ context.Context, id string) (appcapacity.CalculationRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	record, ok := r.records[id]
+	if !ok {
+		return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
+	}
+	return record, nil
+}

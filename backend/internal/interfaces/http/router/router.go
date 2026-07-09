@@ -3,16 +3,20 @@ package router
 import (
 	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+	httphandler "github.com/propulse/propulse/backend/internal/interfaces/http/handler"
 	httpmiddleware "github.com/propulse/propulse/backend/internal/interfaces/http/middleware"
 	"github.com/propulse/propulse/backend/web"
 	"github.com/rs/zerolog"
 )
 
 type Dependencies struct {
-	Log      zerolog.Logger
-	StaticFS fs.FS
+	Log                 zerolog.Logger
+	StaticFS            fs.FS
+	CapacityApplication httphandler.CapacityApplication
 }
 
 var frontendRoutes = map[string]string{
@@ -45,12 +49,16 @@ func New(deps Dependencies) *gin.Engine {
 	})
 
 	api := engine.Group("/api/v1")
-	api.Any("", jsonNotFound)
-	api.Any("/*path", jsonNotFound)
+	capacityApp := deps.CapacityApplication
+	if capacityApp == nil {
+		capacityApp = appcapacity.NewService(newInMemoryCalculationRepository(), nil, nil)
+	}
+	capacityHandler := httphandler.NewCapacity(capacityApp)
+	api.POST("/capacity/calculations", capacityHandler.CreateCalculation)
+	api.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
 
 	admin := engine.Group("/admin/api")
-	admin.Any("", jsonNotFound)
-	admin.Any("/*path", jsonNotFound)
+	admin.Use()
 
 	fileServer := http.FileServer(http.FS(staticFS))
 	engine.GET("/_next/*filepath", gin.WrapH(fileServer))
@@ -60,6 +68,14 @@ func New(deps Dependencies) *gin.Engine {
 	for route, name := range frontendRoutes {
 		engine.GET(route, serveFrontendFile(staticFS, name))
 	}
+
+	engine.NoRoute(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1") || strings.HasPrefix(c.Request.URL.Path, "/admin/api") {
+			jsonNotFound(c)
+			return
+		}
+		http.NotFound(c.Writer, c.Request)
+	})
 
 	return engine
 }

@@ -1,0 +1,182 @@
+openapi: 3.0.3
+info:
+  title: Propulse Backend API
+  version: 0.1.0
+paths:
+  /api/v1/capacity/calculations:
+    post:
+      summary: Create a housing capacity calculation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HousingCapacityInput'
+      responses:
+        '201':
+          description: Calculation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCalculationResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/capacity/calculations/{id}:
+    get:
+      summary: Get a saved housing capacity calculation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Calculation found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculationResponse'
+        '404':
+          description: Calculation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    HousingCapacityInput:
+      type: object
+      required:
+        - cashOnHand
+        - oldHomeValue
+        - oldLoanBalance
+        - monthlyIncome
+        - currentMonthlyMortgage
+        - acceptableMonthlyMortgage
+        - targetTotalPrice
+        - renovationBudget
+        - transactionCosts
+        - transitionRentCost
+      properties:
+        cashOnHand:
+          type: number
+        oldHomeValue:
+          type: number
+        oldLoanBalance:
+          type: number
+        monthlyIncome:
+          type: number
+        currentMonthlyMortgage:
+          type: number
+        acceptableMonthlyMortgage:
+          type: number
+        targetTotalPrice:
+          type: number
+        renovationBudget:
+          type: number
+        transactionCosts:
+          type: number
+        transitionRentCost:
+          type: number
+    HousingCapacityResult:
+      type: object
+      required:
+        - netOldHomeProceeds
+        - deployableCash
+        - safeTotalPrice
+        - strainedTotalPrice
+        - dangerTotalPrice
+        - downPaymentGap
+        - monthlyPayment
+        - monthlyPaymentRatio
+        - pressureLevel
+        - minimumSafeOldHomeSalePrice
+        - strategy
+        - reasons
+      properties:
+        netOldHomeProceeds:
+          type: number
+        deployableCash:
+          type: number
+        safeTotalPrice:
+          type: number
+        strainedTotalPrice:
+          type: number
+        dangerTotalPrice:
+          type: number
+        downPaymentGap:
+          type: number
+        monthlyPayment:
+          type: number
+        monthlyPaymentRatio:
+          type: number
+        pressureLevel:
+          type: string
+          enum: [safe, strained, danger]
+        minimumSafeOldHomeSalePrice:
+          type: number
+        strategy:
+          type: string
+          enum: ["先卖后买或同步推进", "可以同步推进", "暂缓改善"]
+        reasons:
+          type: array
+          items:
+            type: string
+    CreateCalculationResponse:
+      type: object
+      required: [id, result]
+      properties:
+        id:
+          type: string
+        result:
+          type: object
+          required: [pressureLevel, strategy]
+          properties:
+            pressureLevel:
+              type: string
+              enum: [safe, strained, danger]
+            strategy:
+              type: string
+              enum: ["先卖后买或同步推进", "可以同步推进", "暂缓改善"]
+    CalculationResponse:
+      type: object
+      required: [id, input, result, createdAt]
+      properties:
+        id:
+          type: string
+        input:
+          $ref: '#/components/schemas/HousingCapacityInput'
+        result:
+          $ref: '#/components/schemas/HousingCapacityResult'
+        createdAt:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
