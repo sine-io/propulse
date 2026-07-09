@@ -4,28 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"runtime"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/lib/pq"
+	backendmigrations "github.com/propulse/propulse/backend/migrations"
 )
 
 func Run(_ context.Context, databaseURL string, direction string) error {
-	migrationsPath, err := migrationsDir()
-	if err != nil {
-		return err
-	}
-
-	sourceURL := "file://" + migrationsPath
 	dbURL := databaseURL
 	if dbURL == "" {
 		return errors.New("database url is required")
 	}
 
-	m, err := migrate.New(sourceURL, dbURL)
+	source, err := iofs.New(backendmigrations.FS, ".")
+	if err != nil {
+		return err
+	}
+
+	m, err := migrate.NewWithSourceInstance("iofs", source, dbURL)
 	if err != nil {
 		return err
 	}
@@ -43,12 +41,4 @@ func Run(_ context.Context, databaseURL string, direction string) error {
 		return nil
 	}
 	return err
-}
-
-func migrationsDir() (string, error) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", errors.New("unable to resolve migrations directory")
-	}
-	return filepath.Abs(filepath.Join(filepath.Dir(file), "../../../migrations"))
 }
