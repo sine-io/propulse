@@ -14,6 +14,7 @@ type inMemoryNeighborhoodRepository struct {
 	neighborhoods map[string]appneighborhood.Neighborhood
 	metrics       map[string]appneighborhood.MetricSnapshot
 	watchlist     map[string]appneighborhood.WatchlistItem
+	watchlistKeys []string
 }
 
 func newInMemoryNeighborhoodRepository() *inMemoryNeighborhoodRepository {
@@ -21,6 +22,7 @@ func newInMemoryNeighborhoodRepository() *inMemoryNeighborhoodRepository {
 		neighborhoods: map[string]appneighborhood.Neighborhood{},
 		metrics:       map[string]appneighborhood.MetricSnapshot{},
 		watchlist:     map[string]appneighborhood.WatchlistItem{},
+		watchlistKeys: []string{},
 	}
 }
 
@@ -72,6 +74,7 @@ func (r *inMemoryNeighborhoodRepository) AddWatchlistItem(_ context.Context, use
 		CreatedAt:      time.Now().UTC(),
 	}
 	r.watchlist[key] = item
+	r.watchlistKeys = append(r.watchlistKeys, key)
 	return item, nil
 }
 
@@ -80,7 +83,8 @@ func (r *inMemoryNeighborhoodRepository) ListWatchlist(_ context.Context, userID
 	defer r.mu.RUnlock()
 
 	items := []appneighborhood.WatchlistSummary{}
-	for _, item := range r.watchlist {
+	for _, key := range r.watchlistKeys {
+		item := r.watchlist[key]
 		if item.UserID != userID {
 			continue
 		}
@@ -105,7 +109,8 @@ func (r *inMemoryNeighborhoodRepository) ListWatchlistNeighborhoodIDs(_ context.
 
 	seen := map[string]bool{}
 	neighborhoodIDs := []string{}
-	for _, item := range r.watchlist {
+	for _, key := range r.watchlistKeys {
+		item := r.watchlist[key]
 		if seen[item.NeighborhoodID] {
 			continue
 		}

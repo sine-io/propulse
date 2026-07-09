@@ -19,6 +19,42 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func TestInMemoryWatchlistListsItemsByInsertionOrder(t *testing.T) {
+	repo := newInMemoryNeighborhoodRepository()
+	ctx := context.Background()
+
+	for _, input := range []appneighborhood.CreateNeighborhoodInput{
+		{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"},
+		{ID: "neighborhood_2", Name: "云栖苑", Area: "未来科技城", TargetLayout: "三房"},
+		{ID: "neighborhood_3", Name: "晓风印月", Area: "奥体", TargetLayout: "四房"},
+	} {
+		if _, err := repo.CreateNeighborhood(ctx, input); err != nil {
+			t.Fatalf("CreateNeighborhood(%q) error = %v", input.ID, err)
+		}
+	}
+
+	for _, neighborhoodID := range []string{"neighborhood_2", "neighborhood_1", "neighborhood_3"} {
+		if _, err := repo.AddWatchlistItem(ctx, "demo-user", neighborhoodID); err != nil {
+			t.Fatalf("AddWatchlistItem(%q) error = %v", neighborhoodID, err)
+		}
+	}
+
+	for range 100 {
+		items, err := repo.ListWatchlist(ctx, "demo-user")
+		if err != nil {
+			t.Fatalf("ListWatchlist() error = %v", err)
+		}
+		got := []string{}
+		for _, item := range items {
+			got = append(got, item.NeighborhoodID)
+		}
+		want := []string{"neighborhood_2", "neighborhood_1", "neighborhood_3"}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("watchlist order = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestHealthAndReadyRoutes(t *testing.T) {
 	engine := New(Dependencies{
 		Log:      zerolog.New(io.Discard),
