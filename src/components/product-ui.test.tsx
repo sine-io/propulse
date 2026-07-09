@@ -1,9 +1,14 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import RootLayout, { metadata } from "@/app/layout";
+import {
+  createCapacityCalculation,
+  getActionWindow,
+  getWatchlist,
+} from "@/lib/api-client";
 import { AppHeader } from "./app-header";
 import { ActionWindowPage } from "./action-window-page";
 import { CalculatorPanel } from "./calculator-panel";
@@ -12,6 +17,26 @@ import { MethodsPage } from "./methods-page";
 import { NeighborhoodsPage } from "./neighborhoods-page";
 import { TemplatesPage } from "./templates-page";
 import { WatchlistPage } from "./watchlist-page";
+
+vi.mock("@/lib/api-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-client")>();
+
+  return {
+    ...actual,
+    createCapacityCalculation: vi.fn(),
+    getActionWindow: vi.fn(),
+    getWatchlist: vi.fn(),
+  };
+});
+
+beforeEach(() => {
+  vi.mocked(createCapacityCalculation).mockReset();
+  vi.mocked(getActionWindow).mockReset();
+  vi.mocked(getWatchlist).mockReset();
+  vi.mocked(createCapacityCalculation).mockRejectedValue(new Error("api unavailable"));
+  vi.mocked(getActionWindow).mockRejectedValue(new Error("api unavailable"));
+  vi.mocked(getWatchlist).mockRejectedValue(new Error("api unavailable"));
+});
 
 describe("AppHeader", () => {
   it("exposes all MVP navigation entries", () => {
@@ -111,6 +136,48 @@ describe("CalculatorPanel", () => {
     expect(screen.getByText("危险")).toBeInTheDocument();
     expect(screen.getByText("暂缓改善")).toBeInTheDocument();
   });
+
+  it("posts current input and displays the API diagnosis when regenerated", async () => {
+    vi.mocked(createCapacityCalculation).mockResolvedValueOnce({
+      id: "calculation_1",
+      result: {
+        pressureLevel: "safe",
+        strategy: "可以同步推进",
+      },
+    });
+    render(createElement(CalculatorPanel));
+
+    fireEvent.change(screen.getByLabelText("目标总价（万）"), {
+      target: { value: "500" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重新生成诊断报告" }));
+
+    await waitFor(() => {
+      expect(createCapacityCalculation).toHaveBeenCalledWith(
+        expect.objectContaining({ targetTotalPrice: 500 }),
+        expect.any(AbortSignal),
+      );
+    });
+    expect(
+      await screen.findByText((content) => content.includes("可以同步推进")),
+    ).toBeInTheDocument();
+    expect(screen.getByText("安全")).toBeInTheDocument();
+  });
+
+  it("shows an inline API error while preserving the local preview", async () => {
+    vi.mocked(createCapacityCalculation).mockRejectedValueOnce(
+      new Error("api unavailable"),
+    );
+    render(createElement(CalculatorPanel));
+
+    fireEvent.change(screen.getByLabelText("目标总价（万）"), {
+      target: { value: "720" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重新生成诊断报告" }));
+
+    expect(await screen.findByText("诊断报告暂时无法更新，请稍后重试。")).toBeInTheDocument();
+    expect(screen.getByText("危险")).toBeInTheDocument();
+  });
 });
 
 describe("NeighborhoodsPage", () => {
@@ -138,6 +205,22 @@ describe("ActionWindowPage", () => {
     expect(screen.getByText("积极看房，大胆砍价")).toBeInTheDocument();
     expect(screen.getByText("策略执行信心")).toBeInTheDocument();
     expect(screen.getByText("风险警示")).toBeInTheDocument();
+  });
+
+  it("renders API action window recommendations", async () => {
+    vi.mocked(getActionWindow).mockResolvedValueOnce({
+      action: "出手",
+      confidence: "高",
+      summary: "预算安全且目标户型稀缺，可以准备出手。",
+      checklist: ["确认贷款批复。", "准备谈价底线。"],
+      risks: ["不要因为稀缺而突破预算。"],
+    });
+    render(createElement(ActionWindowPage));
+
+    expect(await screen.findByText("建议出手")).toBeInTheDocument();
+    expect(screen.getByText("高")).toBeInTheDocument();
+    expect(screen.getByText("确认贷款批复。")).toBeInTheDocument();
+    expect(screen.getByText("不要因为稀缺而突破预算。")).toBeInTheDocument();
   });
 });
 
@@ -168,6 +251,34 @@ describe("WatchlistPage", () => {
       screen.getByRole("heading", { name: "云澜府 城东新区 · 四房" }),
     ).toBeInTheDocument();
     expect(screen.getByText("保存复盘记录")).toBeInTheDocument();
+  });
+
+  it("renders API watchlist items when available", async () => {
+    vi.mocked(getWatchlist).mockResolvedValueOnce({
+      items: [
+        {
+          id: "watchlist_1",
+          neighborhoodId: "neighborhood_api",
+          name: "接口花园",
+          area: "南城",
+          targetLayout: "两房",
+          status: "重点看",
+          listedHomes: 18,
+          priceCutHomes: 6,
+          transactionMomentum: "strong",
+          advice: "API 返回的重点建议。",
+        },
+      ],
+    });
+    render(createElement(WatchlistPage));
+
+    expect(
+      await screen.findByRole("heading", { name: "接口花园 南城 · 两房" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("18套")).toBeInTheDocument();
+    expect(
+      screen.getByText((content) => content.includes("API 返回的重点建议。")),
+    ).toBeInTheDocument();
   });
 });
 

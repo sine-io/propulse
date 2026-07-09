@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 import { Calculator, CheckCircle } from "lucide-react";
 
+import { createCapacityCalculation } from "@/lib/api-client";
 import {
   calculateHousingCapacity,
   type HousingCapacityInput,
+  type HousingCapacityResult,
   type PressureLevel,
 } from "@/lib/decision";
 import { defaultHousingInput } from "@/lib/sample-data";
@@ -88,7 +90,13 @@ const fields: Array<{ title?: string; items: Field[] }> = [
 
 export function CalculatorPanel() {
   const [input, setInput] = useState<HousingCapacityInput>(defaultHousingInput);
-  const result = useMemo(() => calculateHousingCapacity(input), [input]);
+  const [apiResult, setApiResult] = useState<
+    Pick<HousingCapacityResult, "pressureLevel" | "strategy"> | undefined
+  >();
+  const [apiError, setApiError] = useState<string | undefined>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const localResult = useMemo(() => calculateHousingCapacity(input), [input]);
+  const result = apiResult ? { ...localResult, ...apiResult } : localResult;
   const pressure = pressureCopy[result.pressureLevel];
   const isReferenceScenario = input.targetTotalPrice === 550;
 
@@ -99,6 +107,25 @@ export function CalculatorPanel() {
       ...current,
       [field.key]: Number.isFinite(next) ? (field.parse?.(value) ?? next) : 0,
     }));
+    setApiResult(undefined);
+    setApiError(undefined);
+  };
+
+  const regenerateReport = async () => {
+    const controller = new AbortController();
+
+    setIsSubmitting(true);
+    setApiError(undefined);
+
+    try {
+      const response = await createCapacityCalculation(input, controller.signal);
+      setApiResult(response.result);
+    } catch {
+      setApiError("诊断报告暂时无法更新，请稍后重试。");
+      setApiResult(undefined);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -145,10 +172,14 @@ export function CalculatorPanel() {
           ))}
           <button
             type="button"
+            onClick={regenerateReport}
             className="mt-4 w-full rounded-lg bg-blue-600 py-3 font-medium text-white transition-colors hover:bg-blue-700"
           >
-            重新生成诊断报告
+            {isSubmitting ? "生成中..." : "重新生成诊断报告"}
           </button>
+          {apiError ? (
+            <p className="text-sm font-medium text-rose-600">{apiError}</p>
+          ) : null}
         </form>
       </section>
 
@@ -219,7 +250,10 @@ export function CalculatorPanel() {
                 </>
               ) : (
                 <strong className="text-slate-900">
-                  建议先卖后买，或同步推进。绝不建议未售出旧房前下定金。
+                  {result.strategy}
+                  {result.strategy === "先卖后买或同步推进"
+                    ? "。绝不建议未售出旧房前下定金。"
+                    : "。继续保持现金流安全边界。"}
                 </strong>
               )}
             </p>

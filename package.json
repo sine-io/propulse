@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "generate:api": "openapi-typescript backend/api/openapi.yaml -o src/lib/generated-api.d.ts",
     "build": "next build",
     "build:web": "pnpm build && node scripts/sync-static-web.mjs",
     "start": "next start",
@@ -36,6 +37,7 @@
     "eslint": "8.57.1",
     "eslint-config-next": "15.5.6",
     "jsdom": "latest",
+    "openapi-typescript": "^7.13.0",
     "postcss": "latest",
     "tailwindcss": "3.4.17",
     "typescript": "latest",

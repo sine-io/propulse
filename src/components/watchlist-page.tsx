@@ -1,9 +1,97 @@
+"use client";
+
 import Link from "next/link";
 import { Bell, CheckCircle, Eye } from "lucide-react";
+import { useEffect, useState } from "react";
 
+import { getWatchlist, type WatchlistItem } from "@/lib/api-client";
 import { StatusBadge } from "./status-badge";
 
+type CommunityView = {
+  advice: string;
+  cuts: string;
+  emphasized: boolean;
+  icon: "check" | "eye";
+  listed: string;
+  listedDelta: string;
+  meta: string;
+  name: string;
+  status: string;
+  statusTone: "emerald" | "amber";
+  transaction: string;
+};
+
+const fallbackCommunities: CommunityView[] = [
+  {
+    advice: "约看 500-530 万三房，尝试砍价，窗口期已打开。",
+    cuts: "11套",
+    emphasized: true,
+    icon: "check",
+    listed: "42套",
+    listedDelta: "(+8)",
+    meta: "滨江核心 · 三房",
+    name: "青枫花园",
+    status: "适合砍价",
+    statusTone: "emerald",
+    transaction: "偏弱",
+  },
+  {
+    advice: "挂牌价无明显松动，且超出安全预算，建议暂缓约看。",
+    cuts: "2套",
+    emphasized: false,
+    icon: "eye",
+    listed: "28套",
+    listedDelta: "(-)",
+    meta: "城东新区 · 四房",
+    name: "云澜府",
+    status: "继续观察",
+    statusTone: "amber",
+    transaction: "平稳",
+  },
+];
+
+const fallbackStats = {
+  bargain: 1,
+  hard: 2,
+  priceCuts: 2,
+  total: 5,
+};
+
 export function WatchlistPage() {
+  const [communities, setCommunities] =
+    useState<CommunityView[]>(fallbackCommunities);
+  const [stats, setStats] = useState(fallbackStats);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    getWatchlist(controller.signal)
+      .then((response) => {
+        if (response.items.length === 0) {
+          return;
+        }
+
+        const nextCommunities = response.items.map(toCommunityView);
+        setCommunities(nextCommunities);
+        setStats({
+          bargain: response.items.filter((item) =>
+            ["重点看", "适合砍价"].includes(item.status),
+          ).length,
+          hard: response.items.filter((item) => item.status === "价格偏硬").length,
+          priceCuts: response.items.filter((item) => item.priceCutHomes > 0).length,
+          total: response.items.length,
+        });
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setCommunities(fallbackCommunities);
+          setStats(fallbackStats);
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <section className="mb-8 flex items-end justify-between">
@@ -21,10 +109,34 @@ export function WatchlistPage() {
 
       <section className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
         {[
-          ["本周关注小区", "5", "个", "text-slate-800", "border-slate-200 bg-white"],
-          ["出现降价信号", "2", "个", "text-amber-600", "border-slate-200 bg-white"],
-          ["进入可砍价窗口", "1", "个", "text-blue-700", "border-blue-200 bg-blue-50/50"],
-          ["价格仍偏硬", "2", "个", "text-slate-600", "border-slate-200 bg-white"],
+          [
+            "本周关注小区",
+            String(stats.total),
+            "个",
+            "text-slate-800",
+            "border-slate-200 bg-white",
+          ],
+          [
+            "出现降价信号",
+            String(stats.priceCuts),
+            "个",
+            "text-amber-600",
+            "border-slate-200 bg-white",
+          ],
+          [
+            "进入可砍价窗口",
+            String(stats.bargain),
+            "个",
+            "text-blue-700",
+            "border-blue-200 bg-blue-50/50",
+          ],
+          [
+            "价格仍偏硬",
+            String(stats.hard),
+            "个",
+            "text-slate-600",
+            "border-slate-200 bg-white",
+          ],
         ].map(([label, value, unit, color, cardClass]) => (
           <div key={label} className={`rounded-xl border p-4 ${cardClass}`}>
             <p
@@ -44,31 +156,9 @@ export function WatchlistPage() {
       <section className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <h2 className="mb-4 font-bold text-slate-800">小区动态 (本周变化)</h2>
-          <CommunityCard
-            emphasized
-            name="青枫花园"
-            meta="滨江核心 · 三房"
-            status="适合砍价"
-            statusTone="emerald"
-            listed="42套"
-            listedDelta="(+8)"
-            cuts="11套"
-            transaction="偏弱"
-            icon="check"
-            advice="约看 500-530 万三房，尝试砍价，窗口期已打开。"
-          />
-          <CommunityCard
-            name="云澜府"
-            meta="城东新区 · 四房"
-            status="继续观察"
-            statusTone="amber"
-            listed="28套"
-            listedDelta="(-)"
-            cuts="2套"
-            transaction="平稳"
-            icon="eye"
-            advice="挂牌价无明显松动，且超出安全预算，建议暂缓约看。"
-          />
+          {communities.map((community) => (
+            <CommunityCard key={`${community.name}-${community.meta}`} {...community} />
+          ))}
         </div>
 
         <aside className="space-y-6">
@@ -122,6 +212,30 @@ export function WatchlistPage() {
     </main>
   );
 }
+
+function toCommunityView(item: WatchlistItem, index: number): CommunityView {
+  const canBargain = item.status === "重点看" || item.status === "适合砍价";
+
+  return {
+    advice: item.advice,
+    cuts: `${item.priceCutHomes}套`,
+    emphasized: index === 0,
+    icon: canBargain ? "check" : "eye",
+    listed: `${item.listedHomes}套`,
+    listedDelta: "",
+    meta: `${item.area} · ${item.targetLayout}`,
+    name: item.name,
+    status: item.status,
+    statusTone: canBargain ? "emerald" : "amber",
+    transaction: momentumCopy[item.transactionMomentum],
+  };
+}
+
+const momentumCopy: Record<WatchlistItem["transactionMomentum"], string> = {
+  stable: "平稳",
+  strong: "活跃",
+  weak: "偏弱",
+};
 
 function CommunityCard({
   advice,
