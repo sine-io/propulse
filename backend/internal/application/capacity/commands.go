@@ -23,7 +23,7 @@ func NewService(repo CalculationRepository, now func() time.Time, newID func() s
 		now = time.Now
 	}
 	if newID == nil {
-		newID = func() string { return "calc_" + uuid.NewString() }
+		newID = uuid.NewString
 	}
 	return &Service{
 		repo:  repo,
