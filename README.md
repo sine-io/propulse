@@ -64,14 +64,14 @@
 
 ```bash
 pnpm install
-pnpm verify
+pnpm --dir apps/web verify
 ```
 
 刷新 Go `embed` 使用的静态前端产物，并运行后端测试：
 
 ```bash
-pnpm build:web
-cd backend && go test ./...
+pnpm --dir apps/web build:web
+go test ./...
 ```
 
 使用 Docker Compose 启动集成服务：
@@ -99,7 +99,7 @@ curl -X POST http://127.0.0.1:18080/admin/api/imports \
 也可以运行本地集成冒烟脚本，完成 Compose 构建、健康检查、关注列表 API 和 E2E smoke test：
 
 ```bash
-pnpm verify:stack
+bash scripts/verify-stack.sh
 ```
 
 ## 后端二进制模式

@@ -1,0 +1,47 @@
+{
+  "name": "@propulse/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "generate:api": "openapi-typescript ../../api/openapi.yaml -o src/lib/generated-api.d.ts",
+    "build": "next build",
+    "build:web": "pnpm build && node ../../scripts/sync-static-web.mjs",
+    "start": "next start",
+    "lint": "eslint src --ext .ts,.tsx --max-warnings=0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test",
+    "verify:stack": "bash ../../scripts/verify-stack.sh"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "latest",
+    "class-variance-authority": "latest",
+    "clsx": "latest",
+    "lucide-react": "latest",
+    "next": "15.5.6",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "recharts": "latest",
+    "tailwind-merge": "latest",
+    "tailwindcss-animate": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/react": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "autoprefixer": "latest",
+    "eslint": "8.57.1",
+    "eslint-config-next": "15.5.6",
+    "jsdom": "latest",
+    "openapi-typescript": "^7.13.0",
+    "postcss": "latest",
+    "tailwindcss": "3.4.17",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}

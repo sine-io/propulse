@@ -9,7 +9,4 @@ docker compose up --build -d
 curl -fsS http://127.0.0.1:18080/healthz >/dev/null
 curl -fsS http://127.0.0.1:18080/api/v1/watchlist >/dev/null
 
-(
-  cd backend
-  PROPULSE_E2E_BASE_URL=http://127.0.0.1:18080 go test ./internal/platform/app -run TestE2ESmoke -v
-)
+PROPULSE_E2E_BASE_URL=http://127.0.0.1:18080 go test ./internal/platform/app -run TestE2ESmoke -v

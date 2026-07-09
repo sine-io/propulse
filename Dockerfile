@@ -6,13 +6,14 @@ RUN npm install -g pnpm@11.8.0
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json ./apps/web/package.json
 RUN pnpm install --frozen-lockfile
 
 FROM node-deps AS frontend-builder
 
 COPY . .
-RUN pnpm build:web
+RUN pnpm --dir apps/web build:web
 
 FROM golang:1.25-alpine AS go-builder
 
@@ -20,15 +21,18 @@ RUN apk add --no-cache git
 
 WORKDIR /src
 
-COPY backend/go.mod backend/go.sum ./backend/
-WORKDIR /src/backend
+COPY go.mod go.sum ./
 RUN go mod download
 
-WORKDIR /src
-COPY backend ./backend
-COPY --from=frontend-builder /app/backend/web/static ./backend/web/static
+COPY api ./api
+COPY cmd ./cmd
+COPY internal ./internal
+COPY migrations ./migrations
+COPY queries ./queries
+COPY web ./web
+COPY sqlc.yaml ./
+COPY --from=frontend-builder /app/web/static ./web/static
 
-WORKDIR /src/backend
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/propulse ./cmd/propulse
 
 FROM alpine:3.22 AS runner
