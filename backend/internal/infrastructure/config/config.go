@@ -1,21 +1,26 @@
 package config
 
-import "os"
+import (
+	"os"
+	"time"
+)
 
 const (
-	defaultHTTPAddr    = ":8080"
-	defaultDatabaseURL = "postgres://propulse:propulse@127.0.0.1:5432/propulse?sslmode=disable"
-	defaultRedisAddr   = "127.0.0.1:6379"
-	defaultLogLevel    = "info"
+	defaultHTTPAddr          = ":8080"
+	defaultDatabaseURL       = "postgres://propulse:propulse@127.0.0.1:5432/propulse?sslmode=disable"
+	defaultRedisAddr         = "127.0.0.1:6379"
+	defaultLogLevel          = "info"
+	defaultSchedulerInterval = time.Hour
 )
 
 type Config struct {
-	HTTPAddr     string
-	DatabaseURL  string
-	RedisAddr    string
-	Mode         string
-	SeedDemoData bool
-	Log          LogConfig
+	HTTPAddr          string
+	DatabaseURL       string
+	RedisAddr         string
+	Mode              string
+	SeedDemoData      bool
+	SchedulerInterval time.Duration
+	Log               LogConfig
 }
 
 type LogConfig struct {
@@ -24,16 +29,31 @@ type LogConfig struct {
 }
 
 func Load() (Config, error) {
+	schedulerInterval, err := parseDurationEnv("PROPULSE_SCHEDULER_INTERVAL", defaultSchedulerInterval)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
-		HTTPAddr:     getEnv("PROPULSE_HTTP_ADDR", defaultHTTPAddr),
-		DatabaseURL:  getEnv("PROPULSE_DATABASE_URL", defaultDatabaseURL),
-		RedisAddr:    getEnv("PROPULSE_REDIS_ADDR", defaultRedisAddr),
-		SeedDemoData: getEnv("PROPULSE_SEED_DEMO_DATA", "") == "true",
+		HTTPAddr:          getEnv("PROPULSE_HTTP_ADDR", defaultHTTPAddr),
+		DatabaseURL:       getEnv("PROPULSE_DATABASE_URL", defaultDatabaseURL),
+		RedisAddr:         getEnv("PROPULSE_REDIS_ADDR", defaultRedisAddr),
+		SeedDemoData:      getEnv("PROPULSE_SEED_DEMO_DATA", "") == "true",
+		SchedulerInterval: schedulerInterval,
 		Log: LogConfig{
 			Level:  getEnv("PROPULSE_LOG_LEVEL", defaultLogLevel),
 			Pretty: getEnv("PROPULSE_LOG_PRETTY", "") == "true",
 		},
 	}, nil
+}
+
+func parseDurationEnv(key string, fallback time.Duration) (time.Duration, error) {
+	value := getEnv(key, "")
+	if value == "" {
+		return fallback, nil
+	}
+
+	return time.ParseDuration(value)
 }
 
 func getEnv(key, fallback string) string {

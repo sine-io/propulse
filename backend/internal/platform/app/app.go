@@ -11,17 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
 	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
+	appmetric "github.com/propulse/propulse/backend/internal/application/metric"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
+	appqueue "github.com/propulse/propulse/backend/internal/application/queue"
 	"github.com/propulse/propulse/backend/internal/infrastructure/config"
 	migraterunner "github.com/propulse/propulse/backend/internal/infrastructure/migrate"
 	postgresgorm "github.com/propulse/propulse/backend/internal/infrastructure/postgres/gorm"
 	"github.com/propulse/propulse/backend/internal/infrastructure/postgres/sqlmetric"
+	infrastructurequeue "github.com/propulse/propulse/backend/internal/infrastructure/queue"
 	"github.com/propulse/propulse/backend/internal/interfaces/http/router"
 	"github.com/propulse/propulse/backend/web"
 	"github.com/rs/zerolog"
 )
 
 const Usage = "usage: propulse [serve|api|worker|scheduler|migrate up|migrate down]"
+const schedulerSourceID = "scheduler.watchlist"
+const schedulerUserID = "demo-user"
 
 type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
@@ -40,7 +45,18 @@ type CollectionApplication interface {
 	ImportManualListings(ctx context.Context, command appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error)
 }
 
+type MetricApplication interface {
+	CalculateNeighborhood(ctx context.Context, neighborhoodID string) error
+}
+
+type MetricTaskEnqueuer interface {
+	EnqueueMetricCalculateNeighborhood(ctx context.Context, neighborhoodID string, sourceID string) error
+}
+
 var runMigrations = migraterunner.Run
+var runHTTPServerFunc = runHTTPServer
+var startQueueWorker = runQueueWorker
+var startScheduler = runScheduler
 var openCapacityApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (CapacityApplication, io.Closer, error) {
 	db, sqlDB, err := postgresgorm.Open(cfg.DatabaseURL)
 	if err != nil {
@@ -95,6 +111,24 @@ var openCollectionApplication = func(ctx context.Context, cfg config.Config, log
 	repo := postgresgorm.NewCollectionRepository(db)
 	service := appcollection.NewService(repo, time.Now, nil)
 	return service, sqlDB, nil
+}
+
+var openMetricApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (MetricApplication, io.Closer, error) {
+	metricPool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	service := appmetric.NewService(sqlmetric.NewRepository(metricPool))
+	return service, closerFunc(func() error {
+		metricPool.Close()
+		return nil
+	}), nil
+}
+
+var openMetricQueueClient = func(cfg config.Config) (MetricTaskEnqueuer, io.Closer, error) {
+	client := infrastructurequeue.NewClient(cfg.RedisAddr)
+	return client, client, nil
 }
 
 var listenAndServe = func(server *http.Server) error {
@@ -154,18 +188,120 @@ func Run(ctx context.Context, mode string, cfg config.Config, log zerolog.Logger
 		Msg("starting propulse backend")
 
 	switch mode {
-	case "serve", "api":
-		return runHTTPServer(ctx, cfg, log)
+	case "serve":
+		return runComponents(ctx,
+			func(ctx context.Context) error { return runHTTPServerFunc(ctx, cfg, log) },
+			func(ctx context.Context) error { return startQueueWorker(ctx, cfg, log) },
+			func(ctx context.Context) error { return startScheduler(ctx, cfg, log) },
+		)
+	case "api":
+		return runHTTPServerFunc(ctx, cfg, log)
 	case "migrate up":
 		return runMigrations(ctx, cfg.DatabaseURL, "up")
 	case "migrate down":
 		return runMigrations(ctx, cfg.DatabaseURL, "down")
-	case "worker", "scheduler":
-		<-ctx.Done()
-		return nil
+	case "worker":
+		return startQueueWorker(ctx, cfg, log)
+	case "scheduler":
+		return startScheduler(ctx, cfg, log)
 	default:
 		return errors.New(Usage)
 	}
+}
+
+func runComponents(parent context.Context, components ...func(context.Context) error) error {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+
+	errCh := make(chan error, len(components))
+	for _, component := range components {
+		go func(component func(context.Context) error) {
+			errCh <- component(ctx)
+		}(component)
+	}
+
+	var firstErr error
+	for range components {
+		err := <-errCh
+		cancel()
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func runQueueWorker(ctx context.Context, cfg config.Config, log zerolog.Logger) error {
+	metricApp, closer, err := openMetricApplication(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = closer.Close()
+	}()
+
+	log.Info().Msg("starting asynq worker")
+	return infrastructurequeue.NewServer(cfg.RedisAddr, metricApp, log).Run(ctx)
+}
+
+func runScheduler(ctx context.Context, cfg config.Config, log zerolog.Logger) error {
+	neighborhoodApp, neighborhoodCloser, err := openNeighborhoodApplication(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = neighborhoodCloser.Close()
+	}()
+
+	enqueuer, queueCloser, err := openMetricQueueClient(cfg)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = queueCloser.Close()
+	}()
+
+	interval := cfg.SchedulerInterval
+	if interval <= 0 {
+		interval = time.Hour
+	}
+
+	if err := enqueueWatchlistMetricJobs(ctx, neighborhoodApp, enqueuer, log); err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := enqueueWatchlistMetricJobs(ctx, neighborhoodApp, enqueuer, log); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func enqueueWatchlistMetricJobs(ctx context.Context, neighborhoodApp NeighborhoodApplication, enqueuer MetricTaskEnqueuer, log zerolog.Logger) error {
+	items, err := neighborhoodApp.ListWatchlist(ctx, appneighborhood.ListWatchlistQuery{UserID: schedulerUserID})
+	if err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		log.Info().
+			Str("task_type", appqueue.TypeMetricCalculateNeighborhood).
+			Str("source_id", schedulerSourceID).
+			Str("neighborhood_id", item.NeighborhoodID).
+			Msg("enqueueing metric calculation")
+		if err := enqueuer.EnqueueMetricCalculateNeighborhood(ctx, item.NeighborhoodID, schedulerSourceID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger) error {

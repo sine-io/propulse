@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,6 +45,93 @@ func TestRunStartsHTTPServerForAPIMode(t *testing.T) {
 
 func TestRunStartsHTTPServerForServeMode(t *testing.T) {
 	testRunStartsHTTPServer(t, "serve")
+}
+
+func TestRunAPIModeDoesNotStartWorkerOrScheduler(t *testing.T) {
+	calls := testRunModeComposition(t, "api")
+
+	if calls.http != 1 || calls.worker != 0 || calls.scheduler != 0 {
+		t.Fatalf("calls = %+v, want api to start HTTP only", calls)
+	}
+}
+
+func TestRunServeModeStartsHTTPWorkerAndScheduler(t *testing.T) {
+	calls := testRunModeComposition(t, "serve")
+
+	if calls.http != 1 || calls.worker != 1 || calls.scheduler != 1 {
+		t.Fatalf("calls = %+v, want serve to start HTTP, worker, and scheduler", calls)
+	}
+}
+
+func TestRunWorkerModeStartsOnlyWorker(t *testing.T) {
+	calls := testRunModeComposition(t, "worker")
+
+	if calls.http != 0 || calls.worker != 1 || calls.scheduler != 0 {
+		t.Fatalf("calls = %+v, want worker mode to start only worker", calls)
+	}
+}
+
+func TestRunSchedulerModeStartsOnlyScheduler(t *testing.T) {
+	calls := testRunModeComposition(t, "scheduler")
+
+	if calls.http != 0 || calls.worker != 0 || calls.scheduler != 1 {
+		t.Fatalf("calls = %+v, want scheduler mode to start only scheduler", calls)
+	}
+}
+
+func TestRunSchedulerEnqueuesMetricJobsForWatchlist(t *testing.T) {
+	originalOpenNeighborhoodApplication := openNeighborhoodApplication
+	originalOpenMetricQueueClient := openMetricQueueClient
+	defer func() {
+		openNeighborhoodApplication = originalOpenNeighborhoodApplication
+		openMetricQueueClient = originalOpenMetricQueueClient
+	}()
+
+	neighborhoodApp := &stubAppNeighborhoodApplication{
+		watchlist: []appneighborhood.WatchlistItemSummary{
+			{NeighborhoodID: "neighborhood_1"},
+			{NeighborhoodID: "neighborhood_2"},
+		},
+	}
+	enqueuer := &stubMetricTaskEnqueuer{}
+	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
+		return neighborhoodApp, noopCloser{}, nil
+	}
+	openMetricQueueClient = func(_ config.Config) (MetricTaskEnqueuer, io.Closer, error) {
+		return enqueuer, noopCloser{}, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runScheduler(ctx, config.Config{SchedulerInterval: time.Hour}, zerolog.New(io.Discard))
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for enqueuer.count() < 2 {
+		select {
+		case <-deadline:
+			neighborhoodIDs, _ := enqueuer.snapshot()
+			t.Fatalf("scheduler did not enqueue watchlist jobs; got %#v", neighborhoodIDs)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("runScheduler() error = %v", err)
+	}
+
+	want := []string{"neighborhood_1", "neighborhood_2"}
+	neighborhoodIDs, sourceIDs := enqueuer.snapshot()
+	if fmt.Sprint(neighborhoodIDs) != fmt.Sprint(want) {
+		t.Fatalf("enqueued neighborhood IDs = %#v, want %#v", neighborhoodIDs, want)
+	}
+	for _, sourceID := range sourceIDs {
+		if sourceID != schedulerSourceID {
+			t.Fatalf("sourceID = %q, want %q", sourceID, schedulerSourceID)
+		}
+	}
 }
 
 func TestRunMigrateUpRunsMigrations(t *testing.T) {
@@ -281,10 +369,14 @@ func testRunStartsHTTPServer(t *testing.T, mode string) {
 	originalOpenCapacityApplication := openCapacityApplication
 	originalOpenNeighborhoodApplication := openNeighborhoodApplication
 	originalOpenCollectionApplication := openCollectionApplication
+	originalStartQueueWorker := startQueueWorker
+	originalStartScheduler := startScheduler
 	defer func() {
 		openCapacityApplication = originalOpenCapacityApplication
 		openNeighborhoodApplication = originalOpenNeighborhoodApplication
 		openCollectionApplication = originalOpenCollectionApplication
+		startQueueWorker = originalStartQueueWorker
+		startScheduler = originalStartScheduler
 	}()
 	openCapacityApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CapacityApplication, io.Closer, error) {
 		return &stubAppCapacityApplication{}, noopCloser{}, nil
@@ -294,6 +386,14 @@ func testRunStartsHTTPServer(t *testing.T, mode string) {
 	}
 	openCollectionApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CollectionApplication, io.Closer, error) {
 		return &stubAppCollectionApplication{}, noopCloser{}, nil
+	}
+	startQueueWorker = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
+		<-ctx.Done()
+		return nil
+	}
+	startScheduler = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
+		<-ctx.Done()
+		return nil
 	}
 
 	addr := freeLocalAddr(t)
@@ -322,6 +422,82 @@ func testRunStartsHTTPServer(t *testing.T, mode string) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatalf("Run(%q) did not stop after cancel", mode)
+	}
+}
+
+type runModeCalls struct {
+	http      int
+	worker    int
+	scheduler int
+}
+
+func testRunModeComposition(t *testing.T, mode string) runModeCalls {
+	t.Helper()
+
+	originalRunHTTPServer := runHTTPServerFunc
+	originalStartQueueWorker := startQueueWorker
+	originalStartScheduler := startScheduler
+	defer func() {
+		runHTTPServerFunc = originalRunHTTPServer
+		startQueueWorker = originalStartQueueWorker
+		startScheduler = originalStartScheduler
+	}()
+
+	calls := runModeCalls{}
+	runHTTPServerFunc = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
+		calls.http++
+		<-ctx.Done()
+		return nil
+	}
+	startQueueWorker = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
+		calls.worker++
+		<-ctx.Done()
+		return nil
+	}
+	startScheduler = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
+		calls.scheduler++
+		<-ctx.Done()
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- Run(ctx, mode, config.Config{SchedulerInterval: time.Hour}, zerolog.New(io.Discard))
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		if modeStarted(mode, calls) {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("Run(%q) did not start expected components; calls = %+v", mode, calls)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run(%q) error = %v", mode, err)
+	}
+
+	return calls
+}
+
+func modeStarted(mode string, calls runModeCalls) bool {
+	switch mode {
+	case "api":
+		return calls.http == 1
+	case "serve":
+		return calls.http == 1 && calls.worker == 1 && calls.scheduler == 1
+	case "worker":
+		return calls.worker == 1
+	case "scheduler":
+		return calls.scheduler == 1
+	default:
+		return false
 	}
 }
 
@@ -422,6 +598,32 @@ func (s *stubAppNeighborhoodApplication) ListWatchlist(_ context.Context, _ appn
 type stubAppCollectionApplication struct {
 	importCalled bool
 	result       appcollection.ImportManualListingsResult
+}
+
+type stubMetricTaskEnqueuer struct {
+	mu              sync.Mutex
+	neighborhoodIDs []string
+	sourceIDs       []string
+}
+
+func (s *stubMetricTaskEnqueuer) EnqueueMetricCalculateNeighborhood(_ context.Context, neighborhoodID string, sourceID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.neighborhoodIDs = append(s.neighborhoodIDs, neighborhoodID)
+	s.sourceIDs = append(s.sourceIDs, sourceID)
+	return nil
+}
+
+func (s *stubMetricTaskEnqueuer) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.neighborhoodIDs)
+}
+
+func (s *stubMetricTaskEnqueuer) snapshot() ([]string, []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.neighborhoodIDs...), append([]string(nil), s.sourceIDs...)
 }
 
 func (s *stubAppCollectionApplication) ImportManualListings(_ context.Context, _ appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error) {

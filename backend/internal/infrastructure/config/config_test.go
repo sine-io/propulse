@@ -9,6 +9,7 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	t.Setenv("PROPULSE_LOG_LEVEL", "")
 	t.Setenv("PROPULSE_LOG_PRETTY", "")
 	t.Setenv("PROPULSE_SEED_DEMO_DATA", "")
+	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -33,6 +34,9 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	if cfg.SeedDemoData {
 		t.Fatal("SeedDemoData must default to false")
 	}
+	if cfg.SchedulerInterval.String() != "1h0m0s" {
+		t.Fatalf("SchedulerInterval = %s, want 1h0m0s", cfg.SchedulerInterval)
+	}
 }
 
 func TestLoadEnablesDemoSeedData(t *testing.T) {
@@ -45,5 +49,27 @@ func TestLoadEnablesDemoSeedData(t *testing.T) {
 
 	if !cfg.SeedDemoData {
 		t.Fatal("SeedDemoData = false, want true")
+	}
+}
+
+func TestLoadParsesSchedulerInterval(t *testing.T) {
+	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "10s")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.SchedulerInterval.String() != "10s" {
+		t.Fatalf("SchedulerInterval = %s, want 10s", cfg.SchedulerInterval)
+	}
+}
+
+func TestLoadRejectsInvalidSchedulerInterval(t *testing.T) {
+	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "sometimes")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want invalid interval error")
 	}
 }
