@@ -57,6 +57,12 @@ func (s *Service) ListWatchlist(ctx context.Context, query ListWatchlistQuery) (
 	return summaries, nil
 }
 
+type ListWatchlistNeighborhoodIDsQuery struct{}
+
+func (s *Service) ListWatchlistNeighborhoodIDs(ctx context.Context, _ ListWatchlistNeighborhoodIDsQuery) ([]string, error) {
+	return s.repo.ListWatchlistNeighborhoodIDs(ctx)
+}
+
 type LatestMetricQuery struct {
 	NeighborhoodID string
 }

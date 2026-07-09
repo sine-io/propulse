@@ -88,10 +88,7 @@ func TestRunSchedulerEnqueuesMetricJobsForWatchlist(t *testing.T) {
 	}()
 
 	neighborhoodApp := &stubAppNeighborhoodApplication{
-		watchlist: []appneighborhood.WatchlistItemSummary{
-			{NeighborhoodID: "neighborhood_1"},
-			{NeighborhoodID: "neighborhood_2"},
-		},
+		watchlistNeighborhoodIDs: []string{"neighborhood_1", "neighborhood_2"},
 	}
 	enqueuer := &stubMetricTaskEnqueuer{}
 	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
@@ -131,6 +128,30 @@ func TestRunSchedulerEnqueuesMetricJobsForWatchlist(t *testing.T) {
 		if sourceID != schedulerSourceID {
 			t.Fatalf("sourceID = %q, want %q", sourceID, schedulerSourceID)
 		}
+	}
+}
+
+func TestRunSchedulerUsesDistinctWatchlistNeighborhoodIDs(t *testing.T) {
+	neighborhoodApp := &stubAppNeighborhoodApplication{
+		watchlistNeighborhoodIDs: []string{"neighborhood_1", "neighborhood_2"},
+	}
+	enqueuer := &stubMetricTaskEnqueuer{}
+
+	if err := enqueueWatchlistMetricJobs(context.Background(), neighborhoodApp, enqueuer, zerolog.New(io.Discard)); err != nil {
+		t.Fatalf("enqueueWatchlistMetricJobs() error = %v", err)
+	}
+
+	if neighborhoodApp.listCalled {
+		t.Fatal("scheduler used user-scoped ListWatchlist instead of distinct watchlist neighborhood IDs")
+	}
+	if !neighborhoodApp.listNeighborhoodIDsCalled {
+		t.Fatal("scheduler did not list distinct watchlist neighborhood IDs")
+	}
+
+	want := []string{"neighborhood_1", "neighborhood_2"}
+	neighborhoodIDs, _ := enqueuer.snapshot()
+	if fmt.Sprint(neighborhoodIDs) != fmt.Sprint(want) {
+		t.Fatalf("enqueued neighborhood IDs = %#v, want %#v", neighborhoodIDs, want)
 	}
 }
 
@@ -570,8 +591,10 @@ func (s *stubAppCapacityApplication) GetCalculation(_ context.Context, _ appcapa
 }
 
 type stubAppNeighborhoodApplication struct {
-	listCalled bool
-	watchlist  []appneighborhood.WatchlistItemSummary
+	listCalled                bool
+	listNeighborhoodIDsCalled bool
+	watchlist                 []appneighborhood.WatchlistItemSummary
+	watchlistNeighborhoodIDs  []string
 }
 
 func (s *stubAppNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
@@ -593,6 +616,11 @@ func (s *stubAppNeighborhoodApplication) AddWatchlistItem(_ context.Context, _ a
 func (s *stubAppNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {
 	s.listCalled = true
 	return s.watchlist, nil
+}
+
+func (s *stubAppNeighborhoodApplication) ListWatchlistNeighborhoodIDs(_ context.Context, _ appneighborhood.ListWatchlistNeighborhoodIDsQuery) ([]string, error) {
+	s.listNeighborhoodIDsCalled = true
+	return s.watchlistNeighborhoodIDs, nil
 }
 
 type stubAppCollectionApplication struct {

@@ -144,6 +144,19 @@ func (r *NeighborhoodRepository) ListWatchlist(ctx context.Context, userID strin
 	return items, nil
 }
 
+func (r *NeighborhoodRepository) ListWatchlistNeighborhoodIDs(ctx context.Context) ([]string, error) {
+	var neighborhoodIDs []string
+	err := r.db.WithContext(ctx).
+		Model(&WatchlistItemModel{}).
+		Distinct("neighborhood_id").
+		Order("neighborhood_id ASC").
+		Pluck("neighborhood_id", &neighborhoodIDs).Error
+	if err != nil {
+		return nil, err
+	}
+	return neighborhoodIDs, nil
+}
+
 func (r *NeighborhoodRepository) LatestMetric(ctx context.Context, neighborhoodID string) (appneighborhood.MetricSnapshot, error) {
 	if r.metricReader != nil {
 		return r.metricReader.LatestMetric(ctx, neighborhoodID)

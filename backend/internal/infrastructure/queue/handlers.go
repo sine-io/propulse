@@ -22,6 +22,8 @@ type Handlers struct {
 	log    zerolog.Logger
 }
 
+var taskIDFromContext = asynq.GetTaskID
+
 func NewHandlers(metric MetricCalculator, log zerolog.Logger) *Handlers {
 	return &Handlers{metric: metric, log: log}
 }
@@ -60,7 +62,7 @@ func (h *Handlers) processMetricCalculateNeighborhood(ctx context.Context, task 
 }
 
 func taskID(ctx context.Context) string {
-	id, ok := asynq.GetTaskID(ctx)
+	id, ok := taskIDFromContext(ctx)
 	if !ok {
 		return ""
 	}

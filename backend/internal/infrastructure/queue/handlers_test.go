@@ -33,6 +33,12 @@ func TestMetricCalculateNeighborhoodHandlerRejectsEmptyNeighborhoodID(t *testing
 }
 
 func TestMetricCalculateNeighborhoodHandlerCallsServiceAndLogsContext(t *testing.T) {
+	originalTaskIDFromContext := taskIDFromContext
+	defer func() { taskIDFromContext = originalTaskIDFromContext }()
+	taskIDFromContext = func(context.Context) (string, bool) {
+		return "asynq-task-123", true
+	}
+
 	service := &stubMetricService{}
 	var logs bytes.Buffer
 	handler := NewHandlers(service, zerolog.New(&logs))
@@ -60,8 +66,8 @@ func TestMetricCalculateNeighborhoodHandlerCallsServiceAndLogsContext(t *testing
 	if entry["source_id"] != "scheduler" {
 		t.Fatalf("log source_id = %v, want scheduler", entry["source_id"])
 	}
-	if _, ok := entry["job_id"]; !ok {
-		t.Fatal("log entry is missing job_id")
+	if entry["job_id"] != "asynq-task-123" {
+		t.Fatalf("log job_id = %v, want asynq-task-123", entry["job_id"])
 	}
 }
 

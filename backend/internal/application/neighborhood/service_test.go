@@ -159,6 +159,27 @@ func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
 	}
 }
 
+func TestListWatchlistNeighborhoodIDsReturnsRepositoryIDs(t *testing.T) {
+	repo := newMemoryRepository()
+	repo.watchlistNeighborhoodIDs = []string{"neighborhood_1", "neighborhood_2"}
+	service := NewService(repo)
+
+	got, err := service.ListWatchlistNeighborhoodIDs(context.Background(), ListWatchlistNeighborhoodIDsQuery{})
+	if err != nil {
+		t.Fatalf("ListWatchlistNeighborhoodIDs() error = %v", err)
+	}
+
+	want := []string{"neighborhood_1", "neighborhood_2"}
+	if len(got) != len(want) {
+		t.Fatalf("len(got) = %d, want %d; got %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestLatestMetricEvaluatesSignal(t *testing.T) {
 	repo := newMemoryRepository()
 	repo.metrics["neighborhood_1"] = MetricSnapshot{
@@ -187,10 +208,11 @@ func TestLatestMetricEvaluatesSignal(t *testing.T) {
 }
 
 type memoryRepository struct {
-	neighborhoods map[string]Neighborhood
-	metrics       map[string]MetricSnapshot
-	watchlist     []WatchlistSummary
-	nextID        int
+	neighborhoods            map[string]Neighborhood
+	metrics                  map[string]MetricSnapshot
+	watchlist                []WatchlistSummary
+	watchlistNeighborhoodIDs []string
+	nextID                   int
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -242,6 +264,10 @@ func (m *memoryRepository) ListWatchlist(_ context.Context, userID string) ([]Wa
 		return nil, nil
 	}
 	return m.watchlist, nil
+}
+
+func (m *memoryRepository) ListWatchlistNeighborhoodIDs(_ context.Context) ([]string, error) {
+	return m.watchlistNeighborhoodIDs, nil
 }
 
 func (m *memoryRepository) LatestMetric(_ context.Context, neighborhoodID string) (MetricSnapshot, error) {

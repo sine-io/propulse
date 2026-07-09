@@ -26,7 +26,6 @@ import (
 
 const Usage = "usage: propulse [serve|api|worker|scheduler|migrate up|migrate down]"
 const schedulerSourceID = "scheduler.watchlist"
-const schedulerUserID = "demo-user"
 
 type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
@@ -39,6 +38,7 @@ type NeighborhoodApplication interface {
 	LatestMetric(ctx context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error)
 	AddWatchlistItem(ctx context.Context, command appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error)
 	ListWatchlist(ctx context.Context, query appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error)
+	ListWatchlistNeighborhoodIDs(ctx context.Context, query appneighborhood.ListWatchlistNeighborhoodIDsQuery) ([]string, error)
 }
 
 type CollectionApplication interface {
@@ -286,18 +286,18 @@ func runScheduler(ctx context.Context, cfg config.Config, log zerolog.Logger) er
 }
 
 func enqueueWatchlistMetricJobs(ctx context.Context, neighborhoodApp NeighborhoodApplication, enqueuer MetricTaskEnqueuer, log zerolog.Logger) error {
-	items, err := neighborhoodApp.ListWatchlist(ctx, appneighborhood.ListWatchlistQuery{UserID: schedulerUserID})
+	neighborhoodIDs, err := neighborhoodApp.ListWatchlistNeighborhoodIDs(ctx, appneighborhood.ListWatchlistNeighborhoodIDsQuery{})
 	if err != nil {
 		return err
 	}
 
-	for _, item := range items {
+	for _, neighborhoodID := range neighborhoodIDs {
 		log.Info().
 			Str("task_type", appqueue.TypeMetricCalculateNeighborhood).
 			Str("source_id", schedulerSourceID).
-			Str("neighborhood_id", item.NeighborhoodID).
+			Str("neighborhood_id", neighborhoodID).
 			Msg("enqueueing metric calculation")
-		if err := enqueuer.EnqueueMetricCalculateNeighborhood(ctx, item.NeighborhoodID, schedulerSourceID); err != nil {
+		if err := enqueuer.EnqueueMetricCalculateNeighborhood(ctx, neighborhoodID, schedulerSourceID); err != nil {
 			return err
 		}
 	}
