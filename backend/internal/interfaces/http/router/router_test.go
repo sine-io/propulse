@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
 	"github.com/propulse/propulse/backend/web"
@@ -177,6 +178,38 @@ func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
 	}
 }
 
+func TestAdminImportRoute(t *testing.T) {
+	engine := New(Dependencies{
+		Log:                   zerolog.New(io.Discard),
+		StaticFS:              web.Embedded(),
+		CollectionApplication: &stubCollectionApplication{},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/imports", strings.NewReader(`{
+		"sourceType": "manual_json",
+		"sourceRef": "demo-weekly-import",
+		"neighborhoodId": "neighborhood_1",
+		"records": [{"listingPrice": 520, "daysOnMarket": 0}]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		CollectionRunID       string `json:"collectionRunId"`
+		ImportedSnapshotCount int    `json:"importedSnapshotCount"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if response.CollectionRunID != "collection_run_1" || response.ImportedSnapshotCount != 1 {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
 type stubNeighborhoodApplication struct{}
 
 func (s *stubNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
@@ -223,4 +256,10 @@ func (s *stubNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneig
 			Advice:              "重点看 495-545 万成交区间附近房源，对挂牌久、降价过的房源试探底价。",
 		},
 	}, nil
+}
+
+type stubCollectionApplication struct{}
+
+func (s *stubCollectionApplication) ImportManualListings(_ context.Context, _ appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error) {
+	return appcollection.ImportManualListingsResult{CollectionRunID: "collection_run_1", ImportedSnapshotCount: 1}, nil
 }

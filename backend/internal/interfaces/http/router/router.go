@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	httphandler "github.com/propulse/propulse/backend/internal/interfaces/http/handler"
 	httpmiddleware "github.com/propulse/propulse/backend/internal/interfaces/http/middleware"
@@ -19,6 +20,7 @@ type Dependencies struct {
 	StaticFS                fs.FS
 	CapacityApplication     httphandler.CapacityApplication
 	NeighborhoodApplication httphandler.NeighborhoodApplication
+	CollectionApplication   httphandler.CollectionApplication
 }
 
 var frontendRoutes = map[string]string{
@@ -73,6 +75,12 @@ func New(deps Dependencies) *gin.Engine {
 
 	admin := engine.Group("/admin/api")
 	admin.Use()
+	collectionApp := deps.CollectionApplication
+	if collectionApp == nil {
+		collectionApp = appcollection.NewService(newInMemoryCollectionRepository(), nil, nil)
+	}
+	adminImportsHandler := httphandler.NewAdminImports(collectionApp)
+	admin.POST("/imports", adminImportsHandler.CreateImport)
 
 	fileServer := http.FileServer(http.FS(staticFS))
 	engine.GET("/_next/*filepath", gin.WrapH(fileServer))

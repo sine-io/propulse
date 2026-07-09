@@ -9,6 +9,7 @@ import (
 	"time"
 
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	"github.com/propulse/propulse/backend/internal/infrastructure/config"
 	migraterunner "github.com/propulse/propulse/backend/internal/infrastructure/migrate"
@@ -31,6 +32,10 @@ type NeighborhoodApplication interface {
 	LatestMetric(ctx context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error)
 	AddWatchlistItem(ctx context.Context, command appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error)
 	ListWatchlist(ctx context.Context, query appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error)
+}
+
+type CollectionApplication interface {
+	ImportManualListings(ctx context.Context, command appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error)
 }
 
 var runMigrations = migraterunner.Run
@@ -61,6 +66,17 @@ var openNeighborhoodApplication = func(ctx context.Context, cfg config.Config, l
 	}
 
 	service := appneighborhood.NewService(repo)
+	return service, sqlDB, nil
+}
+
+var openCollectionApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (CollectionApplication, io.Closer, error) {
+	db, sqlDB, err := postgresgorm.Open(cfg.DatabaseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	repo := postgresgorm.NewCollectionRepository(db)
+	service := appcollection.NewService(repo, time.Now, nil)
 	return service, sqlDB, nil
 }
 
@@ -132,11 +148,20 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger) e
 		_ = neighborhoodCloser.Close()
 	}()
 
+	collectionApp, collectionCloser, err := openCollectionApplication(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = collectionCloser.Close()
+	}()
+
 	engine := router.New(router.Dependencies{
 		Log:                     log,
 		StaticFS:                web.Embedded(),
 		CapacityApplication:     capacityApp,
 		NeighborhoodApplication: neighborhoodApp,
+		CollectionApplication:   collectionApp,
 	})
 
 	server := &http.Server{

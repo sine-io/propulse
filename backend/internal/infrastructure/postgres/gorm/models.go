@@ -58,3 +58,30 @@ type NeighborhoodMetricModel struct {
 func (NeighborhoodMetricModel) TableName() string {
 	return "neighborhood_metrics"
 }
+
+type RawCollectionRecordModel struct {
+	ID          string          `gorm:"column:id;type:uuid;primaryKey"`
+	SourceType  string          `gorm:"column:source_type"`
+	SourceRef   string          `gorm:"column:source_ref"`
+	Payload     json.RawMessage `gorm:"column:payload;type:jsonb;not null"`
+	CollectedAt time.Time       `gorm:"column:collected_at;autoCreateTime"`
+}
+
+func (RawCollectionRecordModel) TableName() string {
+	return "raw_collection_records"
+}
+
+type ListingSnapshotModel struct {
+	ID               string    `gorm:"column:id;type:uuid;primaryKey"`
+	NeighborhoodID   string    `gorm:"column:neighborhood_id;type:uuid"`
+	ListingPrice     float64   `gorm:"column:listing_price"`
+	TransactionPrice float64   `gorm:"column:transaction_price"`
+	PriceCut         bool      `gorm:"column:price_cut"`
+	DaysOnMarket     int       `gorm:"column:days_on_market"`
+	Layout           string    `gorm:"column:layout"`
+	CapturedAt       time.Time `gorm:"column:captured_at;autoCreateTime"`
+}
+
+func (ListingSnapshotModel) TableName() string {
+	return "listing_snapshots"
+}

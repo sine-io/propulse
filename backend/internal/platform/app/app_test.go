@@ -11,6 +11,7 @@ import (
 	"time"
 
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	domaincapacity "github.com/propulse/propulse/backend/internal/domain/capacity"
 	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
@@ -75,10 +76,12 @@ func TestRunMigrateUpRunsMigrations(t *testing.T) {
 func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 	originalOpenCapacityApplication := openCapacityApplication
 	originalOpenNeighborhoodApplication := openNeighborhoodApplication
+	originalOpenCollectionApplication := openCollectionApplication
 	originalListenAndServe := listenAndServe
 	defer func() {
 		openCapacityApplication = originalOpenCapacityApplication
 		openNeighborhoodApplication = originalOpenNeighborhoodApplication
+		openCollectionApplication = originalOpenCollectionApplication
 		listenAndServe = originalListenAndServe
 	}()
 
@@ -102,6 +105,9 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 	}
 	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
 		return &stubAppNeighborhoodApplication{}, noopCloser{}, nil
+	}
+	openCollectionApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CollectionApplication, io.Closer, error) {
+		return &stubAppCollectionApplication{}, noopCloser{}, nil
 	}
 
 	listenAndServe = func(server *http.Server) error {
@@ -140,10 +146,12 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 	originalOpenCapacityApplication := openCapacityApplication
 	originalOpenNeighborhoodApplication := openNeighborhoodApplication
+	originalOpenCollectionApplication := openCollectionApplication
 	originalListenAndServe := listenAndServe
 	defer func() {
 		openCapacityApplication = originalOpenCapacityApplication
 		openNeighborhoodApplication = originalOpenNeighborhoodApplication
+		openCollectionApplication = originalOpenCollectionApplication
 		listenAndServe = originalListenAndServe
 	}()
 
@@ -172,6 +180,9 @@ func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
 		}
 		return service, noopCloser{}, nil
+	}
+	openCollectionApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CollectionApplication, io.Closer, error) {
+		return &stubAppCollectionApplication{}, noopCloser{}, nil
 	}
 
 	listenAndServe = func(server *http.Server) error {
@@ -202,20 +213,87 @@ func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 	}
 }
 
+func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
+	originalOpenCapacityApplication := openCapacityApplication
+	originalOpenNeighborhoodApplication := openNeighborhoodApplication
+	originalOpenCollectionApplication := openCollectionApplication
+	originalListenAndServe := listenAndServe
+	defer func() {
+		openCapacityApplication = originalOpenCapacityApplication
+		openNeighborhoodApplication = originalOpenNeighborhoodApplication
+		openCollectionApplication = originalOpenCollectionApplication
+		listenAndServe = originalListenAndServe
+	}()
+
+	service := &stubAppCollectionApplication{
+		result: appcollection.ImportManualListingsResult{
+			CollectionRunID:       "collection_run_1",
+			ImportedSnapshotCount: 1,
+		},
+	}
+
+	openCapacityApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CapacityApplication, io.Closer, error) {
+		return &stubAppCapacityApplication{}, noopCloser{}, nil
+	}
+	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
+		return &stubAppNeighborhoodApplication{}, noopCloser{}, nil
+	}
+	openCollectionApplication = func(_ context.Context, cfg config.Config, _ zerolog.Logger) (CollectionApplication, io.Closer, error) {
+		if cfg.DatabaseURL != "postgres://test" {
+			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
+		}
+		return service, noopCloser{}, nil
+	}
+
+	listenAndServe = func(server *http.Server) error {
+		body := `{"sourceType":"manual_json","sourceRef":"demo-weekly-import","neighborhoodId":"neighborhood_1","records":[{"listingPrice":520,"daysOnMarket":0}]}`
+		req, err := http.NewRequest(http.MethodPost, "/admin/api/imports", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatalf("http.NewRequest() error = %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		rec := newInMemoryHTTPResponseWriter()
+
+		server.Handler.ServeHTTP(rec, req)
+
+		if rec.statusCode != http.StatusCreated {
+			t.Fatalf("status = %d, want 201", rec.statusCode)
+		}
+		if !service.importCalled {
+			t.Fatal("expected injected collection application to handle request")
+		}
+
+		return http.ErrServerClosed
+	}
+
+	err := Run(context.Background(), "api", config.Config{
+		HTTPAddr:    "127.0.0.1:0",
+		DatabaseURL: "postgres://test",
+	}, zerolog.New(io.Discard))
+	if err != nil {
+		t.Fatalf("Run(api) error = %v", err)
+	}
+}
+
 func testRunStartsHTTPServer(t *testing.T, mode string) {
 	t.Helper()
 
 	originalOpenCapacityApplication := openCapacityApplication
 	originalOpenNeighborhoodApplication := openNeighborhoodApplication
+	originalOpenCollectionApplication := openCollectionApplication
 	defer func() {
 		openCapacityApplication = originalOpenCapacityApplication
 		openNeighborhoodApplication = originalOpenNeighborhoodApplication
+		openCollectionApplication = originalOpenCollectionApplication
 	}()
 	openCapacityApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CapacityApplication, io.Closer, error) {
 		return &stubAppCapacityApplication{}, noopCloser{}, nil
 	}
 	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
 		return &stubAppNeighborhoodApplication{}, noopCloser{}, nil
+	}
+	openCollectionApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CollectionApplication, io.Closer, error) {
+		return &stubAppCollectionApplication{}, noopCloser{}, nil
 	}
 
 	addr := freeLocalAddr(t)
@@ -339,6 +417,16 @@ func (s *stubAppNeighborhoodApplication) AddWatchlistItem(_ context.Context, _ a
 func (s *stubAppNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {
 	s.listCalled = true
 	return s.watchlist, nil
+}
+
+type stubAppCollectionApplication struct {
+	importCalled bool
+	result       appcollection.ImportManualListingsResult
+}
+
+func (s *stubAppCollectionApplication) ImportManualListings(_ context.Context, _ appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error) {
+	s.importCalled = true
+	return s.result, nil
 }
 
 type noopCloser struct{}
