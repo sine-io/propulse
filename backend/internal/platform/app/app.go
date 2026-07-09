@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
 	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	"github.com/propulse/propulse/backend/internal/infrastructure/config"
 	migraterunner "github.com/propulse/propulse/backend/internal/infrastructure/migrate"
 	postgresgorm "github.com/propulse/propulse/backend/internal/infrastructure/postgres/gorm"
+	"github.com/propulse/propulse/backend/internal/infrastructure/postgres/sqlmetric"
 	"github.com/propulse/propulse/backend/internal/interfaces/http/router"
 	"github.com/propulse/propulse/backend/web"
 	"github.com/rs/zerolog"
@@ -56,9 +58,16 @@ var openNeighborhoodApplication = func(ctx context.Context, cfg config.Config, l
 		return nil, nil, err
 	}
 
-	repo := postgresgorm.NewNeighborhoodRepository(db)
+	metricPool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		_ = sqlDB.Close()
+		return nil, nil, err
+	}
+
+	repo := postgresgorm.NewNeighborhoodRepositoryWithMetricReader(db, sqlmetric.NewRepository(metricPool))
 	if cfg.SeedDemoData {
 		if err := repo.SeedDemoData(ctx); err != nil {
+			metricPool.Close()
 			_ = sqlDB.Close()
 			return nil, nil, err
 		}
@@ -66,7 +75,15 @@ var openNeighborhoodApplication = func(ctx context.Context, cfg config.Config, l
 	}
 
 	service := appneighborhood.NewService(repo)
-	return service, sqlDB, nil
+	return service, multiCloser{
+		closers: []io.Closer{
+			sqlDB,
+			closerFunc(func() error {
+				metricPool.Close()
+				return nil
+			}),
+		},
+	}, nil
 }
 
 var openCollectionApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (CollectionApplication, io.Closer, error) {
@@ -82,6 +99,26 @@ var openCollectionApplication = func(ctx context.Context, cfg config.Config, log
 
 var listenAndServe = func(server *http.Server) error {
 	return server.ListenAndServe()
+}
+
+type closerFunc func() error
+
+func (f closerFunc) Close() error {
+	return f()
+}
+
+type multiCloser struct {
+	closers []io.Closer
+}
+
+func (c multiCloser) Close() error {
+	var closeErr error
+	for _, closer := range c.closers {
+		if err := closer.Close(); err != nil && closeErr == nil {
+			closeErr = err
+		}
+	}
+	return closeErr
 }
 
 func NormalizeMode(args []string) (string, error) {

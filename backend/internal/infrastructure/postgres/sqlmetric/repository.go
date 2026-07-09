@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	appmetric "github.com/propulse/propulse/backend/internal/application/metric"
+	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
 	"github.com/propulse/propulse/backend/internal/infrastructure/postgres/sqlc"
 )
@@ -109,8 +110,42 @@ func (r *Repository) InsertNeighborhoodMetric(ctx context.Context, snapshot appm
 	return metricFromRow(row), nil
 }
 
+func (r *Repository) LatestMetric(ctx context.Context, neighborhoodID string) (appneighborhood.MetricSnapshot, error) {
+	id, err := uuidParam(neighborhoodID)
+	if err != nil {
+		return appneighborhood.MetricSnapshot{}, err
+	}
+
+	row, err := r.queries.LatestNeighborhoodMetric(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return appneighborhood.MetricSnapshot{}, appneighborhood.ErrMetricNotFound
+		}
+		return appneighborhood.MetricSnapshot{}, err
+	}
+
+	return neighborhoodMetricFromRow(row), nil
+}
+
 func metricFromRow(row sqlc.NeighborhoodMetric) appmetric.MetricSnapshot {
 	return appmetric.MetricSnapshot{
+		ID:                  uuidString(row.ID),
+		NeighborhoodID:      uuidString(row.NeighborhoodID),
+		ListedHomes:         int(row.ListedHomes),
+		PriceCutHomes:       int(row.PriceCutHomes),
+		AvgDaysOnMarket:     numericFloat(row.AvgDaysOnMarket),
+		ListingPriceMin:     numericFloat(row.ListingPriceMin),
+		ListingPriceMax:     numericFloat(row.ListingPriceMax),
+		TransactionPriceMin: numericFloat(row.TransactionPriceMin),
+		TransactionPriceMax: numericFloat(row.TransactionPriceMax),
+		TransactionMomentum: domainneighborhood.TransactionMomentum(row.TransactionMomentum),
+		TargetLayoutSupply:  int(row.TargetLayoutSupply),
+		CalculatedAt:        row.CalculatedAt.Time,
+	}
+}
+
+func neighborhoodMetricFromRow(row sqlc.NeighborhoodMetric) appneighborhood.MetricSnapshot {
+	return appneighborhood.MetricSnapshot{
 		ID:                  uuidString(row.ID),
 		NeighborhoodID:      uuidString(row.NeighborhoodID),
 		ListedHomes:         int(row.ListedHomes),

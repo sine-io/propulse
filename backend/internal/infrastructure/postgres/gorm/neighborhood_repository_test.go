@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
@@ -76,5 +77,64 @@ func TestNeighborhoodRepositoryPersistsWatchlistAndLatestMetric(t *testing.T) {
 	}
 	if metric.TransactionMomentum != domainneighborhood.TransactionMomentumWeak {
 		t.Fatalf("TransactionMomentum = %q, want weak", metric.TransactionMomentum)
+	}
+}
+
+func TestNeighborhoodRepositoryListWatchlistUsesConfiguredMetricReader(t *testing.T) {
+	databaseURL := os.Getenv("PROPULSE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PROPULSE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	if err := migraterunner.Run(ctx, databaseURL, "up"); err != nil {
+		t.Fatalf("Run(up) error = %v", err)
+	}
+
+	db, sqlDB, err := Open(databaseURL)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer sqlDB.Close()
+
+	neighborhoodID := uuid.NewString()
+	baseRepo := NewNeighborhoodRepository(db)
+	neighborhood, err := baseRepo.CreateNeighborhood(ctx, appneighborhood.CreateNeighborhoodInput{
+		ID:           neighborhoodID,
+		Name:         "云澜府",
+		Area:         "城东新区",
+		TargetLayout: "四房",
+	})
+	if err != nil {
+		t.Fatalf("CreateNeighborhood() error = %v", err)
+	}
+	if _, err := baseRepo.AddWatchlistItem(ctx, "reader-user", neighborhood.ID); err != nil {
+		t.Fatalf("AddWatchlistItem() error = %v", err)
+	}
+
+	reader := &recordingMetricReader{
+		metric: appneighborhood.MetricSnapshot{
+			ID:                  "metric-from-reader",
+			NeighborhoodID:      neighborhood.ID,
+			ListedHomes:         14,
+			PriceCutHomes:       1,
+			TransactionMomentum: domainneighborhood.TransactionMomentumStrong,
+			CalculatedAt:        time.Date(2026, 7, 9, 9, 0, 0, 0, time.UTC),
+		},
+	}
+	repo := NewNeighborhoodRepositoryWithMetricReader(db, reader)
+
+	watchlist, err := repo.ListWatchlist(ctx, "reader-user")
+	if err != nil {
+		t.Fatalf("ListWatchlist() error = %v", err)
+	}
+	if len(watchlist) != 1 {
+		t.Fatalf("len(watchlist) = %d, want 1", len(watchlist))
+	}
+	if reader.calledWith != neighborhood.ID {
+		t.Fatalf("reader called with %q, want %q", reader.calledWith, neighborhood.ID)
+	}
+	if !watchlist[0].HasMetric || watchlist[0].Metric.ID != "metric-from-reader" {
+		t.Fatalf("watchlist[0] metric = %#v", watchlist[0])
 	}
 }

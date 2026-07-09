@@ -14,11 +14,23 @@ import (
 const demoUserID = "demo-user"
 
 type NeighborhoodRepository struct {
-	db *gorm.DB
+	db           *gorm.DB
+	metricReader metricReader
+}
+
+type metricReader interface {
+	LatestMetric(ctx context.Context, neighborhoodID string) (appneighborhood.MetricSnapshot, error)
 }
 
 func NewNeighborhoodRepository(db *gorm.DB) *NeighborhoodRepository {
 	return &NeighborhoodRepository{db: db}
+}
+
+func NewNeighborhoodRepositoryWithMetricReader(db *gorm.DB, metricReader metricReader) *NeighborhoodRepository {
+	return &NeighborhoodRepository{
+		db:           db,
+		metricReader: metricReader,
+	}
 }
 
 func (r *NeighborhoodRepository) CreateNeighborhood(ctx context.Context, input appneighborhood.CreateNeighborhoodInput) (appneighborhood.Neighborhood, error) {
@@ -133,6 +145,14 @@ func (r *NeighborhoodRepository) ListWatchlist(ctx context.Context, userID strin
 }
 
 func (r *NeighborhoodRepository) LatestMetric(ctx context.Context, neighborhoodID string) (appneighborhood.MetricSnapshot, error) {
+	if r.metricReader != nil {
+		return r.metricReader.LatestMetric(ctx, neighborhoodID)
+	}
+
+	return r.latestMetricFromGORM(ctx, neighborhoodID)
+}
+
+func (r *NeighborhoodRepository) latestMetricFromGORM(ctx context.Context, neighborhoodID string) (appneighborhood.MetricSnapshot, error) {
 	var model NeighborhoodMetricModel
 	err := r.db.WithContext(ctx).
 		Where("neighborhood_id = ?", neighborhoodID).
