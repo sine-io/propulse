@@ -23,6 +23,7 @@ type Dependencies struct {
 	NeighborhoodApplication httphandler.NeighborhoodApplication
 	CollectionApplication   httphandler.CollectionApplication
 	DecisionApplication     httphandler.DecisionApplication
+	AdminAPIToken           string
 }
 
 var frontendRoutes = map[string]string{
@@ -83,7 +84,7 @@ func New(deps Dependencies) *gin.Engine {
 	api.GET("/decision/action-window", decisionHandler.GetActionWindow)
 
 	admin := engine.Group("/admin/api")
-	admin.Use()
+	admin.Use(httpmiddleware.AdminAuth(deps.AdminAPIToken))
 	collectionApp := deps.CollectionApplication
 	if collectionApp == nil {
 		collectionApp = appcollection.NewService(newInMemoryCollectionRepository(), nil, nil)

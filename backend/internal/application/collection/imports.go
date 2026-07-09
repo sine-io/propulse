@@ -36,11 +36,11 @@ type ImportManualListingsCommand struct {
 }
 
 type ManualListingRecord struct {
-	ListingPrice     float64 `json:"listingPrice"`
-	TransactionPrice float64 `json:"transactionPrice"`
-	PriceCut         bool    `json:"priceCut"`
-	DaysOnMarket     int     `json:"daysOnMarket"`
-	Layout           string  `json:"layout"`
+	ListingPrice     float64  `json:"listingPrice"`
+	TransactionPrice *float64 `json:"transactionPrice"`
+	PriceCut         bool     `json:"priceCut"`
+	DaysOnMarket     int      `json:"daysOnMarket"`
+	Layout           string   `json:"layout"`
 }
 
 type ImportManualListingsResult struct {
@@ -115,6 +115,9 @@ func validateImport(command ImportManualListingsCommand) error {
 	}
 	for _, record := range command.Records {
 		if record.ListingPrice <= 0 {
+			return ErrInvalidRequest
+		}
+		if record.TransactionPrice != nil && *record.TransactionPrice <= 0 {
 			return ErrInvalidRequest
 		}
 		if record.DaysOnMarket < 0 {

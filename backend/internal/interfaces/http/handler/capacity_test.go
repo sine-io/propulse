@@ -94,6 +94,39 @@ func TestCreateCapacityCalculationRejectsInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestCreateCapacityCalculationRejectsInvalidNumbers(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	service := &stubCapacityApplication{}
+	engine := gin.New()
+	engine.POST("/api/v1/capacity/calculations", NewCapacity(service).CreateCalculation)
+
+	body := `{"cashOnHand":150,"oldHomeValue":320,"oldLoanBalance":80,"monthlyIncome":0,"currentMonthlyMortgage":0,"acceptableMonthlyMortgage":1.5,"targetTotalPrice":550,"renovationBudget":40,"transactionCosts":18,"transitionRentCost":5}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/capacity/calculations", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	}
+	if service.createCalled {
+		t.Fatal("CreateCalculation was called for invalid numeric input")
+	}
+
+	var response struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if response.Error.Code != "invalid_request" {
+		t.Fatalf("response.Error.Code = %q, want invalid_request", response.Error.Code)
+	}
+}
+
 func TestGetCapacityCalculationReturnsStoredRecord(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubCapacityApplication{
@@ -161,11 +194,13 @@ func TestGetCapacityCalculationReturnsNotFound(t *testing.T) {
 type stubCapacityApplication struct {
 	createRecord appcapacity.CalculationRecord
 	createErr    error
+	createCalled bool
 	getRecord    appcapacity.CalculationRecord
 	getErr       error
 }
 
 func (s *stubCapacityApplication) CreateCalculation(_ context.Context, _ appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error) {
+	s.createCalled = true
 	return s.createRecord, s.createErr
 }
 

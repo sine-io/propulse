@@ -51,6 +51,7 @@ func TestCollectionRepositoryStoresRawRecordAndSnapshots(t *testing.T) {
 
 	rawID := uuid.NewString()
 	snapshotID := uuid.NewString()
+	transactionPrice := 495.0
 	capturedAt := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
 	err = repo.SaveImport(ctx, appcollection.RawCollectionRecord{
 		ID:          rawID,
@@ -63,7 +64,7 @@ func TestCollectionRepositoryStoresRawRecordAndSnapshots(t *testing.T) {
 			ID:               snapshotID,
 			NeighborhoodID:   neighborhood.ID,
 			ListingPrice:     520,
-			TransactionPrice: 495,
+			TransactionPrice: &transactionPrice,
 			PriceCut:         true,
 			DaysOnMarket:     78,
 			Layout:           "三房",
@@ -86,7 +87,7 @@ func TestCollectionRepositoryStoresRawRecordAndSnapshots(t *testing.T) {
 	if err := db.WithContext(ctx).First(&snapshot, "id = ?", snapshotID).Error; err != nil {
 		t.Fatalf("Find(snapshot) error = %v", err)
 	}
-	if snapshot.NeighborhoodID != neighborhood.ID || snapshot.ListingPrice != 520 || snapshot.TransactionPrice != 495 || !snapshot.PriceCut || snapshot.DaysOnMarket != 78 || snapshot.Layout != "三房" {
+	if snapshot.NeighborhoodID != neighborhood.ID || snapshot.ListingPrice != 520 || snapshot.TransactionPrice == nil || *snapshot.TransactionPrice != 495 || !snapshot.PriceCut || snapshot.DaysOnMarket != 78 || snapshot.Layout != "三房" {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
 }

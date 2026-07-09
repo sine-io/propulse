@@ -361,6 +361,7 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 			t.Fatalf("http.NewRequest() error = %v", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer test-admin-token")
 		rec := newInMemoryHTTPResponseWriter()
 
 		server.Handler.ServeHTTP(rec, req)
@@ -376,8 +377,9 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 	}
 
 	err := Run(context.Background(), "api", config.Config{
-		HTTPAddr:    "127.0.0.1:0",
-		DatabaseURL: "postgres://test",
+		HTTPAddr:      "127.0.0.1:0",
+		DatabaseURL:   "postgres://test",
+		AdminAPIToken: "test-admin-token",
 	}, zerolog.New(io.Discard))
 	if err != nil {
 		t.Fatalf("Run(api) error = %v", err)

@@ -199,6 +199,8 @@ paths:
   /admin/api/imports:
     post:
       summary: Manually import listing snapshots from JSON
+      security:
+        - AdminBearerAuth: []
       requestBody:
         required: true
         content:
@@ -218,6 +220,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Admin bearer token required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Admin bearer token invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Neighborhood not found
           content:
@@ -231,6 +245,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 components:
+  securitySchemes:
+    AdminBearerAuth:
+      type: http
+      scheme: bearer
   schemas:
     HousingCapacityInput:
       type: object
@@ -542,6 +560,9 @@ components:
           minimum: 0
         transactionPrice:
           type: number
+          nullable: true
+          exclusiveMinimum: true
+          minimum: 0
         priceCut:
           type: boolean
         daysOnMarket:

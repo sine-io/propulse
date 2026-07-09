@@ -28,7 +28,7 @@ type ListingSnapshot struct {
 	ID               string
 	NeighborhoodID   string
 	ListingPrice     float64
-	TransactionPrice float64
+	TransactionPrice *float64
 	PriceCut         bool
 	DaysOnMarket     int
 	Layout           string

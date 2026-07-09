@@ -87,6 +87,21 @@ curl http://127.0.0.1:18080/healthz
 curl http://127.0.0.1:18080/api/v1/watchlist
 ```
 
+Compose 会为本地管理接口设置 `PROPULSE_ADMIN_API_TOKEN=local-admin-token`。调用 `/admin/api/*` 时需要传入 bearer token：
+
+```bash
+curl -X POST http://127.0.0.1:18080/admin/api/imports \
+  -H "Authorization: Bearer local-admin-token" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceType":"manual_json","sourceRef":"demo","neighborhoodId":"<uuid>","records":[{"listingPrice":520,"daysOnMarket":30}]}'
+```
+
+也可以运行本地集成冒烟脚本，完成 Compose 构建、健康检查、关注列表 API 和 E2E smoke test：
+
+```bash
+pnpm verify:stack
+```
+
 ## 后端二进制模式
 
 同一个 `propulse` Go 二进制支持以下运行模式：

@@ -10,6 +10,7 @@ import (
 func TestImportManualListingsStoresRawRunAndSnapshots(t *testing.T) {
 	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
 	ids := []string{"collection_run_1", "snapshot_1", "snapshot_2"}
+	transactionPrice := 495.0
 	repo := &fakeRepository{neighborhoods: map[string]bool{"neighborhood_1": true}}
 	service := NewService(repo, func() time.Time { return now }, func() string {
 		id := ids[0]
@@ -22,8 +23,8 @@ func TestImportManualListingsStoresRawRunAndSnapshots(t *testing.T) {
 		SourceRef:      "demo-weekly-import",
 		NeighborhoodID: "neighborhood_1",
 		Records: []ManualListingRecord{
-			{ListingPrice: 520, TransactionPrice: 495, PriceCut: true, DaysOnMarket: 78, Layout: "三房"},
-			{ListingPrice: 610, TransactionPrice: 0, PriceCut: false, DaysOnMarket: 14, Layout: "三房"},
+			{ListingPrice: 520, TransactionPrice: &transactionPrice, PriceCut: true, DaysOnMarket: 78, Layout: "三房"},
+			{ListingPrice: 610, PriceCut: false, DaysOnMarket: 14, Layout: "三房"},
 		},
 	})
 	if err != nil {
@@ -50,11 +51,34 @@ func TestImportManualListingsStoresRawRunAndSnapshots(t *testing.T) {
 		t.Fatalf("snapshots = %d, want 2", len(repo.snapshots))
 	}
 	first := repo.snapshots[0]
-	if first.ID != "snapshot_1" || first.NeighborhoodID != "neighborhood_1" || first.ListingPrice != 520 || first.TransactionPrice != 495 || !first.PriceCut || first.DaysOnMarket != 78 || first.Layout != "三房" {
+	if first.ID != "snapshot_1" || first.NeighborhoodID != "neighborhood_1" || first.ListingPrice != 520 || first.TransactionPrice == nil || *first.TransactionPrice != 495 || !first.PriceCut || first.DaysOnMarket != 78 || first.Layout != "三房" {
 		t.Fatalf("first snapshot = %#v", first)
 	}
 	if !first.CapturedAt.Equal(now) {
 		t.Fatalf("CapturedAt = %v, want %v", first.CapturedAt, now)
+	}
+}
+
+func TestImportManualListingsPreservesOmittedTransactionPrice(t *testing.T) {
+	repo := &fakeRepository{neighborhoods: map[string]bool{"neighborhood_1": true}}
+	service := NewService(repo, time.Now, func() string { return "id" })
+
+	_, err := service.ImportManualListings(context.Background(), ImportManualListingsCommand{
+		SourceType:     "manual_json",
+		SourceRef:      "demo-weekly-import",
+		NeighborhoodID: "neighborhood_1",
+		Records: []ManualListingRecord{
+			{ListingPrice: 610, PriceCut: false, DaysOnMarket: 14, Layout: "三房"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportManualListings() error = %v", err)
+	}
+	if len(repo.snapshots) != 1 {
+		t.Fatalf("snapshots = %d, want 1", len(repo.snapshots))
+	}
+	if repo.snapshots[0].TransactionPrice != nil {
+		t.Fatalf("TransactionPrice = %v, want nil for omitted transactionPrice", *repo.snapshots[0].TransactionPrice)
 	}
 }
 

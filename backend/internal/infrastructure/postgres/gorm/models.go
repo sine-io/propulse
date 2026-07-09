@@ -76,7 +76,7 @@ type ListingSnapshotModel struct {
 	ID               string    `gorm:"column:id;type:uuid;primaryKey"`
 	NeighborhoodID   string    `gorm:"column:neighborhood_id;type:uuid"`
 	ListingPrice     float64   `gorm:"column:listing_price"`
-	TransactionPrice float64   `gorm:"column:transaction_price"`
+	TransactionPrice *float64  `gorm:"column:transaction_price"`
 	PriceCut         bool      `gorm:"column:price_cut"`
 	DaysOnMarket     int       `gorm:"column:days_on_market"`
 	Layout           string    `gorm:"column:layout"`

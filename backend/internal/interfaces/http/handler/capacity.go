@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"time"
 
@@ -55,6 +56,10 @@ func (h Capacity) CreateCalculation(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
 		return
 	}
+	if !validCapacityInput(input) {
+		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
+		return
+	}
 
 	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{UserID: demoUserID, Input: input})
 	if err != nil {
@@ -88,6 +93,27 @@ func (h Capacity) GetCalculation(c *gin.Context) {
 		Result:    record.Result,
 		CreatedAt: record.CreatedAt.UTC().Format(time.RFC3339),
 	})
+}
+
+func validCapacityInput(input domaincapacity.HousingCapacityInput) bool {
+	values := []float64{
+		input.CashOnHand,
+		input.OldHomeValue,
+		input.OldLoanBalance,
+		input.MonthlyIncome,
+		input.CurrentMonthlyMortgage,
+		input.AcceptableMonthlyMortgage,
+		input.TargetTotalPrice,
+		input.RenovationBudget,
+		input.TransactionCosts,
+		input.TransitionRentCost,
+	}
+	for _, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+			return false
+		}
+	}
+	return input.MonthlyIncome > 0 && input.TargetTotalPrice > 0
 }
 
 func writeError(c *gin.Context, status int, code, message string) {

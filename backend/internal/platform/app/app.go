@@ -336,6 +336,7 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger) e
 		CapacityApplication:     capacityApp,
 		NeighborhoodApplication: neighborhoodApp,
 		CollectionApplication:   collectionApp,
+		AdminAPIToken:           cfg.AdminAPIToken,
 	})
 
 	server := &http.Server{

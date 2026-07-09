@@ -237,6 +237,7 @@ func TestAdminImportRoute(t *testing.T) {
 		Log:                   zerolog.New(io.Discard),
 		StaticFS:              web.Embedded(),
 		CollectionApplication: &stubCollectionApplication{},
+		AdminAPIToken:         "secret-token",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/api/imports", strings.NewReader(`{
@@ -246,6 +247,7 @@ func TestAdminImportRoute(t *testing.T) {
 		"records": [{"listingPrice": 520, "daysOnMarket": 0}]
 	}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer secret-token")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -261,6 +263,33 @@ func TestAdminImportRoute(t *testing.T) {
 	}
 	if response.CollectionRunID != "collection_run_1" || response.ImportedSnapshotCount != 1 {
 		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestAdminImportRouteRequiresBearerToken(t *testing.T) {
+	service := &stubCollectionApplication{}
+	engine := New(Dependencies{
+		Log:                   zerolog.New(io.Discard),
+		StaticFS:              web.Embedded(),
+		CollectionApplication: service,
+		AdminAPIToken:         "secret-token",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/imports", strings.NewReader(`{
+		"sourceType": "manual_json",
+		"sourceRef": "demo-weekly-import",
+		"neighborhoodId": "neighborhood_1",
+		"records": [{"listingPrice": 520, "daysOnMarket": 0}]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401; body=%s", rec.Code, rec.Body.String())
+	}
+	if service.called {
+		t.Fatal("ImportManualListings was called without admin token")
 	}
 }
 
@@ -312,9 +341,12 @@ func (s *stubNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneig
 	}, nil
 }
 
-type stubCollectionApplication struct{}
+type stubCollectionApplication struct {
+	called bool
+}
 
 func (s *stubCollectionApplication) ImportManualListings(_ context.Context, _ appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error) {
+	s.called = true
 	return appcollection.ImportManualListingsResult{CollectionRunID: "collection_run_1", ImportedSnapshotCount: 1}, nil
 }
 

@@ -10,6 +10,7 @@ services:
       PROPULSE_REDIS_ADDR: redis:6379
       PROPULSE_HTTP_ADDR: :8080
       PROPULSE_SEED_DEMO_DATA: "true"
+      PROPULSE_ADMIN_API_TOKEN: local-admin-token
     ports:
       - "18080:8080"
     depends_on:
@@ -27,6 +28,7 @@ services:
       PROPULSE_REDIS_ADDR: redis:6379
       PROPULSE_HTTP_ADDR: :8080
       PROPULSE_SEED_DEMO_DATA: "true"
+      PROPULSE_ADMIN_API_TOKEN: local-admin-token
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,6 +46,7 @@ services:
       PROPULSE_REDIS_ADDR: redis:6379
       PROPULSE_HTTP_ADDR: :8080
       PROPULSE_SEED_DEMO_DATA: "true"
+      PROPULSE_ADMIN_API_TOKEN: local-admin-token
     depends_on:
       postgres:
         condition: service_healthy

@@ -461,6 +461,24 @@ export interface paths {
                         "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
+                /** @description Admin bearer token required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Admin bearer token invalid */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
                 /** @description Neighborhood not found */
                 404: {
                     headers: {
@@ -638,7 +656,7 @@ export interface components {
         };
         ManualImportRecord: {
             listingPrice: number;
-            transactionPrice?: number;
+            transactionPrice?: number | null;
             priceCut?: boolean;
             daysOnMarket: number;
             layout?: string;
