@@ -67,10 +67,6 @@ export function WatchlistPage() {
 
     getWatchlist(controller.signal)
       .then((response) => {
-        if (response.items.length === 0) {
-          return;
-        }
-
         const nextCommunities = response.items.map(toCommunityView);
         setCommunities(nextCommunities);
         setStats({
@@ -156,9 +152,18 @@ export function WatchlistPage() {
       <section className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <h2 className="mb-4 font-bold text-slate-800">小区动态 (本周变化)</h2>
-          {communities.map((community) => (
-            <CommunityCard key={`${community.name}-${community.meta}`} {...community} />
-          ))}
+          {communities.length > 0 ? (
+            communities.map((community) => (
+              <CommunityCard key={`${community.name}-${community.meta}`} {...community} />
+            ))
+          ) : (
+            <section className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <p className="font-medium text-slate-800">观察池暂无小区</p>
+              <p className="mt-2 text-sm text-slate-500">
+                添加目标小区后，本周变化和砍价信号会显示在这里。
+              </p>
+            </section>
+          )}
         </div>
 
         <aside className="space-y-6">
@@ -168,15 +173,19 @@ export function WatchlistPage() {
               异动提醒
             </h2>
             <ul className="space-y-3 text-sm">
-              {[
-                "青枫花园 新增 2 套目标户型，挂牌价处于低位。",
-                "星河湾 有 1 套房源单次降价 30 万。",
-              ].map((item) => (
-                <li key={item} className="flex items-start">
-                  <span className="mr-2 mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-500" />
-                  <span className="text-amber-800">{item}</span>
-                </li>
-              ))}
+              {communities.length > 0 ? (
+                [
+                  "青枫花园 新增 2 套目标户型，挂牌价处于低位。",
+                  "星河湾 有 1 套房源单次降价 30 万。",
+                ].map((item) => (
+                  <li key={item} className="flex items-start">
+                    <span className="mr-2 mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-500" />
+                    <span className="text-amber-800">{item}</span>
+                  </li>
+                ))
+              ) : (
+                <li className="text-amber-800">暂无异动提醒。</li>
+              )}
             </ul>
           </section>
 
@@ -199,7 +208,7 @@ export function WatchlistPage() {
                 </span>
                 <input
                   className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm outline-none focus:border-blue-500"
-                  placeholder="例如：约看青枫花园3套底价房"
+                  placeholder="例如：约看目标小区3套底价房"
                 />
               </label>
               <button className="mt-2 w-full rounded-lg bg-slate-900 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800">

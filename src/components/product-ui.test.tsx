@@ -280,6 +280,23 @@ describe("WatchlistPage", () => {
       screen.getByText((content) => content.includes("API 返回的重点建议。")),
     ).toBeInTheDocument();
   });
+
+  it("renders an empty watchlist state for a successful empty API response", async () => {
+    vi.mocked(getWatchlist).mockResolvedValueOnce({ items: [] });
+    render(createElement(WatchlistPage));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("heading", { name: "青枫花园 滨江核心 · 三房" }),
+      ).not.toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText("0")).toHaveLength(4);
+    expect(screen.getByText("观察池暂无小区")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "云澜府 城东新区 · 四房" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("TemplatesPage", () => {
