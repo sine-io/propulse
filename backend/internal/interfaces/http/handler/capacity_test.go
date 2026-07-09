@@ -176,6 +176,13 @@ func (s *stubCapacityApplication) GetCalculation(_ context.Context, _ appcapacit
 	return s.getRecord, nil
 }
 
+func (s *stubCapacityApplication) LatestCalculation(_ context.Context, _ appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error) {
+	if s.getErr != nil {
+		return appcapacity.CalculationRecord{}, s.getErr
+	}
+	return s.getRecord, nil
+}
+
 func TestGetCapacityCalculationReturnsServerError(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubCapacityApplication{getErr: errors.New("boom")}

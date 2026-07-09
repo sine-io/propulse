@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
 	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
+	appdecision "github.com/propulse/propulse/backend/internal/application/decision"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	httphandler "github.com/propulse/propulse/backend/internal/interfaces/http/handler"
 	httpmiddleware "github.com/propulse/propulse/backend/internal/interfaces/http/middleware"
@@ -21,6 +22,7 @@ type Dependencies struct {
 	CapacityApplication     httphandler.CapacityApplication
 	NeighborhoodApplication httphandler.NeighborhoodApplication
 	CollectionApplication   httphandler.CollectionApplication
+	DecisionApplication     httphandler.DecisionApplication
 }
 
 var frontendRoutes = map[string]string{
@@ -72,6 +74,13 @@ func New(deps Dependencies) *gin.Engine {
 	api.GET("/neighborhoods/:id/metrics", neighborhoodHandler.GetMetrics)
 	api.POST("/watchlist/items", watchlistHandler.AddItem)
 	api.GET("/watchlist", watchlistHandler.List)
+
+	decisionApp := deps.DecisionApplication
+	if decisionApp == nil {
+		decisionApp = appdecision.NewService(capacityApp, neighborhoodApp)
+	}
+	decisionHandler := httphandler.NewDecision(decisionApp)
+	api.GET("/decision/action-window", decisionHandler.GetActionWindow)
 
 	admin := engine.Group("/admin/api")
 	admin.Use()

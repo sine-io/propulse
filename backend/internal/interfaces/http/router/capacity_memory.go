@@ -34,3 +34,22 @@ func (r *inMemoryCalculationRepository) Find(_ context.Context, id string) (appc
 	}
 	return record, nil
 }
+
+func (r *inMemoryCalculationRepository) FindLatestByUser(_ context.Context, userID string) (appcapacity.CalculationRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var latest appcapacity.CalculationRecord
+	for _, record := range r.records {
+		if record.UserID != userID {
+			continue
+		}
+		if latest.ID == "" || record.CreatedAt.After(latest.CreatedAt) {
+			latest = record
+		}
+	}
+	if latest.ID == "" {
+		return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
+	}
+	return latest, nil
+}

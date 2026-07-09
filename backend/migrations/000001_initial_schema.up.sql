@@ -2,10 +2,14 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE capacity_calculations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL DEFAULT 'demo-user',
   input JSONB NOT NULL,
   result JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_capacity_calculations_user_created_at
+  ON capacity_calculations(user_id, created_at DESC);
 
 CREATE TABLE neighborhoods (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

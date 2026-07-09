@@ -590,6 +590,10 @@ func (s *stubAppCapacityApplication) GetCalculation(_ context.Context, _ appcapa
 	return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
 }
 
+func (s *stubAppCapacityApplication) LatestCalculation(_ context.Context, _ appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error) {
+	return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
+}
+
 type stubAppNeighborhoodApplication struct {
 	listCalled                bool
 	listNeighborhoodIDsCalled bool

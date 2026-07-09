@@ -30,6 +30,7 @@ const schedulerSourceID = "scheduler.watchlist"
 type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
 	GetCalculation(ctx context.Context, query appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error)
+	LatestCalculation(ctx context.Context, query appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error)
 }
 
 type NeighborhoodApplication interface {

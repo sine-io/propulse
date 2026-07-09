@@ -29,6 +29,7 @@ func (r *CapacityRepository) Save(ctx context.Context, record appcapacity.Calcul
 
 	model := CapacityCalculationModel{
 		ID:        record.ID,
+		UserID:    record.UserID,
 		Input:     input,
 		Result:    result,
 		CreatedAt: record.CreatedAt,
@@ -50,14 +51,35 @@ func (r *CapacityRepository) Find(ctx context.Context, id string) (appcapacity.C
 		return appcapacity.CalculationRecord{}, err
 	}
 
-	var input appcapacity.CalculationRecord
-	if err := json.Unmarshal(model.Input, &input.Input); err != nil {
+	return capacityCalculationFromModel(model)
+}
+
+func (r *CapacityRepository) FindLatestByUser(ctx context.Context, userID string) (appcapacity.CalculationRecord, error) {
+	var model CapacityCalculationModel
+	err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		First(&model).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
+		}
 		return appcapacity.CalculationRecord{}, err
 	}
-	if err := json.Unmarshal(model.Result, &input.Result); err != nil {
+
+	return capacityCalculationFromModel(model)
+}
+
+func capacityCalculationFromModel(model CapacityCalculationModel) (appcapacity.CalculationRecord, error) {
+	var record appcapacity.CalculationRecord
+	if err := json.Unmarshal(model.Input, &record.Input); err != nil {
 		return appcapacity.CalculationRecord{}, err
 	}
-	input.ID = model.ID
-	input.CreatedAt = model.CreatedAt
-	return input, nil
+	if err := json.Unmarshal(model.Result, &record.Result); err != nil {
+		return appcapacity.CalculationRecord{}, err
+	}
+	record.ID = model.ID
+	record.UserID = model.UserID
+	record.CreatedAt = model.CreatedAt
+	return record, nil
 }

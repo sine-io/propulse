@@ -163,6 +163,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WatchlistResponse'
+  /api/v1/decision/action-window:
+    get:
+      summary: Recommend the current action window for the demo user
+      parameters:
+        - in: query
+          name: neighborhoodId
+          required: false
+          schema:
+            type: string
+          description: Neighborhood to evaluate. Defaults to the first demo watchlist item.
+      responses:
+        '200':
+          description: Action window recommendation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionWindowResponse'
+        '400':
+          description: Capacity calculation required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: capacity_required
+                  message: create a capacity calculation before requesting an action window
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /admin/api/imports:
     post:
       summary: Manually import listing snapshots from JSON
@@ -453,6 +486,33 @@ components:
           enum: [weak, stable, strong]
         advice:
           type: string
+    ActionWindowResponse:
+      type: object
+      required: [action, confidence, summary, checklist, risks]
+      properties:
+        action:
+          type: string
+          enum: ["看", "等", "砍价", "出手"]
+          example: "砍价"
+        confidence:
+          type: string
+          enum: ["低", "中", "高"]
+          example: "高"
+        summary:
+          type: string
+          example: "预算仍可服务，且目标小区供应与降价信号支持买方试探底价。"
+        checklist:
+          type: array
+          items:
+            type: string
+          example:
+            - "约看 3 套成交区间附近、挂牌超过 60 天的目标户型。"
+        risks:
+          type: array
+          items:
+            type: string
+          example:
+            - "预算不是完全宽松，砍价失败时不要上调总价硬追。"
     ManualImportRequest:
       type: object
       required: [sourceType, sourceRef, neighborhoodId, records]

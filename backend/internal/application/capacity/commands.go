@@ -9,7 +9,8 @@ import (
 )
 
 type CreateCalculationCommand struct {
-	Input domaincapacity.HousingCapacityInput
+	UserID string
+	Input  domaincapacity.HousingCapacityInput
 }
 
 type Service struct {
@@ -35,6 +36,7 @@ func NewService(repo CalculationRepository, now func() time.Time, newID func() s
 func (s *Service) CreateCalculation(ctx context.Context, command CreateCalculationCommand) (CalculationRecord, error) {
 	record := CalculationRecord{
 		ID:        s.newID(),
+		UserID:    command.UserID,
 		Input:     command.Input,
 		Result:    domaincapacity.Calculate(command.Input),
 		CreatedAt: s.now().UTC(),

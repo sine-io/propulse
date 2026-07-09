@@ -87,10 +87,51 @@ func TestGetCalculationReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestLatestCalculationReturnsNewestRecordForUser(t *testing.T) {
+	repo := &memoryCalculationRepository{
+		records: map[string]CalculationRecord{
+			"older": {
+				ID:        "older",
+				UserID:    "demo-user",
+				CreatedAt: time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC),
+			},
+			"newer": {
+				ID:        "newer",
+				UserID:    "demo-user",
+				CreatedAt: time.Date(2026, 7, 9, 11, 0, 0, 0, time.UTC),
+			},
+			"other": {
+				ID:        "other",
+				UserID:    "other-user",
+				CreatedAt: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+	service := NewService(repo, time.Now, func() string { return "unused" })
+
+	record, err := service.LatestCalculation(context.Background(), LatestCalculationQuery{UserID: "demo-user"})
+	if err != nil {
+		t.Fatalf("LatestCalculation() error = %v", err)
+	}
+	if record.ID != "newer" {
+		t.Fatalf("record.ID = %q, want newer", record.ID)
+	}
+}
+
+func TestLatestCalculationReturnsNotFound(t *testing.T) {
+	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{}}
+	service := NewService(repo, time.Now, func() string { return "unused" })
+
+	_, err := service.LatestCalculation(context.Background(), LatestCalculationQuery{UserID: "demo-user"})
+	if !errors.Is(err, ErrCalculationNotFound) {
+		t.Fatalf("LatestCalculation() error = %v, want ErrCalculationNotFound", err)
+	}
+}
+
 type memoryCalculationRepository struct {
-	records    map[string]CalculationRecord
-	nextID     string
-	createdAt  time.Time
+	records   map[string]CalculationRecord
+	nextID    string
+	createdAt time.Time
 }
 
 func (m *memoryCalculationRepository) Save(_ context.Context, record CalculationRecord) (CalculationRecord, error) {
@@ -107,6 +148,22 @@ func (m *memoryCalculationRepository) Find(_ context.Context, id string) (Calcul
 		return CalculationRecord{}, ErrCalculationNotFound
 	}
 	return record, nil
+}
+
+func (m *memoryCalculationRepository) FindLatestByUser(_ context.Context, userID string) (CalculationRecord, error) {
+	var latest CalculationRecord
+	for _, record := range m.records {
+		if record.UserID != userID {
+			continue
+		}
+		if latest.ID == "" || record.CreatedAt.After(latest.CreatedAt) {
+			latest = record
+		}
+	}
+	if latest.ID == "" {
+		return CalculationRecord{}, ErrCalculationNotFound
+	}
+	return latest, nil
 }
 
 func (m *memoryCalculationRepository) now() time.Time {

@@ -14,6 +14,7 @@ import (
 type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
 	GetCalculation(ctx context.Context, query appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error)
+	LatestCalculation(ctx context.Context, query appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error)
 }
 
 type Capacity struct {
@@ -55,7 +56,7 @@ func (h Capacity) CreateCalculation(c *gin.Context) {
 		return
 	}
 
-	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{Input: input})
+	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{UserID: demoUserID, Input: input})
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return

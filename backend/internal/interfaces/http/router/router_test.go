@@ -11,7 +11,9 @@ import (
 	"testing"
 
 	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
+	appdecision "github.com/propulse/propulse/backend/internal/application/decision"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
+	domaindecision "github.com/propulse/propulse/backend/internal/domain/decision"
 	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
 	"github.com/propulse/propulse/backend/web"
 	"github.com/rs/zerolog"
@@ -178,6 +180,22 @@ func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
 	}
 }
 
+func TestDecisionActionWindowRoute(t *testing.T) {
+	engine := New(Dependencies{
+		Log:                 zerolog.New(io.Discard),
+		StaticFS:            web.Embedded(),
+		DecisionApplication: &stubDecisionApplication{},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/decision/action-window", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAdminImportRoute(t *testing.T) {
 	engine := New(Dependencies{
 		Log:                   zerolog.New(io.Discard),
@@ -262,4 +280,16 @@ type stubCollectionApplication struct{}
 
 func (s *stubCollectionApplication) ImportManualListings(_ context.Context, _ appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error) {
 	return appcollection.ImportManualListingsResult{CollectionRunID: "collection_run_1", ImportedSnapshotCount: 1}, nil
+}
+
+type stubDecisionApplication struct{}
+
+func (s *stubDecisionApplication) GetActionWindow(_ context.Context, _ appdecision.GetActionWindowQuery) (domaindecision.ActionWindowResult, error) {
+	return domaindecision.ActionWindowResult{
+		Action:     domaindecision.ActionBargain,
+		Confidence: domaindecision.ConfidenceHigh,
+		Summary:    "预算仍可服务，且目标小区供应与降价信号支持买方试探底价。",
+		Checklist:  []string{"约看 3 套成交区间附近、挂牌超过 60 天的目标户型。"},
+		Risks:      []string{"预算不是完全宽松，砍价失败时不要上调总价硬追。"},
+	}, nil
 }
