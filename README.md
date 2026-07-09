@@ -58,6 +58,48 @@
 - [页面线框](docs/wireframes.md)
 - [PRD 第一版](docs/prd-v1.md)
 
+## 本地开发与验证
+
+安装前端依赖并运行完整前端校验：
+
+```bash
+pnpm install
+pnpm verify
+```
+
+刷新 Go `embed` 使用的静态前端产物，并运行后端测试：
+
+```bash
+pnpm build:web
+cd backend && go test ./...
+```
+
+使用 Docker Compose 启动集成服务：
+
+```bash
+docker compose up --build
+```
+
+服务启动后可检查健康状态和关注列表 API：
+
+```bash
+curl http://127.0.0.1:18080/healthz
+curl http://127.0.0.1:18080/api/v1/watchlist
+```
+
+## 后端二进制模式
+
+同一个 `propulse` Go 二进制支持以下运行模式：
+
+```bash
+propulse serve
+propulse api
+propulse worker
+propulse scheduler
+propulse migrate up
+propulse migrate down
+```
+
 ## 建议下一步
 
 先看：

@@ -1,33 +1,48 @@
-FROM node:22-alpine AS base
+FROM node:22-alpine AS node-deps
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN apk add --no-cache libc6-compat \
-  && npm install -g pnpm@11.8.0
+RUN npm install -g pnpm@11.8.0
 
 WORKDIR /app
-
-FROM base AS deps
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
-FROM base AS builder
+FROM node-deps AS frontend-builder
 
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm build
+RUN pnpm build:web
 
-FROM base AS runner
+FROM golang:1.25-alpine AS go-builder
 
-ENV NODE_ENV=production
+RUN apk add --no-cache git
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml next.config.mjs ./
-RUN pnpm install --prod --frozen-lockfile \
-  && pnpm store prune
+WORKDIR /src
 
-COPY --from=builder /app/.next ./.next
+COPY backend/go.mod backend/go.sum ./backend/
+WORKDIR /src/backend
+RUN go mod download
 
-EXPOSE 3000
+WORKDIR /src
+COPY backend ./backend
+COPY --from=frontend-builder /app/backend/web/static ./backend/web/static
 
-CMD ["pnpm", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+WORKDIR /src/backend
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/propulse ./cmd/propulse
+
+FROM alpine:3.22 AS runner
+
+RUN apk add --no-cache \
+  ca-certificates \
+  chromium \
+  freetype \
+  harfbuzz \
+  nss \
+  ttf-freefont
+
+COPY --from=go-builder /out/propulse /usr/local/bin/propulse
+
+EXPOSE 8080
+
+CMD ["/usr/local/bin/propulse", "serve"]
