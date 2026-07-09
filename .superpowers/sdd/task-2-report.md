@@ -82,3 +82,8 @@ ok      github.com/propulse/propulse/backend/web    0.002s
 ## Concerns, if any
 
 - None.
+
+## Fix follow-up
+
+- Restored `backend/web/static/.gitkeep` as a tracked file and updated `scripts/sync-static-web.mjs` to rewrite the placeholder after every `pnpm build:web` sync, so the generated static tree still contains the required file after the directory is removed and recreated.
+- Verified with `pnpm build:web`, `test -f backend/web/static/.gitkeep`, `cd backend && go test ./web -run TestEmbeddedWebContainsIndex -v`, and `cd backend && go test ./...`.
