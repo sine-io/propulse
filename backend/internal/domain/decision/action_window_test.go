@@ -3,8 +3,8 @@ package decision
 import (
 	"testing"
 
-	domaincapacity "github.com/propulse/propulse/backend/internal/domain/capacity"
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
+	domaincapacity "github.com/sine-io/propulse/backend/internal/domain/capacity"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
 )
 
 func TestRecommendActionWindowBargainsWhenBudgetServiceableAndBuyerWindowOpen(t *testing.T) {

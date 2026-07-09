@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/hibiken/asynq"
-	appqueue "github.com/propulse/propulse/backend/internal/application/queue"
+	appqueue "github.com/sine-io/propulse/backend/internal/application/queue"
 )
 
 type Client struct {

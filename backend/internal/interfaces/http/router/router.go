@@ -6,13 +6,13 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
-	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
-	appdecision "github.com/propulse/propulse/backend/internal/application/decision"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	httphandler "github.com/propulse/propulse/backend/internal/interfaces/http/handler"
-	httpmiddleware "github.com/propulse/propulse/backend/internal/interfaces/http/middleware"
-	"github.com/propulse/propulse/backend/web"
+	appcapacity "github.com/sine-io/propulse/backend/internal/application/capacity"
+	appcollection "github.com/sine-io/propulse/backend/internal/application/collection"
+	appdecision "github.com/sine-io/propulse/backend/internal/application/decision"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	httphandler "github.com/sine-io/propulse/backend/internal/interfaces/http/handler"
+	httpmiddleware "github.com/sine-io/propulse/backend/internal/interfaces/http/middleware"
+	"github.com/sine-io/propulse/backend/web"
 	"github.com/rs/zerolog"
 )
 

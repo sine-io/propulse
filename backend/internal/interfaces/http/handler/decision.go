@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	appdecision "github.com/propulse/propulse/backend/internal/application/decision"
-	domaindecision "github.com/propulse/propulse/backend/internal/domain/decision"
+	appdecision "github.com/sine-io/propulse/backend/internal/application/decision"
+	domaindecision "github.com/sine-io/propulse/backend/internal/domain/decision"
 )
 
 type DecisionApplication interface {

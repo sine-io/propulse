@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
-	appdecision "github.com/propulse/propulse/backend/internal/application/decision"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	domaindecision "github.com/propulse/propulse/backend/internal/domain/decision"
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
-	"github.com/propulse/propulse/backend/web"
+	appcollection "github.com/sine-io/propulse/backend/internal/application/collection"
+	appdecision "github.com/sine-io/propulse/backend/internal/application/decision"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	domaindecision "github.com/sine-io/propulse/backend/internal/domain/decision"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
+	"github.com/sine-io/propulse/backend/web"
 	"github.com/rs/zerolog"
 )
 

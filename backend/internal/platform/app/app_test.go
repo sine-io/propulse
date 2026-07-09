@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
-	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	domaincapacity "github.com/propulse/propulse/backend/internal/domain/capacity"
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
-	"github.com/propulse/propulse/backend/internal/infrastructure/config"
+	appcapacity "github.com/sine-io/propulse/backend/internal/application/capacity"
+	appcollection "github.com/sine-io/propulse/backend/internal/application/collection"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	domaincapacity "github.com/sine-io/propulse/backend/internal/domain/capacity"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
+	"github.com/sine-io/propulse/backend/internal/infrastructure/config"
 	"github.com/rs/zerolog"
 )
 

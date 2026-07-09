@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
-	domaincapacity "github.com/propulse/propulse/backend/internal/domain/capacity"
-	migraterunner "github.com/propulse/propulse/backend/internal/infrastructure/migrate"
+	appcapacity "github.com/sine-io/propulse/backend/internal/application/capacity"
+	domaincapacity "github.com/sine-io/propulse/backend/internal/domain/capacity"
+	migraterunner "github.com/sine-io/propulse/backend/internal/infrastructure/migrate"
 )
 
 func TestCapacityRepositoryPersistsAndFindsCalculations(t *testing.T) {

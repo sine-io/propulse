@@ -1,4 +1,4 @@
-module github.com/propulse/propulse/backend
+module github.com/sine-io/propulse/backend
 
 go 1.25.0
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	domaincapacity "github.com/propulse/propulse/backend/internal/domain/capacity"
+	domaincapacity "github.com/sine-io/propulse/backend/internal/domain/capacity"
 )
 
 func TestCreateCalculationPersistsComputedResult(t *testing.T) {

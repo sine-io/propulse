@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	migraterunner "github.com/propulse/propulse/backend/internal/infrastructure/migrate"
+	appcollection "github.com/sine-io/propulse/backend/internal/application/collection"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	migraterunner "github.com/sine-io/propulse/backend/internal/infrastructure/migrate"
 )
 
 func TestCollectionRepositoryStoresRawRecordAndSnapshots(t *testing.T) {

@@ -3,7 +3,7 @@ package neighborhood
 import (
 	"context"
 
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
 )
 
 type GetNeighborhoodQuery struct {

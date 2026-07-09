@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/propulse/propulse/backend/internal/infrastructure/config"
+	"github.com/sine-io/propulse/backend/internal/infrastructure/config"
 	"github.com/rs/zerolog"
 )
 

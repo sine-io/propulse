@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+	appcapacity "github.com/sine-io/propulse/backend/internal/application/capacity"
 	"gorm.io/gorm"
 )
 

@@ -9,7 +9,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/lib/pq"
-	backendmigrations "github.com/propulse/propulse/backend/migrations"
+	backendmigrations "github.com/sine-io/propulse/backend/migrations"
 )
 
 func Run(_ context.Context, databaseURL string, direction string) error {

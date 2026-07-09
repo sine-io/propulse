@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
+	appcollection "github.com/sine-io/propulse/backend/internal/application/collection"
 )
 
 func TestAdminImportsCreatesManualImport(t *testing.T) {

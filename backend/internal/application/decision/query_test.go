@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	domaincapacity "github.com/propulse/propulse/backend/internal/domain/capacity"
-	domaindecision "github.com/propulse/propulse/backend/internal/domain/decision"
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
+	appcapacity "github.com/sine-io/propulse/backend/internal/application/capacity"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	domaincapacity "github.com/sine-io/propulse/backend/internal/domain/capacity"
+	domaindecision "github.com/sine-io/propulse/backend/internal/domain/decision"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
 )
 
 func TestGetActionWindowComposesLatestCapacityFirstWatchlistMetricAndAlternatives(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
 )
 
 func TestCalculateNeighborhoodAggregatesSnapshotsAndWritesMetric(t *testing.T) {

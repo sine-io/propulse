@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
+	appcollection "github.com/sine-io/propulse/backend/internal/application/collection"
 	"gorm.io/gorm"
 )
 

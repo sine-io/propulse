@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
-	migraterunner "github.com/propulse/propulse/backend/internal/infrastructure/migrate"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
+	migraterunner "github.com/sine-io/propulse/backend/internal/infrastructure/migrate"
 )
 
 func TestNeighborhoodRepositoryPersistsWatchlistAndLatestMetric(t *testing.T) {

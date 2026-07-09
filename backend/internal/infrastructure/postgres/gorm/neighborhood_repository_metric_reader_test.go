@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
 )
 
 func TestNeighborhoodRepositoryLatestMetricUsesConfiguredReader(t *testing.T) {

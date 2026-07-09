@@ -8,10 +8,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	appmetric "github.com/propulse/propulse/backend/internal/application/metric"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
-	"github.com/propulse/propulse/backend/internal/infrastructure/postgres/sqlc"
+	appmetric "github.com/sine-io/propulse/backend/internal/application/metric"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
+	"github.com/sine-io/propulse/backend/internal/infrastructure/postgres/sqlc"
 )
 
 type Repository struct {

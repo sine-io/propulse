@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	appcollection "github.com/propulse/propulse/backend/internal/application/collection"
+	appcollection "github.com/sine-io/propulse/backend/internal/application/collection"
 )
 
 type inMemoryCollectionRepository struct {

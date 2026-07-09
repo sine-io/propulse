@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
 )
 
 func TestRepositoryLatestMetricMapsSqlcRow(t *testing.T) {

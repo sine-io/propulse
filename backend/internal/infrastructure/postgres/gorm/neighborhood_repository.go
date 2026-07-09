@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	domainneighborhood "github.com/sine-io/propulse/backend/internal/domain/neighborhood"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

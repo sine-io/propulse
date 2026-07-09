@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
-	domaindecision "github.com/propulse/propulse/backend/internal/domain/decision"
+	appcapacity "github.com/sine-io/propulse/backend/internal/application/capacity"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
+	domaindecision "github.com/sine-io/propulse/backend/internal/domain/decision"
 )
 
 const demoUserID = "demo-user"

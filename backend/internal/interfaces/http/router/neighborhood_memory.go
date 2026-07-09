@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
+	appneighborhood "github.com/sine-io/propulse/backend/internal/application/neighborhood"
 )
 
 type inMemoryNeighborhoodRepository struct {

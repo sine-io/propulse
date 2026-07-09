@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+	appcapacity "github.com/sine-io/propulse/backend/internal/application/capacity"
 )
 
 type inMemoryCalculationRepository struct {

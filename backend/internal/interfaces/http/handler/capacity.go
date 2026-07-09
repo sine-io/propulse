@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
-	domaincapacity "github.com/propulse/propulse/backend/internal/domain/capacity"
+	appcapacity "github.com/sine-io/propulse/backend/internal/application/capacity"
+	domaincapacity "github.com/sine-io/propulse/backend/internal/domain/capacity"
 )
 
 type CapacityApplication interface {

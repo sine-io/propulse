@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/propulse/propulse/backend/internal/infrastructure/config"
-	backendlogger "github.com/propulse/propulse/backend/internal/infrastructure/logger"
-	"github.com/propulse/propulse/backend/internal/platform/app"
+	"github.com/sine-io/propulse/backend/internal/infrastructure/config"
+	backendlogger "github.com/sine-io/propulse/backend/internal/infrastructure/logger"
+	"github.com/sine-io/propulse/backend/internal/platform/app"
 )
 
 func main() {
