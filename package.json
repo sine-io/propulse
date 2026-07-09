@@ -5,11 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:web": "pnpm build && node scripts/sync-static-web.mjs",
     "start": "next start",
     "lint": "eslint src --ext .ts,.tsx --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test"
   },
   "dependencies": {
     "@radix-ui/react-slot": "latest",
