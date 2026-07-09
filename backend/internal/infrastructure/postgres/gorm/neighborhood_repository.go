@@ -112,8 +112,12 @@ func (r *NeighborhoodRepository) ListWatchlist(ctx context.Context, userID strin
 	items := make([]appneighborhood.WatchlistSummary, 0, len(rows))
 	for _, row := range rows {
 		metric, err := r.LatestMetric(ctx, row.NeighborhoodID)
+		hasMetric := true
 		if err != nil && !errors.Is(err, appneighborhood.ErrMetricNotFound) {
 			return nil, err
+		}
+		if errors.Is(err, appneighborhood.ErrMetricNotFound) {
+			hasMetric = false
 		}
 		items = append(items, appneighborhood.WatchlistSummary{
 			ID:             row.ID,
@@ -121,6 +125,7 @@ func (r *NeighborhoodRepository) ListWatchlist(ctx context.Context, userID strin
 			Name:           row.Name,
 			Area:           row.Area,
 			TargetLayout:   row.TargetLayout,
+			HasMetric:      hasMetric,
 			Metric:         metric,
 		})
 	}

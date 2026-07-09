@@ -92,6 +92,7 @@ func TestListWatchlistEvaluatesLatestMetric(t *testing.T) {
 			Name:           "青枫花园",
 			Area:           "滨江核心",
 			TargetLayout:   "三房",
+			HasMetric:      true,
 			Metric: MetricSnapshot{
 				ListedHomes:          42,
 				ListedHomesChangePct: 18,
@@ -122,6 +123,39 @@ func TestListWatchlistEvaluatesLatestMetric(t *testing.T) {
 	}
 	if got[0].Advice != "重点看 495-545 万成交区间附近房源，对挂牌久、降价过的房源试探底价。" {
 		t.Fatalf("Advice = %q", got[0].Advice)
+	}
+}
+
+func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
+	repo := newMemoryRepository()
+	repo.watchlist = []WatchlistSummary{
+		{
+			ID:             "watch_1",
+			NeighborhoodID: "neighborhood_1",
+			Name:           "青枫花园",
+			Area:           "滨江核心",
+			TargetLayout:   "三房",
+			HasMetric:      false,
+		},
+	}
+	service := NewService(repo)
+
+	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: "demo-user"})
+	if err != nil {
+		t.Fatalf("ListWatchlist() error = %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("items = %d, want 1", len(got))
+	}
+	if got[0].Status != domainneighborhood.NeighborhoodStatusObserve {
+		t.Fatalf("Status = %q, want %q", got[0].Status, domainneighborhood.NeighborhoodStatusObserve)
+	}
+	if got[0].Advice != "暂无指标数据，等待导入或计算后再判断。" {
+		t.Fatalf("Advice = %q", got[0].Advice)
+	}
+	if got[0].ListedHomes != 0 || got[0].PriceCutHomes != 0 || got[0].TransactionMomentum != "" {
+		t.Fatalf("metric fields = listed %d, price cuts %d, momentum %q", got[0].ListedHomes, got[0].PriceCutHomes, got[0].TransactionMomentum)
 	}
 }
 

@@ -47,6 +47,7 @@ type WatchlistSummary struct {
 	Name           string
 	Area           string
 	TargetLayout   string
+	HasMetric      bool
 	Metric         MetricSnapshot
 }
 

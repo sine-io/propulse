@@ -26,6 +26,19 @@ func (s *Service) ListWatchlist(ctx context.Context, query ListWatchlistQuery) (
 
 	summaries := make([]WatchlistItemSummary, 0, len(items))
 	for _, item := range items {
+		if !item.HasMetric {
+			summaries = append(summaries, WatchlistItemSummary{
+				ID:             item.ID,
+				NeighborhoodID: item.NeighborhoodID,
+				Name:           item.Name,
+				Area:           item.Area,
+				TargetLayout:   item.TargetLayout,
+				Status:         domainneighborhood.NeighborhoodStatusObserve,
+				Advice:         "暂无指标数据，等待导入或计算后再判断。",
+			})
+			continue
+		}
+
 		signal := evaluateMetric(item.Name, item.Metric)
 		summaries = append(summaries, WatchlistItemSummary{
 			ID:                  item.ID,

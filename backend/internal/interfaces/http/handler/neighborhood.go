@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -67,6 +68,13 @@ func (h Neighborhood) CreateNeighborhood(c *gin.Context) {
 	var request createNeighborhoodRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
+		return
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	request.Area = strings.TrimSpace(request.Area)
+	request.TargetLayout = strings.TrimSpace(request.TargetLayout)
+	if request.Name == "" || request.Area == "" || request.TargetLayout == "" {
+		writeError(c, http.StatusBadRequest, "invalid_request", "name, area, and targetLayout are required")
 		return
 	}
 

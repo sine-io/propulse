@@ -85,13 +85,15 @@ func (r *inMemoryNeighborhoodRepository) ListWatchlist(_ context.Context, userID
 			continue
 		}
 		neighborhood := r.neighborhoods[item.NeighborhoodID]
+		metric, hasMetric := r.metrics[item.NeighborhoodID]
 		items = append(items, appneighborhood.WatchlistSummary{
 			ID:             item.ID,
 			NeighborhoodID: item.NeighborhoodID,
 			Name:           neighborhood.Name,
 			Area:           neighborhood.Area,
 			TargetLayout:   neighborhood.TargetLayout,
-			Metric:         r.metrics[item.NeighborhoodID],
+			HasMetric:      hasMetric,
+			Metric:         metric,
 		})
 	}
 	return items, nil

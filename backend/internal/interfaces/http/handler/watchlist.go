@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -52,6 +53,11 @@ func (h Watchlist) AddItem(c *gin.Context) {
 	var request addWatchlistItemRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
+		return
+	}
+	request.NeighborhoodID = strings.TrimSpace(request.NeighborhoodID)
+	if request.NeighborhoodID == "" {
+		writeError(c, http.StatusBadRequest, "invalid_request", "neighborhoodId is required")
 		return
 	}
 

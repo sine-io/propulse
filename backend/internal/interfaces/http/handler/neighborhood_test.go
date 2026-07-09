@@ -56,6 +56,36 @@ func TestCreateNeighborhoodReturnsCreatedNeighborhood(t *testing.T) {
 	}
 }
 
+func TestCreateNeighborhoodRejectsMissingRequiredFields(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	service := &stubNeighborhoodApplication{}
+	engine := gin.New()
+	engine.POST("/api/v1/neighborhoods", NewNeighborhood(service).CreateNeighborhood)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/neighborhoods", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if service.createCalled {
+		t.Fatal("CreateNeighborhood was called for invalid request")
+	}
+	var response struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if response.Error.Code != "invalid_request" {
+		t.Fatalf("error code = %q, want invalid_request", response.Error.Code)
+	}
+}
+
 func TestGetNeighborhoodReturnsStoredNeighborhood(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubNeighborhoodApplication{
@@ -177,6 +207,36 @@ func TestCreateWatchlistItemUsesDemoUser(t *testing.T) {
 	}
 }
 
+func TestCreateWatchlistItemRejectsMissingNeighborhoodID(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	service := &stubNeighborhoodApplication{}
+	engine := gin.New()
+	engine.POST("/api/v1/watchlist/items", NewWatchlist(service).AddItem)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/watchlist/items", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if service.addCalled {
+		t.Fatal("AddWatchlistItem was called for invalid request")
+	}
+	var response struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if response.Error.Code != "invalid_request" {
+		t.Fatalf("error code = %q, want invalid_request", response.Error.Code)
+	}
+}
+
 func TestListWatchlistReturnsBriefShape(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubNeighborhoodApplication{
@@ -230,9 +290,59 @@ func TestListWatchlistReturnsBriefShape(t *testing.T) {
 	}
 }
 
+func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	service := &stubNeighborhoodApplication{
+		watchlist: []appneighborhood.WatchlistItemSummary{
+			{
+				ID:             "watch_1",
+				NeighborhoodID: "neighborhood_1",
+				Name:           "青枫花园",
+				Area:           "滨江核心",
+				TargetLayout:   "三房",
+				Status:         domainneighborhood.NeighborhoodStatusObserve,
+				Advice:         "暂无指标数据，等待导入或计算后再判断。",
+			},
+		},
+	}
+	engine := gin.New()
+	engine.GET("/api/v1/watchlist", NewWatchlist(service).List)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/watchlist", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var response struct {
+		Items []struct {
+			Status              string `json:"status"`
+			ListedHomes         int    `json:"listedHomes"`
+			PriceCutHomes       int    `json:"priceCutHomes"`
+			TransactionMomentum string `json:"transactionMomentum"`
+			Advice              string `json:"advice"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(response.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(response.Items))
+	}
+	item := response.Items[0]
+	if item.Status != "继续观察" || item.Advice != "暂无指标数据，等待导入或计算后再判断。" {
+		t.Fatalf("item = %#v", item)
+	}
+	if item.ListedHomes != 0 || item.PriceCutHomes != 0 || item.TransactionMomentum != "" {
+		t.Fatalf("metric fields = listed %d, price cuts %d, momentum %q", item.ListedHomes, item.PriceCutHomes, item.TransactionMomentum)
+	}
+}
+
 type stubNeighborhoodApplication struct {
 	createNeighborhood    appneighborhood.Neighborhood
 	createNeighborhoodErr error
+	createCalled          bool
 	getNeighborhood       appneighborhood.Neighborhood
 	getNeighborhoodErr    error
 	latestMetric          appneighborhood.MetricWithSignal
@@ -240,11 +350,13 @@ type stubNeighborhoodApplication struct {
 	addWatchlistItem      appneighborhood.WatchlistItem
 	addWatchlistItemErr   error
 	addCommand            appneighborhood.AddWatchlistItemCommand
+	addCalled             bool
 	watchlist             []appneighborhood.WatchlistItemSummary
 	watchlistErr          error
 }
 
 func (s *stubNeighborhoodApplication) CreateNeighborhood(_ context.Context, command appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
+	s.createCalled = true
 	return s.createNeighborhood, s.createNeighborhoodErr
 }
 
@@ -263,6 +375,7 @@ func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, query appn
 }
 
 func (s *stubNeighborhoodApplication) AddWatchlistItem(_ context.Context, command appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error) {
+	s.addCalled = true
 	s.addCommand = command
 	if s.addWatchlistItemErr != nil {
 		return appneighborhood.WatchlistItem{}, s.addWatchlistItemErr
