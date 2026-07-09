@@ -59,6 +59,104 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/neighborhoods:
+    post:
+      summary: Create a neighborhood
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNeighborhoodRequest'
+      responses:
+        '201':
+          description: Neighborhood created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NeighborhoodResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/neighborhoods/{id}:
+    get:
+      summary: Get a neighborhood
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Neighborhood found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NeighborhoodResponse'
+        '404':
+          description: Neighborhood not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/neighborhoods/{id}/metrics:
+    get:
+      summary: Get latest neighborhood metrics with signal
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Latest metric found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NeighborhoodMetricResponse'
+        '404':
+          description: Metric not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/watchlist/items:
+    post:
+      summary: Add a neighborhood to the demo user's watchlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddWatchlistItemRequest'
+      responses:
+        '201':
+          description: Watchlist item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddWatchlistItemResponse'
+        '404':
+          description: Neighborhood not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/watchlist:
+    get:
+      summary: List the demo user's watchlist
+      responses:
+        '200':
+          description: Watchlist items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchlistResponse'
 components:
   schemas:
     HousingCapacityInput:
@@ -168,6 +266,153 @@ components:
         createdAt:
           type: string
           format: date-time
+    CreateNeighborhoodRequest:
+      type: object
+      required: [name, area, targetLayout]
+      properties:
+        name:
+          type: string
+        area:
+          type: string
+        targetLayout:
+          type: string
+    NeighborhoodResponse:
+      type: object
+      required: [id, name, area, targetLayout]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        area:
+          type: string
+        targetLayout:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    NeighborhoodMetricResponse:
+      type: object
+      required:
+        - id
+        - neighborhoodId
+        - listedHomes
+        - priceCutHomes
+        - avgDaysOnMarket
+        - transactionMomentum
+        - targetLayoutSupply
+        - status
+        - supplyPressure
+        - advice
+      properties:
+        id:
+          type: string
+        neighborhoodId:
+          type: string
+        listedHomes:
+          type: integer
+        priceCutHomes:
+          type: integer
+        avgDaysOnMarket:
+          type: number
+        listingPriceMin:
+          type: number
+        listingPriceMax:
+          type: number
+        transactionPriceMin:
+          type: number
+        transactionPriceMax:
+          type: number
+        transactionMomentum:
+          type: string
+          enum: [weak, stable, strong]
+        targetLayoutSupply:
+          type: integer
+        status:
+          type: string
+          enum: ["重点看", "继续观察", "适合砍价", "价格偏硬", "暂不建议追"]
+        supplyPressure:
+          type: string
+          enum: [low, medium, high]
+        priceCutShare:
+          type: number
+        priceGapPct:
+          type: number
+        targetLayoutScarcity:
+          type: string
+          enum: [low, medium, high]
+        advice:
+          type: string
+        reasons:
+          type: array
+          items:
+            type: string
+        calculatedAt:
+          type: string
+          format: date-time
+    AddWatchlistItemRequest:
+      type: object
+      required: [neighborhoodId]
+      properties:
+        neighborhoodId:
+          type: string
+    AddWatchlistItemResponse:
+      type: object
+      required: [id, neighborhoodId, userId, createdAt]
+      properties:
+        id:
+          type: string
+        neighborhoodId:
+          type: string
+        userId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    WatchlistResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WatchlistItem'
+    WatchlistItem:
+      type: object
+      required:
+        - id
+        - neighborhoodId
+        - name
+        - area
+        - targetLayout
+        - status
+        - listedHomes
+        - priceCutHomes
+        - transactionMomentum
+        - advice
+      properties:
+        id:
+          type: string
+        neighborhoodId:
+          type: string
+        name:
+          type: string
+        area:
+          type: string
+        targetLayout:
+          type: string
+        status:
+          type: string
+          enum: ["重点看", "继续观察", "适合砍价", "价格偏硬", "暂不建议追"]
+        listedHomes:
+          type: integer
+        priceCutHomes:
+          type: integer
+        transactionMomentum:
+          type: string
+          enum: [weak, stable, strong]
+        advice:
+          type: string
     ErrorResponse:
       type: object
       required: [error]

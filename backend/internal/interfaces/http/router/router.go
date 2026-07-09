@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	httphandler "github.com/propulse/propulse/backend/internal/interfaces/http/handler"
 	httpmiddleware "github.com/propulse/propulse/backend/internal/interfaces/http/middleware"
 	"github.com/propulse/propulse/backend/web"
@@ -14,9 +15,10 @@ import (
 )
 
 type Dependencies struct {
-	Log                 zerolog.Logger
-	StaticFS            fs.FS
-	CapacityApplication httphandler.CapacityApplication
+	Log                     zerolog.Logger
+	StaticFS                fs.FS
+	CapacityApplication     httphandler.CapacityApplication
+	NeighborhoodApplication httphandler.NeighborhoodApplication
 }
 
 var frontendRoutes = map[string]string{
@@ -56,6 +58,18 @@ func New(deps Dependencies) *gin.Engine {
 	capacityHandler := httphandler.NewCapacity(capacityApp)
 	api.POST("/capacity/calculations", capacityHandler.CreateCalculation)
 	api.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
+
+	neighborhoodApp := deps.NeighborhoodApplication
+	if neighborhoodApp == nil {
+		neighborhoodApp = appneighborhood.NewService(newInMemoryNeighborhoodRepository())
+	}
+	neighborhoodHandler := httphandler.NewNeighborhood(neighborhoodApp)
+	watchlistHandler := httphandler.NewWatchlist(neighborhoodApp)
+	api.POST("/neighborhoods", neighborhoodHandler.CreateNeighborhood)
+	api.GET("/neighborhoods/:id", neighborhoodHandler.GetNeighborhood)
+	api.GET("/neighborhoods/:id/metrics", neighborhoodHandler.GetMetrics)
+	api.POST("/watchlist/items", watchlistHandler.AddItem)
+	api.GET("/watchlist", watchlistHandler.List)
 
 	admin := engine.Group("/admin/api")
 	admin.Use()

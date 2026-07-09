@@ -11,7 +11,9 @@ import (
 	"time"
 
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	domaincapacity "github.com/propulse/propulse/backend/internal/domain/capacity"
+	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
 	"github.com/propulse/propulse/backend/internal/infrastructure/config"
 	"github.com/rs/zerolog"
 )
@@ -72,9 +74,11 @@ func TestRunMigrateUpRunsMigrations(t *testing.T) {
 
 func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 	originalOpenCapacityApplication := openCapacityApplication
+	originalOpenNeighborhoodApplication := openNeighborhoodApplication
 	originalListenAndServe := listenAndServe
 	defer func() {
 		openCapacityApplication = originalOpenCapacityApplication
+		openNeighborhoodApplication = originalOpenNeighborhoodApplication
 		listenAndServe = originalListenAndServe
 	}()
 
@@ -95,6 +99,9 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
 		}
 		return service, noopCloser{}, nil
+	}
+	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
+		return &stubAppNeighborhoodApplication{}, noopCloser{}, nil
 	}
 
 	listenAndServe = func(server *http.Server) error {
@@ -130,13 +137,85 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 	}
 }
 
+func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
+	originalOpenCapacityApplication := openCapacityApplication
+	originalOpenNeighborhoodApplication := openNeighborhoodApplication
+	originalListenAndServe := listenAndServe
+	defer func() {
+		openCapacityApplication = originalOpenCapacityApplication
+		openNeighborhoodApplication = originalOpenNeighborhoodApplication
+		listenAndServe = originalListenAndServe
+	}()
+
+	service := &stubAppNeighborhoodApplication{
+		watchlist: []appneighborhood.WatchlistItemSummary{
+			{
+				ID:                  "watch_1",
+				NeighborhoodID:      "neighborhood_1",
+				Name:                "青枫花园",
+				Area:                "滨江核心",
+				TargetLayout:        "三房",
+				Status:              domainneighborhood.NeighborhoodStatusBargain,
+				ListedHomes:         42,
+				PriceCutHomes:       11,
+				TransactionMomentum: domainneighborhood.TransactionMomentumWeak,
+				Advice:              "重点看 495-545 万成交区间附近房源，对挂牌久、降价过的房源试探底价。",
+			},
+		},
+	}
+
+	openCapacityApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CapacityApplication, io.Closer, error) {
+		return &stubAppCapacityApplication{}, noopCloser{}, nil
+	}
+	openNeighborhoodApplication = func(_ context.Context, cfg config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
+		if cfg.DatabaseURL != "postgres://test" {
+			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
+		}
+		return service, noopCloser{}, nil
+	}
+
+	listenAndServe = func(server *http.Server) error {
+		req, err := http.NewRequest(http.MethodGet, "/api/v1/watchlist", nil)
+		if err != nil {
+			t.Fatalf("http.NewRequest() error = %v", err)
+		}
+		rec := newInMemoryHTTPResponseWriter()
+
+		server.Handler.ServeHTTP(rec, req)
+
+		if rec.statusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.statusCode)
+		}
+		if !service.listCalled {
+			t.Fatal("expected injected neighborhood application to handle request")
+		}
+
+		return http.ErrServerClosed
+	}
+
+	err := Run(context.Background(), "api", config.Config{
+		HTTPAddr:    "127.0.0.1:0",
+		DatabaseURL: "postgres://test",
+	}, zerolog.New(io.Discard))
+	if err != nil {
+		t.Fatalf("Run(api) error = %v", err)
+	}
+}
+
 func testRunStartsHTTPServer(t *testing.T, mode string) {
 	t.Helper()
 
 	originalOpenCapacityApplication := openCapacityApplication
-	defer func() { openCapacityApplication = originalOpenCapacityApplication }()
+	originalOpenNeighborhoodApplication := openNeighborhoodApplication
+	defer func() {
+		openCapacityApplication = originalOpenCapacityApplication
+		openNeighborhoodApplication = originalOpenNeighborhoodApplication
+	}()
 	openCapacityApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CapacityApplication, io.Closer, error) {
 		return &stubAppCapacityApplication{}, noopCloser{}, nil
+	}
+	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
+		return &stubAppNeighborhoodApplication{}, noopCloser{}, nil
 	}
 
 	addr := freeLocalAddr(t)
@@ -234,6 +313,32 @@ func (s *stubAppCapacityApplication) CreateCalculation(_ context.Context, _ appc
 
 func (s *stubAppCapacityApplication) GetCalculation(_ context.Context, _ appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error) {
 	return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
+}
+
+type stubAppNeighborhoodApplication struct {
+	listCalled bool
+	watchlist  []appneighborhood.WatchlistItemSummary
+}
+
+func (s *stubAppNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
+	return appneighborhood.Neighborhood{}, nil
+}
+
+func (s *stubAppNeighborhoodApplication) GetNeighborhood(_ context.Context, _ appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error) {
+	return appneighborhood.Neighborhood{}, appneighborhood.ErrNeighborhoodNotFound
+}
+
+func (s *stubAppNeighborhoodApplication) LatestMetric(_ context.Context, _ appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {
+	return appneighborhood.MetricWithSignal{}, appneighborhood.ErrMetricNotFound
+}
+
+func (s *stubAppNeighborhoodApplication) AddWatchlistItem(_ context.Context, _ appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error) {
+	return appneighborhood.WatchlistItem{}, nil
+}
+
+func (s *stubAppNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {
+	s.listCalled = true
+	return s.watchlist, nil
 }
 
 type noopCloser struct{}

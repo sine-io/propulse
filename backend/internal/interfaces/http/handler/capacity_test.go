@@ -121,9 +121,9 @@ func TestGetCapacityCalculationReturnsStoredRecord(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	var response struct {
-		ID        string                              `json:"id"`
-		Input     domaincapacity.HousingCapacityInput `json:"input"`
-		Result    struct {
+		ID     string                              `json:"id"`
+		Input  domaincapacity.HousingCapacityInput `json:"input"`
+		Result struct {
 			PressureLevel string `json:"pressureLevel"`
 			Strategy      string `json:"strategy"`
 		} `json:"result"`

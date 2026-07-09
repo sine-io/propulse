@@ -8,6 +8,7 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	t.Setenv("PROPULSE_REDIS_ADDR", "")
 	t.Setenv("PROPULSE_LOG_LEVEL", "")
 	t.Setenv("PROPULSE_LOG_PRETTY", "")
+	t.Setenv("PROPULSE_SEED_DEMO_DATA", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -28,5 +29,21 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	}
 	if cfg.Log.Pretty {
 		t.Fatal("Log.Pretty must default to false")
+	}
+	if cfg.SeedDemoData {
+		t.Fatal("SeedDemoData must default to false")
+	}
+}
+
+func TestLoadEnablesDemoSeedData(t *testing.T) {
+	t.Setenv("PROPULSE_SEED_DEMO_DATA", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if !cfg.SeedDemoData {
+		t.Fatal("SeedDemoData = false, want true")
 	}
 }

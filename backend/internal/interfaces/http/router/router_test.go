@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
+	domainneighborhood "github.com/propulse/propulse/backend/internal/domain/neighborhood"
 	"github.com/propulse/propulse/backend/web"
 	"github.com/rs/zerolog"
 )
@@ -144,4 +146,81 @@ func TestRouterStopsWithCanceledContext(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
+}
+
+func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
+	engine := New(Dependencies{
+		Log:                     zerolog.New(io.Discard),
+		StaticFS:                web.Embedded(),
+		NeighborhoodApplication: &stubNeighborhoodApplication{},
+	})
+
+	for _, route := range []struct {
+		method string
+		path   string
+		body   string
+		status int
+	}{
+		{method: http.MethodPost, path: "/api/v1/neighborhoods", body: `{"name":"青枫花园","area":"滨江核心","targetLayout":"三房"}`, status: http.StatusCreated},
+		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1", status: http.StatusOK},
+		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1/metrics", status: http.StatusOK},
+		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{"neighborhoodId":"neighborhood_1"}`, status: http.StatusCreated},
+		{method: http.MethodGet, path: "/api/v1/watchlist", status: http.StatusOK},
+	} {
+		req := httptest.NewRequest(route.method, route.path, strings.NewReader(route.body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+		if rec.Code != route.status {
+			t.Fatalf("%s %s status = %d, want %d; body=%s", route.method, route.path, rec.Code, route.status, rec.Body.String())
+		}
+	}
+}
+
+type stubNeighborhoodApplication struct{}
+
+func (s *stubNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
+	return appneighborhood.Neighborhood{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"}, nil
+}
+
+func (s *stubNeighborhoodApplication) GetNeighborhood(_ context.Context, _ appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error) {
+	return appneighborhood.Neighborhood{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"}, nil
+}
+
+func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, _ appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {
+	return appneighborhood.MetricWithSignal{
+		Metric: appneighborhood.MetricSnapshot{
+			ID:                  "metric_1",
+			NeighborhoodID:      "neighborhood_1",
+			ListedHomes:         42,
+			PriceCutHomes:       11,
+			TransactionMomentum: domainneighborhood.TransactionMomentumWeak,
+		},
+		Signal: domainneighborhood.SignalResult{
+			Status:         domainneighborhood.NeighborhoodStatusBargain,
+			SupplyPressure: domainneighborhood.SupplyPressureHigh,
+			NextAction:     "重点看 495-545 万成交区间附近房源，对挂牌久、降价过的房源试探底价。",
+		},
+	}, nil
+}
+
+func (s *stubNeighborhoodApplication) AddWatchlistItem(_ context.Context, _ appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error) {
+	return appneighborhood.WatchlistItem{ID: "watch_1", UserID: "demo-user", NeighborhoodID: "neighborhood_1"}, nil
+}
+
+func (s *stubNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {
+	return []appneighborhood.WatchlistItemSummary{
+		{
+			ID:                  "watch_1",
+			NeighborhoodID:      "neighborhood_1",
+			Name:                "青枫花园",
+			Area:                "滨江核心",
+			TargetLayout:        "三房",
+			Status:              domainneighborhood.NeighborhoodStatusBargain,
+			ListedHomes:         42,
+			PriceCutHomes:       11,
+			TransactionMomentum: domainneighborhood.TransactionMomentumWeak,
+			Advice:              "重点看 495-545 万成交区间附近房源，对挂牌久、降价过的房源试探底价。",
+		},
+	}, nil
 }

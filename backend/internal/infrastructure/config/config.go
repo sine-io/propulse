@@ -10,11 +10,12 @@ const (
 )
 
 type Config struct {
-	HTTPAddr    string
-	DatabaseURL string
-	RedisAddr   string
-	Mode        string
-	Log         LogConfig
+	HTTPAddr     string
+	DatabaseURL  string
+	RedisAddr    string
+	Mode         string
+	SeedDemoData bool
+	Log          LogConfig
 }
 
 type LogConfig struct {
@@ -24,9 +25,10 @@ type LogConfig struct {
 
 func Load() (Config, error) {
 	return Config{
-		HTTPAddr:    getEnv("PROPULSE_HTTP_ADDR", defaultHTTPAddr),
-		DatabaseURL: getEnv("PROPULSE_DATABASE_URL", defaultDatabaseURL),
-		RedisAddr:   getEnv("PROPULSE_REDIS_ADDR", defaultRedisAddr),
+		HTTPAddr:     getEnv("PROPULSE_HTTP_ADDR", defaultHTTPAddr),
+		DatabaseURL:  getEnv("PROPULSE_DATABASE_URL", defaultDatabaseURL),
+		RedisAddr:    getEnv("PROPULSE_REDIS_ADDR", defaultRedisAddr),
+		SeedDemoData: getEnv("PROPULSE_SEED_DEMO_DATA", "") == "true",
 		Log: LogConfig{
 			Level:  getEnv("PROPULSE_LOG_LEVEL", defaultLogLevel),
 			Pretty: getEnv("PROPULSE_LOG_PRETTY", "") == "true",

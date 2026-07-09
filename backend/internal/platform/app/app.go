@@ -9,6 +9,7 @@ import (
 	"time"
 
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
+	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	"github.com/propulse/propulse/backend/internal/infrastructure/config"
 	migraterunner "github.com/propulse/propulse/backend/internal/infrastructure/migrate"
 	postgresgorm "github.com/propulse/propulse/backend/internal/infrastructure/postgres/gorm"
@@ -24,6 +25,14 @@ type CapacityApplication interface {
 	GetCalculation(ctx context.Context, query appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error)
 }
 
+type NeighborhoodApplication interface {
+	CreateNeighborhood(ctx context.Context, command appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error)
+	GetNeighborhood(ctx context.Context, query appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error)
+	LatestMetric(ctx context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error)
+	AddWatchlistItem(ctx context.Context, command appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error)
+	ListWatchlist(ctx context.Context, query appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error)
+}
+
 var runMigrations = migraterunner.Run
 var openCapacityApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (CapacityApplication, io.Closer, error) {
 	db, sqlDB, err := postgresgorm.Open(cfg.DatabaseURL)
@@ -33,6 +42,25 @@ var openCapacityApplication = func(ctx context.Context, cfg config.Config, log z
 
 	repo := postgresgorm.NewCapacityRepository(db)
 	service := appcapacity.NewService(repo, time.Now, nil)
+	return service, sqlDB, nil
+}
+
+var openNeighborhoodApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
+	db, sqlDB, err := postgresgorm.Open(cfg.DatabaseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	repo := postgresgorm.NewNeighborhoodRepository(db)
+	if cfg.SeedDemoData {
+		if err := repo.SeedDemoData(ctx); err != nil {
+			_ = sqlDB.Close()
+			return nil, nil, err
+		}
+		log.Info().Msg("seeded demo neighborhood data")
+	}
+
+	service := appneighborhood.NewService(repo)
 	return service, sqlDB, nil
 }
 
@@ -96,10 +124,19 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger) e
 		_ = closer.Close()
 	}()
 
+	neighborhoodApp, neighborhoodCloser, err := openNeighborhoodApplication(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = neighborhoodCloser.Close()
+	}()
+
 	engine := router.New(router.Dependencies{
-		Log:                 log,
-		StaticFS:            web.Embedded(),
-		CapacityApplication: capacityApp,
+		Log:                     log,
+		StaticFS:                web.Embedded(),
+		CapacityApplication:     capacityApp,
+		NeighborhoodApplication: neighborhoodApp,
 	})
 
 	server := &http.Server{
