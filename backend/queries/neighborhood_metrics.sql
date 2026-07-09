@@ -9,7 +9,16 @@ SELECT
   COALESCE(MAX(transaction_price), 0)::numeric AS transaction_price_max,
   COUNT(*) FILTER (WHERE layout = sqlc.arg(target_layout))::int AS target_layout_supply
 FROM listing_snapshots
-WHERE neighborhood_id = sqlc.arg(neighborhood_id);
+WHERE neighborhood_id = sqlc.arg(neighborhood_id)
+  AND collection_run_id = (
+    SELECT collection_run_id
+    FROM listing_snapshots
+    WHERE neighborhood_id = sqlc.arg(neighborhood_id)
+      AND collection_run_id IS NOT NULL
+    GROUP BY collection_run_id
+    ORDER BY MAX(captured_at) DESC, collection_run_id DESC
+    LIMIT 1
+  );
 
 -- name: InsertNeighborhoodMetric :one
 INSERT INTO neighborhood_metrics (

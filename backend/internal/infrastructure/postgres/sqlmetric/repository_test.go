@@ -3,6 +3,7 @@ package sqlmetric
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,8 +71,46 @@ func TestRepositoryLatestMetricMapsNoRows(t *testing.T) {
 	}
 }
 
+func TestRepositoryAggregateListingSnapshotsUsesLatestCollectionRun(t *testing.T) {
+	neighborhoodID := uuid.New()
+	db := &latestMetricDB{
+		row: latestMetricRow{
+			values: []any{
+				int32(2),
+				int32(1),
+				numericValue(t, "14"),
+				numericValue(t, "520"),
+				numericValue(t, "610"),
+				numericValue(t, "495"),
+				numericValue(t, "545"),
+				int32(2),
+			},
+		},
+	}
+
+	_, err := NewRepository(db).AggregateListingSnapshots(context.Background(), neighborhoodID.String(), "三房")
+	if err != nil {
+		t.Fatalf("AggregateListingSnapshots() error = %v", err)
+	}
+
+	if !strings.Contains(db.query, "collection_run_id") {
+		t.Fatalf("aggregate query does not scope by collection_run_id:\n%s", db.query)
+	}
+	if !strings.Contains(db.query, "MAX(captured_at)") {
+		t.Fatalf("aggregate query does not select the latest captured run:\n%s", db.query)
+	}
+	if db.targetLayout != "三房" {
+		t.Fatalf("targetLayout arg = %q, want 三房", db.targetLayout)
+	}
+	if db.neighborhoodID != uuidValue(neighborhoodID) {
+		t.Fatalf("neighborhoodID arg = %#v, want %#v", db.neighborhoodID, uuidValue(neighborhoodID))
+	}
+}
+
 type latestMetricDB struct {
 	row            latestMetricRow
+	query          string
+	targetLayout   string
 	neighborhoodID pgtype.UUID
 }
 
@@ -83,9 +122,14 @@ func (db *latestMetricDB) Query(context.Context, string, ...interface{}) (pgx.Ro
 	panic("unexpected Query")
 }
 
-func (db *latestMetricDB) QueryRow(_ context.Context, _ string, args ...interface{}) pgx.Row {
+func (db *latestMetricDB) QueryRow(_ context.Context, query string, args ...interface{}) pgx.Row {
+	db.query = query
 	if len(args) == 1 {
 		db.neighborhoodID = args[0].(pgtype.UUID)
+	}
+	if len(args) == 2 {
+		db.targetLayout = args[0].(string)
+		db.neighborhoodID = args[1].(pgtype.UUID)
 	}
 	return db.row
 }

@@ -74,6 +74,7 @@ func (RawCollectionRecordModel) TableName() string {
 
 type ListingSnapshotModel struct {
 	ID               string    `gorm:"column:id;type:uuid;primaryKey"`
+	CollectionRunID  string    `gorm:"column:collection_run_id;type:uuid"`
 	NeighborhoodID   string    `gorm:"column:neighborhood_id;type:uuid"`
 	ListingPrice     float64   `gorm:"column:listing_price"`
 	TransactionPrice *float64  `gorm:"column:transaction_price"`

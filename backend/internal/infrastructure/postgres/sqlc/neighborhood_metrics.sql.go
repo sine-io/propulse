@@ -23,6 +23,15 @@ SELECT
   COUNT(*) FILTER (WHERE layout = $1)::int AS target_layout_supply
 FROM listing_snapshots
 WHERE neighborhood_id = $2
+  AND collection_run_id = (
+    SELECT collection_run_id
+    FROM listing_snapshots
+    WHERE neighborhood_id = $2
+      AND collection_run_id IS NOT NULL
+    GROUP BY collection_run_id
+    ORDER BY MAX(captured_at) DESC, collection_run_id DESC
+    LIMIT 1
+  )
 `
 
 type AggregateListingSnapshotsParams struct {

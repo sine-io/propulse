@@ -181,15 +181,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/ActionWindowResponse'
         '400':
-          description: Capacity calculation required
+          description: Request cannot produce an action window yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                capacityRequired:
+                  value:
+                    error:
+                      code: capacity_required
+                      message: create a capacity calculation before requesting an action window
+                watchlistRequired:
+                  value:
+                    error:
+                      code: watchlist_required
+                      message: add a neighborhood to the watchlist before requesting an action window
+                invalidNeighborhoodID:
+                  value:
+                    error:
+                      code: invalid_neighborhood_id
+                      message: neighborhoodId must be a valid UUID
+        '404':
+          description: Neighborhood metric is not available
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error:
-                  code: capacity_required
-                  message: create a capacity calculation before requesting an action window
+                  code: metric_required
+                  message: no neighborhood metric is available
         '500':
           description: Internal server error
           content:

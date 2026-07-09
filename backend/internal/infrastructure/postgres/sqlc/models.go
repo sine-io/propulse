@@ -17,6 +17,7 @@ type CapacityCalculation struct {
 
 type ListingSnapshot struct {
 	ID               pgtype.UUID
+	CollectionRunID  pgtype.UUID
 	NeighborhoodID   pgtype.UUID
 	ListingPrice     pgtype.Numeric
 	TransactionPrice pgtype.Numeric

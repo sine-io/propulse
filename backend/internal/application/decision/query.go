@@ -3,7 +3,9 @@ package decision
 import (
 	"context"
 	"errors"
+	"strings"
 
+	"github.com/google/uuid"
 	appcapacity "github.com/propulse/propulse/backend/internal/application/capacity"
 	appneighborhood "github.com/propulse/propulse/backend/internal/application/neighborhood"
 	domaindecision "github.com/propulse/propulse/backend/internal/domain/decision"
@@ -12,6 +14,9 @@ import (
 const demoUserID = "demo-user"
 
 var ErrCapacityRequired = errors.New("capacity required")
+var ErrWatchlistRequired = errors.New("watchlist required")
+var ErrMetricRequired = errors.New("metric required")
+var ErrInvalidNeighborhoodID = errors.New("invalid neighborhood id")
 
 type CapacityReader interface {
 	LatestCalculation(ctx context.Context, query appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error)
@@ -52,13 +57,26 @@ func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuer
 		return domaindecision.ActionWindowResult{}, err
 	}
 
-	neighborhoodID := query.NeighborhoodID
+	explicitNeighborhoodID := strings.TrimSpace(query.NeighborhoodID)
+	if explicitNeighborhoodID != "" {
+		if _, err := uuid.Parse(explicitNeighborhoodID); err != nil {
+			return domaindecision.ActionWindowResult{}, ErrInvalidNeighborhoodID
+		}
+	}
+
+	neighborhoodID := explicitNeighborhoodID
 	if neighborhoodID == "" && len(watchlist) > 0 {
 		neighborhoodID = watchlist[0].NeighborhoodID
+	}
+	if neighborhoodID == "" {
+		return domaindecision.ActionWindowResult{}, ErrWatchlistRequired
 	}
 
 	metric, err := s.neighborhood.LatestMetric(ctx, appneighborhood.LatestMetricQuery{NeighborhoodID: neighborhoodID})
 	if err != nil {
+		if errors.Is(err, appneighborhood.ErrMetricNotFound) {
+			return domaindecision.ActionWindowResult{}, ErrMetricRequired
+		}
 		return domaindecision.ActionWindowResult{}, err
 	}
 

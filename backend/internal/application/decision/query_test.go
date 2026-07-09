@@ -56,10 +56,11 @@ func TestGetActionWindowComposesLatestCapacityFirstWatchlistMetricAndAlternative
 }
 
 func TestGetActionWindowUsesRequestedNeighborhoodID(t *testing.T) {
+	requestedNeighborhoodID := "11111111-1111-1111-1111-111111111112"
 	neighborhood := &stubNeighborhoodReader{
 		watchlist: []appneighborhood.WatchlistItemSummary{
-			{NeighborhoodID: "neighborhood_1"},
-			{NeighborhoodID: "neighborhood_2"},
+			{NeighborhoodID: "11111111-1111-1111-1111-111111111111"},
+			{NeighborhoodID: requestedNeighborhoodID},
 		},
 		metric: appneighborhood.MetricWithSignal{
 			Signal: domainneighborhood.SignalResult{
@@ -73,13 +74,13 @@ func TestGetActionWindowUsesRequestedNeighborhoodID(t *testing.T) {
 		record: appcapacity.CalculationRecord{
 			Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
 		},
-	}, neighborhood).GetActionWindow(context.Background(), GetActionWindowQuery{NeighborhoodID: "neighborhood_2"})
+	}, neighborhood).GetActionWindow(context.Background(), GetActionWindowQuery{NeighborhoodID: requestedNeighborhoodID})
 	if err != nil {
 		t.Fatalf("GetActionWindow() error = %v", err)
 	}
 
-	if neighborhood.metricNeighborhoodID != "neighborhood_2" {
-		t.Fatalf("metric neighborhoodID = %q, want neighborhood_2", neighborhood.metricNeighborhoodID)
+	if neighborhood.metricNeighborhoodID != requestedNeighborhoodID {
+		t.Fatalf("metric neighborhoodID = %q, want %q", neighborhood.metricNeighborhoodID, requestedNeighborhoodID)
 	}
 	if result.Action != domaindecision.ActionAct {
 		t.Fatalf("Action = %q, want %q", result.Action, domaindecision.ActionAct)
@@ -92,6 +93,61 @@ func TestGetActionWindowReturnsCapacityRequiredWhenMissingLatestCalculation(t *t
 
 	if !errors.Is(err, ErrCapacityRequired) {
 		t.Fatalf("error = %v, want ErrCapacityRequired", err)
+	}
+}
+
+func TestGetActionWindowReturnsWatchlistRequiredWhenDefaultNeighborhoodIsUnavailable(t *testing.T) {
+	neighborhood := &stubNeighborhoodReader{}
+
+	_, err := NewService(&stubCapacityReader{
+		record: appcapacity.CalculationRecord{
+			Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
+		},
+	}, neighborhood).GetActionWindow(context.Background(), GetActionWindowQuery{})
+
+	if !errors.Is(err, ErrWatchlistRequired) {
+		t.Fatalf("error = %v, want ErrWatchlistRequired", err)
+	}
+	if neighborhood.metricCalled {
+		t.Fatal("LatestMetric was called without a neighborhood")
+	}
+}
+
+func TestGetActionWindowReturnsInvalidNeighborhoodIDForMalformedExplicitID(t *testing.T) {
+	neighborhood := &stubNeighborhoodReader{
+		watchlist: []appneighborhood.WatchlistItemSummary{
+			{NeighborhoodID: "11111111-1111-1111-1111-111111111111"},
+		},
+	}
+
+	_, err := NewService(&stubCapacityReader{
+		record: appcapacity.CalculationRecord{
+			Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
+		},
+	}, neighborhood).GetActionWindow(context.Background(), GetActionWindowQuery{NeighborhoodID: "not-a-uuid"})
+
+	if !errors.Is(err, ErrInvalidNeighborhoodID) {
+		t.Fatalf("error = %v, want ErrInvalidNeighborhoodID", err)
+	}
+	if neighborhood.metricCalled {
+		t.Fatal("LatestMetric was called for a malformed explicit neighborhood ID")
+	}
+}
+
+func TestGetActionWindowReturnsMetricRequiredWhenLatestMetricIsMissing(t *testing.T) {
+	_, err := NewService(&stubCapacityReader{
+		record: appcapacity.CalculationRecord{
+			Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
+		},
+	}, &stubNeighborhoodReader{
+		watchlist: []appneighborhood.WatchlistItemSummary{
+			{NeighborhoodID: "neighborhood_1"},
+		},
+		metricErr: appneighborhood.ErrMetricNotFound,
+	}).GetActionWindow(context.Background(), GetActionWindowQuery{})
+
+	if !errors.Is(err, ErrMetricRequired) {
+		t.Fatalf("error = %v, want ErrMetricRequired", err)
 	}
 }
 
@@ -112,9 +168,11 @@ func (s *stubCapacityReader) LatestCalculation(_ context.Context, query appcapac
 type stubNeighborhoodReader struct {
 	watchlistUserID      string
 	metricNeighborhoodID string
+	metricCalled         bool
 	watchlist            []appneighborhood.WatchlistItemSummary
 	metric               appneighborhood.MetricWithSignal
 	err                  error
+	metricErr            error
 }
 
 func (s *stubNeighborhoodReader) ListWatchlist(_ context.Context, query appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {
@@ -126,9 +184,10 @@ func (s *stubNeighborhoodReader) ListWatchlist(_ context.Context, query appneigh
 }
 
 func (s *stubNeighborhoodReader) LatestMetric(_ context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {
+	s.metricCalled = true
 	s.metricNeighborhoodID = query.NeighborhoodID
-	if s.err != nil {
-		return appneighborhood.MetricWithSignal{}, s.err
+	if s.metricErr != nil {
+		return appneighborhood.MetricWithSignal{}, s.metricErr
 	}
 	return s.metric, nil
 }

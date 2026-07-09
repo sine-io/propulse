@@ -51,11 +51,31 @@ func TestImportManualListingsStoresRawRunAndSnapshots(t *testing.T) {
 		t.Fatalf("snapshots = %d, want 2", len(repo.snapshots))
 	}
 	first := repo.snapshots[0]
-	if first.ID != "snapshot_1" || first.NeighborhoodID != "neighborhood_1" || first.ListingPrice != 520 || first.TransactionPrice == nil || *first.TransactionPrice != 495 || !first.PriceCut || first.DaysOnMarket != 78 || first.Layout != "三房" {
+	if first.ID != "snapshot_1" || first.CollectionRunID != "collection_run_1" || first.NeighborhoodID != "neighborhood_1" || first.ListingPrice != 520 || first.TransactionPrice == nil || *first.TransactionPrice != 495 || !first.PriceCut || first.DaysOnMarket != 78 || first.Layout != "三房" {
 		t.Fatalf("first snapshot = %#v", first)
 	}
 	if !first.CapturedAt.Equal(now) {
 		t.Fatalf("CapturedAt = %v, want %v", first.CapturedAt, now)
+	}
+}
+
+func TestImportManualListingsRefreshesMetricsForImportedNeighborhood(t *testing.T) {
+	repo := &fakeRepository{neighborhoods: map[string]bool{"neighborhood_1": true}}
+	calculator := &fakeMetricCalculator{}
+	service := NewService(repo, time.Now, func() string { return "id" }, calculator)
+
+	_, err := service.ImportManualListings(context.Background(), ImportManualListingsCommand{
+		SourceType:     "manual_json",
+		SourceRef:      "demo-weekly-import",
+		NeighborhoodID: "neighborhood_1",
+		Records:        []ManualListingRecord{{ListingPrice: 520, DaysOnMarket: 0}},
+	})
+	if err != nil {
+		t.Fatalf("ImportManualListings() error = %v", err)
+	}
+
+	if calculator.neighborhoodID != "neighborhood_1" {
+		t.Fatalf("metric calculator neighborhoodID = %q, want neighborhood_1", calculator.neighborhoodID)
 	}
 }
 
@@ -186,6 +206,16 @@ type fakeRepository struct {
 	rawRecords    []RawCollectionRecord
 	snapshots     []ListingSnapshot
 	saveErr       error
+}
+
+type fakeMetricCalculator struct {
+	neighborhoodID string
+	err            error
+}
+
+func (c *fakeMetricCalculator) CalculateNeighborhood(_ context.Context, neighborhoodID string) error {
+	c.neighborhoodID = neighborhoodID
+	return c.err
 }
 
 func (r *fakeRepository) NeighborhoodExists(_ context.Context, id string) (bool, error) {

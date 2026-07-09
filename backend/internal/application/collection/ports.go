@@ -16,6 +16,10 @@ type Repository interface {
 	SaveImport(ctx context.Context, raw RawCollectionRecord, snapshots []ListingSnapshot) error
 }
 
+type MetricCalculator interface {
+	CalculateNeighborhood(ctx context.Context, neighborhoodID string) error
+}
+
 type RawCollectionRecord struct {
 	ID          string
 	SourceType  string
@@ -26,6 +30,7 @@ type RawCollectionRecord struct {
 
 type ListingSnapshot struct {
 	ID               string
+	CollectionRunID  string
 	NeighborhoodID   string
 	ListingPrice     float64
 	TransactionPrice *float64

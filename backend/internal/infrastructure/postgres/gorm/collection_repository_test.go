@@ -87,7 +87,7 @@ func TestCollectionRepositoryStoresRawRecordAndSnapshots(t *testing.T) {
 	if err := db.WithContext(ctx).First(&snapshot, "id = ?", snapshotID).Error; err != nil {
 		t.Fatalf("Find(snapshot) error = %v", err)
 	}
-	if snapshot.NeighborhoodID != neighborhood.ID || snapshot.ListingPrice != 520 || snapshot.TransactionPrice == nil || *snapshot.TransactionPrice != 495 || !snapshot.PriceCut || snapshot.DaysOnMarket != 78 || snapshot.Layout != "三房" {
+	if snapshot.CollectionRunID != rawID || snapshot.NeighborhoodID != neighborhood.ID || snapshot.ListingPrice != 520 || snapshot.TransactionPrice == nil || *snapshot.TransactionPrice != 495 || !snapshot.PriceCut || snapshot.DaysOnMarket != 78 || snapshot.Layout != "三房" {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
 }

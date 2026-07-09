@@ -384,8 +384,17 @@ export interface paths {
                         "application/json": components["schemas"]["ActionWindowResponse"];
                     };
                 };
-                /** @description Capacity calculation required */
+                /** @description Request cannot produce an action window yet */
                 400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Neighborhood metric is not available */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -393,8 +402,8 @@ export interface paths {
                         /**
                          * @example {
                          *       "error": {
-                         *         "code": "capacity_required",
-                         *         "message": "create a capacity calculation before requesting an action window"
+                         *         "code": "metric_required",
+                         *         "message": "no neighborhood metric is available"
                          *       }
                          *     }
                          */

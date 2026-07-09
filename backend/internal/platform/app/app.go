@@ -109,9 +109,23 @@ var openCollectionApplication = func(ctx context.Context, cfg config.Config, log
 		return nil, nil, err
 	}
 
+	metricPool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		_ = sqlDB.Close()
+		return nil, nil, err
+	}
+
 	repo := postgresgorm.NewCollectionRepository(db)
-	service := appcollection.NewService(repo, time.Now, nil)
-	return service, sqlDB, nil
+	service := appcollection.NewService(repo, time.Now, nil, appmetric.NewService(sqlmetric.NewRepository(metricPool)))
+	return service, multiCloser{
+		closers: []io.Closer{
+			sqlDB,
+			closerFunc(func() error {
+				metricPool.Close()
+				return nil
+			}),
+		},
+	}, nil
 }
 
 var openMetricApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (MetricApplication, io.Closer, error) {

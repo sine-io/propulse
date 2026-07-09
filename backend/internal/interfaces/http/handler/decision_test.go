@@ -89,6 +89,46 @@ func TestGetActionWindowReturnsCapacityRequired(t *testing.T) {
 	}
 }
 
+func TestGetActionWindowMapsExpectedApplicationErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		appErr     error
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "watchlist required", appErr: appdecision.ErrWatchlistRequired, wantStatus: http.StatusBadRequest, wantCode: "watchlist_required"},
+		{name: "invalid neighborhood ID", appErr: appdecision.ErrInvalidNeighborhoodID, wantStatus: http.StatusBadRequest, wantCode: "invalid_neighborhood_id"},
+		{name: "metric required", appErr: appdecision.ErrMetricRequired, wantStatus: http.StatusNotFound, wantCode: "metric_required"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.ReleaseMode)
+			engine := gin.New()
+			engine.GET("/api/v1/decision/action-window", NewDecision(&stubDecisionApplication{err: tt.appErr}).GetActionWindow)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/decision/action-window", nil)
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			var response struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v", err)
+			}
+			if response.Error.Code != tt.wantCode {
+				t.Fatalf("error code = %q, want %q", response.Error.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
 func TestGetActionWindowReturnsServerError(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()

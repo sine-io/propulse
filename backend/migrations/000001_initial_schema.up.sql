@@ -37,6 +37,7 @@ CREATE TABLE raw_collection_records (
 
 CREATE TABLE listing_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  collection_run_id UUID NOT NULL REFERENCES raw_collection_records(id) ON DELETE CASCADE,
   neighborhood_id UUID NOT NULL REFERENCES neighborhoods(id) ON DELETE CASCADE,
   listing_price NUMERIC(12,2) NOT NULL,
   transaction_price NUMERIC(12,2),
@@ -63,6 +64,9 @@ CREATE TABLE neighborhood_metrics (
 
 CREATE INDEX idx_listing_snapshots_neighborhood_captured_at
   ON listing_snapshots(neighborhood_id, captured_at DESC);
+
+CREATE INDEX idx_listing_snapshots_neighborhood_run_captured_at
+  ON listing_snapshots(neighborhood_id, collection_run_id, captured_at DESC);
 
 CREATE INDEX idx_neighborhood_metrics_neighborhood_calculated_at
   ON neighborhood_metrics(neighborhood_id, calculated_at DESC);

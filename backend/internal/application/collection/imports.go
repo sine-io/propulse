@@ -13,19 +13,24 @@ import (
 const manualJSONSourceType = "manual_json"
 
 type Service struct {
-	repo  Repository
-	now   func() time.Time
-	newID func() string
+	repo             Repository
+	metricCalculator MetricCalculator
+	now              func() time.Time
+	newID            func() string
 }
 
-func NewService(repo Repository, now func() time.Time, newID func() string) *Service {
+func NewService(repo Repository, now func() time.Time, newID func() string, metricCalculator ...MetricCalculator) *Service {
 	if now == nil {
 		now = time.Now
 	}
 	if newID == nil {
 		newID = uuid.NewString
 	}
-	return &Service{repo: repo, now: now, newID: newID}
+	var calculator MetricCalculator
+	if len(metricCalculator) > 0 {
+		calculator = metricCalculator[0]
+	}
+	return &Service{repo: repo, metricCalculator: calculator, now: now, newID: newID}
 }
 
 type ImportManualListingsCommand struct {
@@ -80,6 +85,7 @@ func (s *Service) ImportManualListings(ctx context.Context, command ImportManual
 	for _, record := range command.Records {
 		snapshots = append(snapshots, ListingSnapshot{
 			ID:               s.newID(),
+			CollectionRunID:  raw.ID,
 			NeighborhoodID:   command.NeighborhoodID,
 			ListingPrice:     record.ListingPrice,
 			TransactionPrice: record.TransactionPrice,
@@ -92,6 +98,11 @@ func (s *Service) ImportManualListings(ctx context.Context, command ImportManual
 
 	if err := s.repo.SaveImport(ctx, raw, snapshots); err != nil {
 		return ImportManualListingsResult{}, fmt.Errorf("%w: %v", ErrImportFailed, err)
+	}
+	if s.metricCalculator != nil {
+		if err := s.metricCalculator.CalculateNeighborhood(ctx, command.NeighborhoodID); err != nil {
+			return ImportManualListingsResult{}, fmt.Errorf("%w: %v", ErrImportFailed, err)
+		}
 	}
 
 	return ImportManualListingsResult{

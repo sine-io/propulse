@@ -31,6 +31,18 @@ func (h Decision) GetActionWindow(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "capacity_required", "create a capacity calculation before requesting an action window")
 			return
 		}
+		if errors.Is(err, appdecision.ErrWatchlistRequired) {
+			writeError(c, http.StatusBadRequest, "watchlist_required", "add a neighborhood to the watchlist before requesting an action window")
+			return
+		}
+		if errors.Is(err, appdecision.ErrInvalidNeighborhoodID) {
+			writeError(c, http.StatusBadRequest, "invalid_neighborhood_id", "neighborhoodId must be a valid UUID")
+			return
+		}
+		if errors.Is(err, appdecision.ErrMetricRequired) {
+			writeError(c, http.StatusNotFound, "metric_required", "no neighborhood metric is available")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}

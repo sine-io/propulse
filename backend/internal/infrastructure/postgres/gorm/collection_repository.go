@@ -45,6 +45,7 @@ func (r *CollectionRepository) SaveImport(ctx context.Context, raw appcollection
 		for _, snapshot := range snapshots {
 			models = append(models, ListingSnapshotModel{
 				ID:               snapshot.ID,
+				CollectionRunID:  snapshot.CollectionRunID,
 				NeighborhoodID:   snapshot.NeighborhoodID,
 				ListingPrice:     snapshot.ListingPrice,
 				TransactionPrice: snapshot.TransactionPrice,
