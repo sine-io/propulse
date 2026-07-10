@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog"
 	webembed "github.com/sine-io/propulse/apps/web/embed"
+	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
@@ -192,6 +193,7 @@ func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
 		Log:                     zerolog.New(io.Discard),
 		StaticFS:                webembed.Embedded(),
 		NeighborhoodApplication: &stubNeighborhoodApplication{},
+		AccessToken:             "secret-token",
 	})
 
 	for _, route := range []struct {
@@ -199,15 +201,19 @@ func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
 		path   string
 		body   string
 		status int
+		auth   bool
 	}{
-		{method: http.MethodPost, path: "/api/v1/neighborhoods", body: `{"name":"青枫花园","area":"滨江核心","targetLayout":"三房"}`, status: http.StatusCreated},
+		{method: http.MethodPost, path: "/api/v1/neighborhoods", body: `{"name":"青枫花园","area":"滨江核心","targetLayout":"三房"}`, status: http.StatusCreated, auth: true},
 		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1", status: http.StatusOK},
 		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1/metrics", status: http.StatusOK},
-		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{"neighborhoodId":"neighborhood_1"}`, status: http.StatusCreated},
-		{method: http.MethodGet, path: "/api/v1/watchlist", status: http.StatusOK},
+		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{"neighborhoodId":"neighborhood_1"}`, status: http.StatusCreated, auth: true},
+		{method: http.MethodGet, path: "/api/v1/watchlist", status: http.StatusOK, auth: true},
 	} {
 		req := httptest.NewRequest(route.method, route.path, strings.NewReader(route.body))
 		req.Header.Set("Content-Type", "application/json")
+		if route.auth {
+			req.Header.Set("Authorization", "Bearer secret-token")
+		}
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
 		if rec.Code != route.status {
@@ -221,9 +227,11 @@ func TestDecisionActionWindowRoute(t *testing.T) {
 		Log:                 zerolog.New(io.Discard),
 		StaticFS:            webembed.Embedded(),
 		DecisionApplication: &stubDecisionApplication{},
+		AccessToken:         "secret-token",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/decision/action-window", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -237,7 +245,7 @@ func TestAdminImportRoute(t *testing.T) {
 		Log:                   zerolog.New(io.Discard),
 		StaticFS:              webembed.Embedded(),
 		CollectionApplication: &stubCollectionApplication{},
-		AdminAPIToken:         "secret-token",
+		AccessToken:           "secret-token",
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/api/imports", strings.NewReader(`{
@@ -266,44 +274,115 @@ func TestAdminImportRoute(t *testing.T) {
 	}
 }
 
-func TestAdminImportRouteRequiresBearerToken(t *testing.T) {
-	service := &stubCollectionApplication{}
-	engine := New(Dependencies{
-		Log:                   zerolog.New(io.Discard),
-		StaticFS:              webembed.Embedded(),
-		CollectionApplication: service,
-		AdminAPIToken:         "secret-token",
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/admin/api/imports", strings.NewReader(`{
-		"sourceType": "manual_json",
-		"sourceRef": "demo-weekly-import",
-		"neighborhoodId": "neighborhood_1",
-		"records": [{"listingPrice": 520, "daysOnMarket": 0}]
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401; body=%s", rec.Code, rec.Body.String())
+func TestProtectedRoutesRequireAccessToken(t *testing.T) {
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodPost, path: "/api/v1/capacity/calculations", body: `{}`},
+		{method: http.MethodGet, path: "/api/v1/capacity/calculations/calculation_1"},
+		{method: http.MethodPost, path: "/api/v1/neighborhoods", body: `{}`},
+		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{}`},
+		{method: http.MethodGet, path: "/api/v1/watchlist"},
+		{method: http.MethodGet, path: "/api/v1/decision/action-window"},
+		{method: http.MethodPost, path: "/admin/api/imports", body: `{}`},
 	}
-	if service.called {
-		t.Fatal("ImportManualListings was called without admin token")
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			capacityApp := &stubCapacityApplication{}
+			neighborhoodApp := &stubNeighborhoodApplication{}
+			collectionApp := &stubCollectionApplication{}
+			decisionApp := &stubDecisionApplication{}
+			engine := New(Dependencies{
+				Log:                     zerolog.New(io.Discard),
+				StaticFS:                webembed.Embedded(),
+				CapacityApplication:     capacityApp,
+				NeighborhoodApplication: neighborhoodApp,
+				CollectionApplication:   collectionApp,
+				DecisionApplication:     decisionApp,
+				AccessToken:             "secret-token",
+			})
+
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401; body=%s", rec.Code, rec.Body.String())
+			}
+			if calls := capacityApp.calls + neighborhoodApp.calls + collectionApp.calls + decisionApp.calls; calls != 0 {
+				t.Fatalf("application calls = %d, want 0", calls)
+			}
+		})
 	}
 }
 
-type stubNeighborhoodApplication struct{}
+func TestPublicNeighborhoodReadsDoNotRequireAccessToken(t *testing.T) {
+	for _, path := range []string{
+		"/api/v1/neighborhoods/neighborhood_1",
+		"/api/v1/neighborhoods/neighborhood_1/metrics",
+	} {
+		t.Run(path, func(t *testing.T) {
+			service := &stubNeighborhoodApplication{}
+			engine := New(Dependencies{
+				Log:                     zerolog.New(io.Discard),
+				StaticFS:                webembed.Embedded(),
+				NeighborhoodApplication: service,
+				AccessToken:             "secret-token",
+			})
+
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+			}
+			if service.calls != 1 {
+				t.Fatalf("application calls = %d, want 1", service.calls)
+			}
+		})
+	}
+}
+
+type stubCapacityApplication struct {
+	calls int
+}
+
+func (s *stubCapacityApplication) CreateCalculation(_ context.Context, _ appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error) {
+	s.calls++
+	return appcapacity.CalculationRecord{}, nil
+}
+
+func (s *stubCapacityApplication) GetCalculation(_ context.Context, _ appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error) {
+	s.calls++
+	return appcapacity.CalculationRecord{}, nil
+}
+
+func (s *stubCapacityApplication) LatestCalculation(_ context.Context, _ appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error) {
+	s.calls++
+	return appcapacity.CalculationRecord{}, nil
+}
+
+type stubNeighborhoodApplication struct {
+	calls int
+}
 
 func (s *stubNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
+	s.calls++
 	return appneighborhood.Neighborhood{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"}, nil
 }
 
 func (s *stubNeighborhoodApplication) GetNeighborhood(_ context.Context, _ appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error) {
+	s.calls++
 	return appneighborhood.Neighborhood{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"}, nil
 }
 
 func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, _ appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {
+	s.calls++
 	return appneighborhood.MetricWithSignal{
 		Metric: appneighborhood.MetricSnapshot{
 			ID:                  "metric_1",
@@ -321,10 +400,12 @@ func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, _ appneigh
 }
 
 func (s *stubNeighborhoodApplication) AddWatchlistItem(_ context.Context, _ appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error) {
+	s.calls++
 	return appneighborhood.WatchlistItem{ID: "watch_1", UserID: "demo-user", NeighborhoodID: "neighborhood_1"}, nil
 }
 
 func (s *stubNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {
+	s.calls++
 	return []appneighborhood.WatchlistItemSummary{
 		{
 			ID:                  "watch_1",
@@ -342,17 +423,20 @@ func (s *stubNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneig
 }
 
 type stubCollectionApplication struct {
-	called bool
+	calls int
 }
 
 func (s *stubCollectionApplication) ImportManualListings(_ context.Context, _ appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error) {
-	s.called = true
+	s.calls++
 	return appcollection.ImportManualListingsResult{CollectionRunID: "collection_run_1", ImportedSnapshotCount: 1}, nil
 }
 
-type stubDecisionApplication struct{}
+type stubDecisionApplication struct {
+	calls int
+}
 
 func (s *stubDecisionApplication) GetActionWindow(_ context.Context, _ appdecision.GetActionWindowQuery) (domaindecision.ActionWindowResult, error) {
+	s.calls++
 	return domaindecision.ActionWindowResult{
 		Action:     domaindecision.ActionBargain,
 		Confidence: domaindecision.ConfidenceHigh,

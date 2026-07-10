@@ -23,7 +23,7 @@ type Dependencies struct {
 	NeighborhoodApplication httphandler.NeighborhoodApplication
 	CollectionApplication   httphandler.CollectionApplication
 	DecisionApplication     httphandler.DecisionApplication
-	AdminAPIToken           string
+	AccessToken             string
 }
 
 var frontendRoutes = map[string]string{
@@ -56,13 +56,15 @@ func New(deps Dependencies) *gin.Engine {
 	})
 
 	api := engine.Group("/api/v1")
+	protected := api.Group("")
+	protected.Use(httpmiddleware.AccessAuth(deps.AccessToken))
 	capacityApp := deps.CapacityApplication
 	if capacityApp == nil {
 		capacityApp = appcapacity.NewService(newInMemoryCalculationRepository(), nil, nil)
 	}
 	capacityHandler := httphandler.NewCapacity(capacityApp)
-	api.POST("/capacity/calculations", capacityHandler.CreateCalculation)
-	api.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
+	protected.POST("/capacity/calculations", capacityHandler.CreateCalculation)
+	protected.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
 
 	neighborhoodApp := deps.NeighborhoodApplication
 	if neighborhoodApp == nil {
@@ -70,21 +72,21 @@ func New(deps Dependencies) *gin.Engine {
 	}
 	neighborhoodHandler := httphandler.NewNeighborhood(neighborhoodApp)
 	watchlistHandler := httphandler.NewWatchlist(neighborhoodApp)
-	api.POST("/neighborhoods", neighborhoodHandler.CreateNeighborhood)
+	protected.POST("/neighborhoods", neighborhoodHandler.CreateNeighborhood)
 	api.GET("/neighborhoods/:id", neighborhoodHandler.GetNeighborhood)
 	api.GET("/neighborhoods/:id/metrics", neighborhoodHandler.GetMetrics)
-	api.POST("/watchlist/items", watchlistHandler.AddItem)
-	api.GET("/watchlist", watchlistHandler.List)
+	protected.POST("/watchlist/items", watchlistHandler.AddItem)
+	protected.GET("/watchlist", watchlistHandler.List)
 
 	decisionApp := deps.DecisionApplication
 	if decisionApp == nil {
 		decisionApp = appdecision.NewService(capacityApp, neighborhoodApp)
 	}
 	decisionHandler := httphandler.NewDecision(decisionApp)
-	api.GET("/decision/action-window", decisionHandler.GetActionWindow)
+	protected.GET("/decision/action-window", decisionHandler.GetActionWindow)
 
 	admin := engine.Group("/admin/api")
-	admin.Use(httpmiddleware.AdminAuth(deps.AdminAPIToken))
+	admin.Use(httpmiddleware.AccessAuth(deps.AccessToken))
 	collectionApp := deps.CollectionApplication
 	if collectionApp == nil {
 		collectionApp = appcollection.NewService(newInMemoryCollectionRepository(), nil, nil)
