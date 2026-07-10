@@ -169,6 +169,114 @@ func TestRunStartsHTTPServerForServeMode(t *testing.T) {
 	testRunStartsHTTPServer(t, "serve")
 }
 
+func TestRunWaitsForInFlightHTTPHandlerBeforeClosingRuntime(t *testing.T) {
+	originalOpenRuntime := openRuntimeFunc
+	defer func() { openRuntimeFunc = originalOpenRuntime }()
+
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseHandler) })
+	}
+	defer release()
+
+	capacity := &stubAppCapacityApplication{
+		createRecord: appcapacity.CalculationRecord{
+			ID: "calc_1",
+			Result: domaincapacity.HousingCapacityResult{
+				PressureLevel: domaincapacity.PressureSafe,
+				Strategy:      "hold",
+			},
+		},
+		createStarted: handlerStarted,
+		releaseCreate: releaseHandler,
+	}
+	runtimeClosed := make(chan struct{})
+	rt := &runtime{
+		capacity:     capacity,
+		neighborhood: &stubAppNeighborhoodApplication{},
+		collection:   &stubAppCollectionApplication{},
+		queueClient:  closeSignalCloser{closed: runtimeClosed},
+	}
+	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
+		return rt, nil
+	}
+
+	addr := freeLocalAddr(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- Run(ctx, "api", config.Config{
+			HTTPAddr:    addr,
+			AccessToken: "test-access-token",
+		}, zerolog.New(io.Discard))
+	}()
+
+	waitForHTTP(t, "http://"+addr+"/healthz")
+	requestErr := make(chan error, 1)
+	go func() {
+		body := `{"cashOnHand":150,"oldHomeValue":320,"oldLoanBalance":80,"monthlyIncome":3.5,"currentMonthlyMortgage":0,"acceptableMonthlyMortgage":1.5,"targetTotalPrice":550,"renovationBudget":40,"transactionCosts":18,"transitionRentCost":5}`
+		req, err := http.NewRequest(http.MethodPost, "http://"+addr+"/api/v1/capacity/calculations", bytes.NewBufferString(body))
+		if err != nil {
+			requestErr <- err
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer test-access-token")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			requestErr <- err
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			requestErr <- fmt.Errorf("response status = %d, want %d", resp.StatusCode, http.StatusCreated)
+			return
+		}
+		requestErr <- nil
+	}()
+
+	select {
+	case <-handlerStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("capacity handler did not start")
+	}
+
+	cancel()
+	select {
+	case <-runtimeClosed:
+		t.Fatal("runtime closed while an HTTP handler was still running")
+	case err := <-runErr:
+		t.Fatalf("Run(api) returned before the in-flight handler completed: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	release()
+	select {
+	case err := <-requestErr:
+		if err != nil {
+			t.Fatalf("in-flight request error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("in-flight request did not complete after release")
+	}
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run(api) error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run(api) did not return after the in-flight handler completed")
+	}
+	select {
+	case <-runtimeClosed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("runtime was not closed after Run(api) returned")
+	}
+}
+
 func TestRunAPIModeDoesNotStartWorkerOrScheduler(t *testing.T) {
 	calls := testRunModeComposition(t, "api")
 
@@ -702,11 +810,19 @@ func ExampleNormalizeMode() {
 }
 
 type stubAppCapacityApplication struct {
-	createCalled bool
-	createRecord appcapacity.CalculationRecord
+	createCalled  bool
+	createRecord  appcapacity.CalculationRecord
+	createStarted chan<- struct{}
+	releaseCreate <-chan struct{}
 }
 
 func (s *stubAppCapacityApplication) CreateCalculation(_ context.Context, _ appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error) {
+	if s.createStarted != nil {
+		s.createStarted <- struct{}{}
+	}
+	if s.releaseCreate != nil {
+		<-s.releaseCreate
+	}
 	s.createCalled = true
 	return s.createRecord, nil
 }
@@ -798,6 +914,15 @@ type countingCloser struct {
 
 func (c *countingCloser) Close() error {
 	c.count++
+	return nil
+}
+
+type closeSignalCloser struct {
+	closed chan<- struct{}
+}
+
+func (c closeSignalCloser) Close() error {
+	close(c.closed)
 	return nil
 }
 

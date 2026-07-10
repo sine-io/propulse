@@ -216,17 +216,18 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger, r
 
 	errCh := make(chan error, 1)
 	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-	}()
-
-	go func() {
 		errCh <- listenAndServe(server)
 	}()
 
-	err := <-errCh
+	var err error
+	select {
+	case err = <-errCh:
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = server.Shutdown(shutdownCtx)
+		cancel()
+		err = <-errCh
+	}
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
