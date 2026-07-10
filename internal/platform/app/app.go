@@ -206,6 +206,7 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger, r
 		NeighborhoodApplication: rt.neighborhood,
 		CollectionApplication:   rt.collection,
 		AccessToken:             cfg.AccessToken,
+		ReadinessChecker:        rt.readiness,
 	})
 
 	server := &http.Server{

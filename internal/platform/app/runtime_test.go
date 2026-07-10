@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 	postgresgorm "github.com/sine-io/propulse/internal/infrastructure/postgres/gorm"
+	infrastructureredis "github.com/sine-io/propulse/internal/infrastructure/redis"
 	"gorm.io/gorm"
 )
 
@@ -189,6 +190,57 @@ func TestOpenRuntimeBuildsOneSharedApplicationSet(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 	tracker.assertClosed(t, []string{"queue", "redis", "pgx", "sql"})
+}
+
+func TestOpenRuntimeBuildsReadinessCheckerFromOwnedResources(t *testing.T) {
+	preserveRuntimeSeams(t)
+
+	sqlDB := &sql.DB{}
+	pgxPool := &pgxpool.Pool{}
+	redisClient := &redisclient.Client{}
+	queue := &trackedQueueClient{closer: noopCloser{}}
+	openPostgres = func(string) (*gorm.DB, *sql.DB, error) {
+		return &gorm.DB{}, sqlDB, nil
+	}
+	openPGXPool = func(context.Context, string) (*pgxpool.Pool, error) {
+		return pgxPool, nil
+	}
+	openRedisClient = func(string) (*redisclient.Client, error) {
+		return redisClient, nil
+	}
+	openQueueClient = func(string) (MetricTaskEnqueuer, io.Closer, error) {
+		return queue, queue, nil
+	}
+	closeSQLDB = func(*sql.DB) error { return nil }
+	closePGXPool = func(*pgxpool.Pool) {}
+	closeRedisClient = func(*redisclient.Client) error { return nil }
+
+	rt, err := openRuntime(context.Background(), config.Config{AccessToken: "runtime-token"}, zerolog.New(io.Discard))
+	if err != nil {
+		t.Fatalf("openRuntime() error = %v", err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	checker, ok := rt.readiness.(readinessChecker)
+	if !ok {
+		t.Fatalf("runtime readiness type = %T, want readinessChecker", rt.readiness)
+	}
+	if checker.sql != sqlDB {
+		t.Fatal("readiness checker does not use runtime SQL DB")
+	}
+	if checker.pgx != pgxPool {
+		t.Fatal("readiness checker does not use runtime pgx pool")
+	}
+	redisPinger, ok := checker.redis.(infrastructureredis.PingClient)
+	if !ok {
+		t.Fatalf("readiness Redis pinger type = %T, want redis.PingClient", checker.redis)
+	}
+	if redisPinger != infrastructureredis.NewPingClient(redisClient) {
+		t.Fatal("readiness checker does not use runtime Redis client")
+	}
+	if checker.accessToken != "runtime-token" {
+		t.Fatalf("readiness access token = %q, want runtime-token", checker.accessToken)
+	}
 }
 
 func preserveRuntimeSeams(t *testing.T) {

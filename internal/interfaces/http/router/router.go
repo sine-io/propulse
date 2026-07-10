@@ -1,9 +1,11 @@
 package router
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -16,6 +18,10 @@ import (
 	httpmiddleware "github.com/sine-io/propulse/internal/interfaces/http/middleware"
 )
 
+type ReadinessChecker interface {
+	Check(context.Context) error
+}
+
 type Dependencies struct {
 	Log                     zerolog.Logger
 	StaticFS                fs.FS
@@ -24,6 +30,7 @@ type Dependencies struct {
 	CollectionApplication   httphandler.CollectionApplication
 	DecisionApplication     httphandler.DecisionApplication
 	AccessToken             string
+	ReadinessChecker        ReadinessChecker
 }
 
 var frontendRoutes = map[string]string{
@@ -52,6 +59,17 @@ func New(deps Dependencies) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 	engine.GET("/readyz", func(c *gin.Context) {
+		if deps.ReadinessChecker == nil {
+			serviceUnavailable(c)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+		if err := deps.ReadinessChecker.Check(ctx); err != nil {
+			serviceUnavailable(c)
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 
@@ -112,6 +130,15 @@ func New(deps Dependencies) *gin.Engine {
 	})
 
 	return engine
+}
+
+func serviceUnavailable(c *gin.Context) {
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"error": gin.H{
+			"code":    "not_ready",
+			"message": "service dependencies are not ready",
+		},
+	})
 }
 
 func jsonNotFound(c *gin.Context) {

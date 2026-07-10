@@ -19,6 +19,7 @@ import (
 	"github.com/sine-io/propulse/internal/infrastructure/postgres/sqlmetric"
 	infrastructurequeue "github.com/sine-io/propulse/internal/infrastructure/queue"
 	infrastructureredis "github.com/sine-io/propulse/internal/infrastructure/redis"
+	"github.com/sine-io/propulse/internal/interfaces/http/router"
 	"gorm.io/gorm"
 )
 
@@ -34,6 +35,7 @@ type runtime struct {
 	collection   CollectionApplication
 	metric       MetricApplication
 	enqueuer     MetricTaskEnqueuer
+	readiness    router.ReadinessChecker
 
 	closeOnce sync.Once
 	closeErr  error
@@ -79,6 +81,12 @@ func openRuntime(ctx context.Context, cfg config.Config, log zerolog.Logger) (*r
 		return nil, err
 	}
 	rt.redis = redisClient
+	rt.readiness = NewReadinessChecker(
+		rt.sqlDB,
+		rt.pgxPool,
+		infrastructureredis.NewPingClient(rt.redis),
+		cfg.AccessToken,
+	)
 
 	enqueuer, queueClient, err := openQueueClient(cfg.RedisAddr)
 	if err != nil {

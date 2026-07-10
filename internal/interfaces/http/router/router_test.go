@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 	webembed "github.com/sine-io/propulse/apps/web/embed"
@@ -63,14 +65,146 @@ func TestHealthAndReadyRoutes(t *testing.T) {
 		StaticFS: webembed.Embedded(),
 	})
 
-	for _, path := range []string{"/healthz", "/readyz"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		rec := httptest.NewRecorder()
-		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s status = %d, want 200", path, rec.Code)
-		}
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/healthz status = %d, want 200", rec.Code)
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("/readyz status = %d, want 503", rec.Code)
+	}
+}
+
+func TestReadyRouteReturnsOKWhenDependenciesAreReady(t *testing.T) {
+	checker := &readinessStub{}
+	engine := newReadinessTestEngine(checker)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if got, want := rec.Body.String(), "{\"status\":\"ready\"}"; got != want {
+		t.Fatalf("body = %q, want %q", got, want)
+	}
+	if checker.calls != 1 {
+		t.Fatalf("readiness check calls = %d, want 1", checker.calls)
+	}
+}
+
+func TestReadyRouteReturnsServiceUnavailableWhenDependencyFails(t *testing.T) {
+	dependencyErr := errors.New("database credentials leaked")
+	engine := newReadinessTestEngine(&readinessStub{err: dependencyErr})
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	assertNotReadyResponse(t, rec)
+	if strings.Contains(rec.Body.String(), dependencyErr.Error()) {
+		t.Fatalf("response leaked readiness error: %s", rec.Body.String())
+	}
+}
+
+func TestReadyRouteFailsClosedWithoutChecker(t *testing.T) {
+	engine := newReadinessTestEngine(nil)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	assertNotReadyResponse(t, rec)
+}
+
+func TestHealthRouteRemainsOKWhenReadinessFails(t *testing.T) {
+	checker := &readinessStub{err: errors.New("redis unavailable")}
+	engine := newReadinessTestEngine(checker)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if checker.calls != 0 {
+		t.Fatalf("readiness check calls = %d, want 0", checker.calls)
+	}
+}
+
+func TestReadyRouteChecksDependenciesWithTwoSecondDeadline(t *testing.T) {
+	requestCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	checker := &readinessStub{checkContext: func(ctx context.Context) {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatal("readiness context has no deadline")
+		}
+		remaining := time.Until(deadline)
+		if remaining < 1900*time.Millisecond || remaining > 2*time.Second {
+			t.Fatalf("readiness deadline remaining = %v, want approximately 2s", remaining)
+		}
+		if context.Cause(ctx) != nil {
+			t.Fatalf("readiness context unexpectedly canceled: %v", context.Cause(ctx))
+		}
+		cancel()
+		if !errors.Is(context.Cause(ctx), context.Canceled) {
+			t.Fatalf("readiness context cause after request cancellation = %v, want canceled", context.Cause(ctx))
+		}
+	}}
+	engine := newReadinessTestEngine(checker)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(requestCtx, http.MethodGet, "/readyz", nil)
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func newReadinessTestEngine(checker ReadinessChecker) http.Handler {
+	return New(Dependencies{
+		Log:              zerolog.New(io.Discard),
+		StaticFS:         webembed.Embedded(),
+		ReadinessChecker: checker,
+	})
+}
+
+func assertNotReadyResponse(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal(response) error = %v; body=%s", err, rec.Body.String())
+	}
+	if body.Error.Code != "not_ready" || body.Error.Message != "service dependencies are not ready" {
+		t.Fatalf("response = %+v, want not_ready dependency message", body)
+	}
+}
+
+type readinessStub struct {
+	err          error
+	calls        int
+	checkContext func(context.Context)
+}
+
+func (s *readinessStub) Check(ctx context.Context) error {
+	s.calls++
+	if s.checkContext != nil {
+		s.checkContext(ctx)
+	}
+	return s.err
 }
 
 func TestAPI404DoesNotReturnFrontend(t *testing.T) {

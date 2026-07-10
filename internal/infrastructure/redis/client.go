@@ -7,7 +7,10 @@ import (
 )
 
 func New(addr string) *redis.Client {
-	return redis.NewClient(&redis.Options{Addr: addr})
+	return redis.NewClient(&redis.Options{
+		Addr:                  addr,
+		ContextTimeoutEnabled: true,
+	})
 }
 
 type PingClient struct {

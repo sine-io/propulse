@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -593,6 +594,31 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 	}
 }
 
+func TestRunHTTPServerPassesRuntimeReadinessCheckerToRouter(t *testing.T) {
+	originalListenAndServe := listenAndServe
+	defer func() { listenAndServe = originalListenAndServe }()
+
+	checker := &appReadinessStub{}
+	rt := &runtime{readiness: checker}
+	listenAndServe = func(server *http.Server) error {
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		rec := httptest.NewRecorder()
+		server.Handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+		if checker.calls != 1 {
+			t.Fatalf("runtime readiness check calls = %d, want 1", checker.calls)
+		}
+		return http.ErrServerClosed
+	}
+
+	if err := runHTTPServer(context.Background(), config.Config{}, zerolog.New(io.Discard), rt); err != nil {
+		t.Fatalf("runHTTPServer() error = %v", err)
+	}
+}
+
 func testRunStartsHTTPServer(t *testing.T, mode string) {
 	t.Helper()
 
@@ -907,6 +933,15 @@ func (s *stubAppCollectionApplication) ImportManualListings(_ context.Context, _
 type noopCloser struct{}
 
 func (noopCloser) Close() error { return nil }
+
+type appReadinessStub struct {
+	calls int
+}
+
+func (s *appReadinessStub) Check(context.Context) error {
+	s.calls++
+	return nil
+}
 
 type countingCloser struct {
 	count int
