@@ -16,6 +16,7 @@ import (
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
+	"github.com/sine-io/propulse/internal/application/user"
 	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
@@ -35,13 +36,13 @@ func TestInMemoryWatchlistListsItemsByInsertionOrder(t *testing.T) {
 	}
 
 	for _, neighborhoodID := range []string{"neighborhood_2", "neighborhood_1", "neighborhood_3"} {
-		if _, err := repo.AddWatchlistItem(ctx, "demo-user", neighborhoodID); err != nil {
+		if _, err := repo.AddWatchlistItem(ctx, user.SingleUserID, neighborhoodID); err != nil {
 			t.Fatalf("AddWatchlistItem(%q) error = %v", neighborhoodID, err)
 		}
 	}
 
 	for range 100 {
-		items, err := repo.ListWatchlist(ctx, "demo-user")
+		items, err := repo.ListWatchlist(ctx, user.SingleUserID)
 		if err != nil {
 			t.Fatalf("ListWatchlist() error = %v", err)
 		}
@@ -401,7 +402,7 @@ func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, _ appneigh
 
 func (s *stubNeighborhoodApplication) AddWatchlistItem(_ context.Context, _ appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error) {
 	s.calls++
-	return appneighborhood.WatchlistItem{ID: "watch_1", UserID: "demo-user", NeighborhoodID: "neighborhood_1"}, nil
+	return appneighborhood.WatchlistItem{ID: "watch_1", UserID: user.SingleUserID, NeighborhoodID: "neighborhood_1"}, nil
 }
 
 func (s *stubNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {

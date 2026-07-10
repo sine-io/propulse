@@ -2,7 +2,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE capacity_calculations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL DEFAULT 'demo-user',
+  user_id TEXT NOT NULL DEFAULT 'propulse-user',
   input JSONB NOT NULL,
   result JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -22,7 +22,7 @@ CREATE TABLE neighborhoods (
 CREATE TABLE watchlist_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   neighborhood_id UUID NOT NULL REFERENCES neighborhoods(id) ON DELETE CASCADE,
-  user_id TEXT NOT NULL DEFAULT 'demo-user',
+  user_id TEXT NOT NULL DEFAULT 'propulse-user',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, neighborhood_id)
 );

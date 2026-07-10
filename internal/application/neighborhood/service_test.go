@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sine-io/propulse/internal/application/user"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
@@ -62,21 +63,21 @@ func TestGetNeighborhoodReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestAddWatchlistItemUsesDemoUser(t *testing.T) {
+func TestAddWatchlistItemUsesSingleUser(t *testing.T) {
 	repo := newMemoryRepository()
 	repo.neighborhoods["neighborhood_1"] = Neighborhood{ID: "neighborhood_1"}
 	service := NewService(repo)
 
 	item, err := service.AddWatchlistItem(context.Background(), AddWatchlistItemCommand{
-		UserID:         "demo-user",
+		UserID:         user.SingleUserID,
 		NeighborhoodID: "neighborhood_1",
 	})
 	if err != nil {
 		t.Fatalf("AddWatchlistItem() error = %v", err)
 	}
 
-	if item.UserID != "demo-user" {
-		t.Fatalf("UserID = %q, want demo-user", item.UserID)
+	if item.UserID != user.SingleUserID {
+		t.Fatalf("UserID = %q, want %q", item.UserID, user.SingleUserID)
 	}
 	if item.NeighborhoodID != "neighborhood_1" {
 		t.Fatalf("NeighborhoodID = %q, want neighborhood_1", item.NeighborhoodID)
@@ -110,7 +111,7 @@ func TestListWatchlistEvaluatesLatestMetric(t *testing.T) {
 	}
 	service := NewService(repo)
 
-	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: "demo-user"})
+	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: user.SingleUserID})
 	if err != nil {
 		t.Fatalf("ListWatchlist() error = %v", err)
 	}
@@ -140,7 +141,7 @@ func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
 	}
 	service := NewService(repo)
 
-	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: "demo-user"})
+	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: user.SingleUserID})
 	if err != nil {
 		t.Fatalf("ListWatchlist() error = %v", err)
 	}
@@ -260,7 +261,7 @@ func (m *memoryRepository) AddWatchlistItem(_ context.Context, userID string, ne
 }
 
 func (m *memoryRepository) ListWatchlist(_ context.Context, userID string) ([]WatchlistSummary, error) {
-	if userID != "demo-user" {
+	if userID != user.SingleUserID {
 		return nil, nil
 	}
 	return m.watchlist, nil

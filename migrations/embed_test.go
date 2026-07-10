@@ -41,4 +41,9 @@ func TestEmbeddedMigrationSetIsSingleCoherentInitialSchema(t *testing.T) {
 			t.Fatalf("initial schema is missing %q", required)
 		}
 	}
+
+	const stableUserDefault = "user_id TEXT NOT NULL DEFAULT 'propulse-user'"
+	if count := strings.Count(string(body), stableUserDefault); count != 2 {
+		t.Fatalf("initial schema has %d %q defaults, want 2", count, stableUserDefault)
+	}
 }

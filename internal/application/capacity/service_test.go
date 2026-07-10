@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sine-io/propulse/internal/application/user"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 )
 
@@ -92,12 +93,12 @@ func TestLatestCalculationReturnsNewestRecordForUser(t *testing.T) {
 		records: map[string]CalculationRecord{
 			"older": {
 				ID:        "older",
-				UserID:    "demo-user",
+				UserID:    user.SingleUserID,
 				CreatedAt: time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC),
 			},
 			"newer": {
 				ID:        "newer",
-				UserID:    "demo-user",
+				UserID:    user.SingleUserID,
 				CreatedAt: time.Date(2026, 7, 9, 11, 0, 0, 0, time.UTC),
 			},
 			"other": {
@@ -109,7 +110,7 @@ func TestLatestCalculationReturnsNewestRecordForUser(t *testing.T) {
 	}
 	service := NewService(repo, time.Now, func() string { return "unused" })
 
-	record, err := service.LatestCalculation(context.Background(), LatestCalculationQuery{UserID: "demo-user"})
+	record, err := service.LatestCalculation(context.Background(), LatestCalculationQuery{UserID: user.SingleUserID})
 	if err != nil {
 		t.Fatalf("LatestCalculation() error = %v", err)
 	}
@@ -122,7 +123,7 @@ func TestLatestCalculationReturnsNotFound(t *testing.T) {
 	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{}}
 	service := NewService(repo, time.Now, func() string { return "unused" })
 
-	_, err := service.LatestCalculation(context.Background(), LatestCalculationQuery{UserID: "demo-user"})
+	_, err := service.LatestCalculation(context.Background(), LatestCalculationQuery{UserID: user.SingleUserID})
 	if !errors.Is(err, ErrCalculationNotFound) {
 		t.Fatalf("LatestCalculation() error = %v, want ErrCalculationNotFound", err)
 	}

@@ -8,10 +8,9 @@ import (
 	"github.com/google/uuid"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
+	"github.com/sine-io/propulse/internal/application/user"
 	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 )
-
-const demoUserID = "demo-user"
 
 var ErrCapacityRequired = errors.New("capacity required")
 var ErrWatchlistRequired = errors.New("watchlist required")
@@ -44,7 +43,7 @@ type GetActionWindowQuery struct {
 }
 
 func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuery) (domaindecision.ActionWindowResult, error) {
-	capacity, err := s.capacity.LatestCalculation(ctx, appcapacity.LatestCalculationQuery{UserID: demoUserID})
+	capacity, err := s.capacity.LatestCalculation(ctx, appcapacity.LatestCalculationQuery{UserID: user.SingleUserID})
 	if err != nil {
 		if errors.Is(err, appcapacity.ErrCalculationNotFound) {
 			return domaindecision.ActionWindowResult{}, ErrCapacityRequired
@@ -52,7 +51,7 @@ func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuer
 		return domaindecision.ActionWindowResult{}, err
 	}
 
-	watchlist, err := s.neighborhood.ListWatchlist(ctx, appneighborhood.ListWatchlistQuery{UserID: demoUserID})
+	watchlist, err := s.neighborhood.ListWatchlist(ctx, appneighborhood.ListWatchlistQuery{UserID: user.SingleUserID})
 	if err != nil {
 		return domaindecision.ActionWindowResult{}, err
 	}
