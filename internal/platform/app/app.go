@@ -4,22 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	webembed "github.com/sine-io/propulse/apps/web/embed"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
-	appmetric "github.com/sine-io/propulse/internal/application/metric"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	appqueue "github.com/sine-io/propulse/internal/application/queue"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 	migraterunner "github.com/sine-io/propulse/internal/infrastructure/migrate"
-	postgresgorm "github.com/sine-io/propulse/internal/infrastructure/postgres/gorm"
-	"github.com/sine-io/propulse/internal/infrastructure/postgres/sqlmetric"
 	infrastructurequeue "github.com/sine-io/propulse/internal/infrastructure/queue"
 	"github.com/sine-io/propulse/internal/interfaces/http/router"
 )
@@ -55,119 +50,13 @@ type MetricTaskEnqueuer interface {
 }
 
 var runMigrations = migraterunner.Run
+var openRuntimeFunc = openRuntime
 var runHTTPServerFunc = runHTTPServer
 var startQueueWorker = runQueueWorker
 var startScheduler = runScheduler
-var openCapacityApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (CapacityApplication, io.Closer, error) {
-	db, sqlDB, err := postgresgorm.Open(cfg.DatabaseURL)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	repo := postgresgorm.NewCapacityRepository(db)
-	service := appcapacity.NewService(repo, time.Now, nil)
-	return service, sqlDB, nil
-}
-
-var openNeighborhoodApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
-	db, sqlDB, err := postgresgorm.Open(cfg.DatabaseURL)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	metricPool, err := pgxpool.New(ctx, cfg.DatabaseURL)
-	if err != nil {
-		_ = sqlDB.Close()
-		return nil, nil, err
-	}
-
-	repo := postgresgorm.NewNeighborhoodRepositoryWithMetricReader(db, sqlmetric.NewRepository(metricPool))
-	if cfg.SeedDemoData {
-		if err := repo.SeedDemoData(ctx); err != nil {
-			metricPool.Close()
-			_ = sqlDB.Close()
-			return nil, nil, err
-		}
-		log.Info().Msg("seeded demo neighborhood data")
-	}
-
-	service := appneighborhood.NewService(repo)
-	return service, multiCloser{
-		closers: []io.Closer{
-			sqlDB,
-			closerFunc(func() error {
-				metricPool.Close()
-				return nil
-			}),
-		},
-	}, nil
-}
-
-var openCollectionApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (CollectionApplication, io.Closer, error) {
-	db, sqlDB, err := postgresgorm.Open(cfg.DatabaseURL)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	metricPool, err := pgxpool.New(ctx, cfg.DatabaseURL)
-	if err != nil {
-		_ = sqlDB.Close()
-		return nil, nil, err
-	}
-
-	repo := postgresgorm.NewCollectionRepository(db)
-	service := appcollection.NewService(repo, time.Now, nil, appmetric.NewService(sqlmetric.NewRepository(metricPool)))
-	return service, multiCloser{
-		closers: []io.Closer{
-			sqlDB,
-			closerFunc(func() error {
-				metricPool.Close()
-				return nil
-			}),
-		},
-	}, nil
-}
-
-var openMetricApplication = func(ctx context.Context, cfg config.Config, log zerolog.Logger) (MetricApplication, io.Closer, error) {
-	metricPool, err := pgxpool.New(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	service := appmetric.NewService(sqlmetric.NewRepository(metricPool))
-	return service, closerFunc(func() error {
-		metricPool.Close()
-		return nil
-	}), nil
-}
-
-var openMetricQueueClient = func(cfg config.Config) (MetricTaskEnqueuer, io.Closer, error) {
-	client := infrastructurequeue.NewClient(cfg.RedisAddr)
-	return client, client, nil
-}
 
 var listenAndServe = func(server *http.Server) error {
 	return server.ListenAndServe()
-}
-
-type closerFunc func() error
-
-func (f closerFunc) Close() error {
-	return f()
-}
-
-type multiCloser struct {
-	closers []io.Closer
-}
-
-func (c multiCloser) Close() error {
-	var closeErr error
-	for _, closer := range c.closers {
-		if err := closer.Close(); err != nil && closeErr == nil {
-			closeErr = err
-		}
-	}
-	return closeErr
 }
 
 func NormalizeMode(args []string) (string, error) {
@@ -203,22 +92,36 @@ func Run(ctx context.Context, mode string, cfg config.Config, log zerolog.Logger
 		Msg("starting propulse backend")
 
 	switch mode {
-	case "serve":
-		return runComponents(ctx,
-			func(ctx context.Context) error { return runHTTPServerFunc(ctx, cfg, log) },
-			func(ctx context.Context) error { return startQueueWorker(ctx, cfg, log) },
-			func(ctx context.Context) error { return startScheduler(ctx, cfg, log) },
-		)
-	case "api":
-		return runHTTPServerFunc(ctx, cfg, log)
 	case "migrate up":
 		return runMigrations(ctx, cfg.DatabaseURL, "up")
 	case "migrate down":
 		return runMigrations(ctx, cfg.DatabaseURL, "down")
+	case "serve", "api", "worker", "scheduler":
+	default:
+		return errors.New(Usage)
+	}
+
+	rt, err := openRuntimeFunc(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = rt.Close()
+	}()
+
+	switch mode {
+	case "serve":
+		return runComponents(ctx,
+			func(ctx context.Context) error { return runHTTPServerFunc(ctx, cfg, log, rt) },
+			func(ctx context.Context) error { return startQueueWorker(ctx, cfg, log, rt) },
+			func(ctx context.Context) error { return startScheduler(ctx, cfg, log, rt) },
+		)
+	case "api":
+		return runHTTPServerFunc(ctx, cfg, log, rt)
 	case "worker":
-		return startQueueWorker(ctx, cfg, log)
+		return startQueueWorker(ctx, cfg, log, rt)
 	case "scheduler":
-		return startScheduler(ctx, cfg, log)
+		return startScheduler(ctx, cfg, log, rt)
 	default:
 		return errors.New(Usage)
 	}
@@ -246,42 +149,18 @@ func runComponents(parent context.Context, components ...func(context.Context) e
 	return firstErr
 }
 
-func runQueueWorker(ctx context.Context, cfg config.Config, log zerolog.Logger) error {
-	metricApp, closer, err := openMetricApplication(ctx, cfg, log)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = closer.Close()
-	}()
-
+func runQueueWorker(ctx context.Context, cfg config.Config, log zerolog.Logger, rt *runtime) error {
 	log.Info().Msg("starting asynq worker")
-	return infrastructurequeue.NewServer(cfg.RedisAddr, metricApp, log).Run(ctx)
+	return infrastructurequeue.NewServer(cfg.RedisAddr, rt.metric, log).Run(ctx)
 }
 
-func runScheduler(ctx context.Context, cfg config.Config, log zerolog.Logger) error {
-	neighborhoodApp, neighborhoodCloser, err := openNeighborhoodApplication(ctx, cfg, log)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = neighborhoodCloser.Close()
-	}()
-
-	enqueuer, queueCloser, err := openMetricQueueClient(cfg)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = queueCloser.Close()
-	}()
-
+func runScheduler(ctx context.Context, cfg config.Config, log zerolog.Logger, rt *runtime) error {
 	interval := cfg.SchedulerInterval
 	if interval <= 0 {
 		interval = time.Hour
 	}
 
-	if err := enqueueWatchlistMetricJobs(ctx, neighborhoodApp, enqueuer, log); err != nil {
+	if err := enqueueWatchlistMetricJobs(ctx, rt.neighborhood, rt.enqueuer, log); err != nil {
 		return err
 	}
 
@@ -293,7 +172,7 @@ func runScheduler(ctx context.Context, cfg config.Config, log zerolog.Logger) er
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := enqueueWatchlistMetricJobs(ctx, neighborhoodApp, enqueuer, log); err != nil {
+			if err := enqueueWatchlistMetricJobs(ctx, rt.neighborhood, rt.enqueuer, log); err != nil {
 				return err
 			}
 		}
@@ -319,37 +198,13 @@ func enqueueWatchlistMetricJobs(ctx context.Context, neighborhoodApp Neighborhoo
 	return nil
 }
 
-func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger) error {
-	capacityApp, closer, err := openCapacityApplication(ctx, cfg, log)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = closer.Close()
-	}()
-
-	neighborhoodApp, neighborhoodCloser, err := openNeighborhoodApplication(ctx, cfg, log)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = neighborhoodCloser.Close()
-	}()
-
-	collectionApp, collectionCloser, err := openCollectionApplication(ctx, cfg, log)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = collectionCloser.Close()
-	}()
-
+func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger, rt *runtime) error {
 	engine := router.New(router.Dependencies{
 		Log:                     log,
 		StaticFS:                webembed.Embedded(),
-		CapacityApplication:     capacityApp,
-		NeighborhoodApplication: neighborhoodApp,
-		CollectionApplication:   collectionApp,
+		CapacityApplication:     rt.capacity,
+		NeighborhoodApplication: rt.neighborhood,
+		CollectionApplication:   rt.collection,
 		AccessToken:             cfg.AccessToken,
 	})
 
@@ -371,7 +226,7 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger) e
 		errCh <- listenAndServe(server)
 	}()
 
-	err = <-errCh
+	err := <-errCh
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
