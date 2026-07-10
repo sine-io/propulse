@@ -11,12 +11,12 @@ import (
 	"testing"
 
 	"github.com/rs/zerolog"
+	webembed "github.com/sine-io/propulse/apps/web/embed"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
-	"github.com/sine-io/propulse/web"
 )
 
 func TestInMemoryWatchlistListsItemsByInsertionOrder(t *testing.T) {
@@ -58,7 +58,7 @@ func TestInMemoryWatchlistListsItemsByInsertionOrder(t *testing.T) {
 func TestHealthAndReadyRoutes(t *testing.T) {
 	engine := New(Dependencies{
 		Log:      zerolog.New(io.Discard),
-		StaticFS: web.Embedded(),
+		StaticFS: webembed.Embedded(),
 	})
 
 	for _, path := range []string{"/healthz", "/readyz"} {
@@ -74,7 +74,7 @@ func TestHealthAndReadyRoutes(t *testing.T) {
 func TestAPI404DoesNotReturnFrontend(t *testing.T) {
 	engine := New(Dependencies{
 		Log:      zerolog.New(io.Discard),
-		StaticFS: web.Embedded(),
+		StaticFS: webembed.Embedded(),
 	})
 
 	for _, path := range []string{"/api/v1/missing", "/admin/api/missing"} {
@@ -97,7 +97,7 @@ func TestAPI404DoesNotReturnFrontend(t *testing.T) {
 func TestFrontendRoutesServeEmbeddedHTML(t *testing.T) {
 	engine := New(Dependencies{
 		Log:      zerolog.New(io.Discard),
-		StaticFS: web.Embedded(),
+		StaticFS: webembed.Embedded(),
 	})
 
 	for _, path := range []string{"/", "/calculator", "/watchlist", "/action-window", "/neighborhoods", "/methods", "/templates"} {
@@ -121,7 +121,7 @@ func TestRequestIDMiddlewareEchoesInboundHeaderAndLogsRequest(t *testing.T) {
 	var logBuf bytes.Buffer
 	engine := New(Dependencies{
 		Log:      zerolog.New(&logBuf),
-		StaticFS: web.Embedded(),
+		StaticFS: webembed.Embedded(),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -157,7 +157,7 @@ func TestRequestIDMiddlewareEchoesInboundHeaderAndLogsRequest(t *testing.T) {
 func TestRequestIDMiddlewareGeneratesHeaderWhenMissing(t *testing.T) {
 	engine := New(Dependencies{
 		Log:      zerolog.New(io.Discard),
-		StaticFS: web.Embedded(),
+		StaticFS: webembed.Embedded(),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -175,7 +175,7 @@ func TestRouterStopsWithCanceledContext(t *testing.T) {
 
 	engine := New(Dependencies{
 		Log:      zerolog.New(io.Discard),
-		StaticFS: web.Embedded(),
+		StaticFS: webembed.Embedded(),
 	})
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/healthz", nil)
@@ -190,7 +190,7 @@ func TestRouterStopsWithCanceledContext(t *testing.T) {
 func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
 	engine := New(Dependencies{
 		Log:                     zerolog.New(io.Discard),
-		StaticFS:                web.Embedded(),
+		StaticFS:                webembed.Embedded(),
 		NeighborhoodApplication: &stubNeighborhoodApplication{},
 	})
 
@@ -219,7 +219,7 @@ func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
 func TestDecisionActionWindowRoute(t *testing.T) {
 	engine := New(Dependencies{
 		Log:                 zerolog.New(io.Discard),
-		StaticFS:            web.Embedded(),
+		StaticFS:            webembed.Embedded(),
 		DecisionApplication: &stubDecisionApplication{},
 	})
 
@@ -235,7 +235,7 @@ func TestDecisionActionWindowRoute(t *testing.T) {
 func TestAdminImportRoute(t *testing.T) {
 	engine := New(Dependencies{
 		Log:                   zerolog.New(io.Discard),
-		StaticFS:              web.Embedded(),
+		StaticFS:              webembed.Embedded(),
 		CollectionApplication: &stubCollectionApplication{},
 		AdminAPIToken:         "secret-token",
 	})
@@ -270,7 +270,7 @@ func TestAdminImportRouteRequiresBearerToken(t *testing.T) {
 	service := &stubCollectionApplication{}
 	engine := New(Dependencies{
 		Log:                   zerolog.New(io.Discard),
-		StaticFS:              web.Embedded(),
+		StaticFS:              webembed.Embedded(),
 		CollectionApplication: service,
 		AdminAPIToken:         "secret-token",
 	})

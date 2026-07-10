@@ -1,4 +1,4 @@
-package web
+package webembed
 
 import (
 	"embed"
@@ -13,6 +13,5 @@ func Embedded() fs.FS {
 	if err != nil {
 		panic(err)
 	}
-
 	return sub
 }
