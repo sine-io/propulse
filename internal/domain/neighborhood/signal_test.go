@@ -101,6 +101,27 @@ func TestEvaluateSignalWaitsWhenQualityCannotRecommend(t *testing.T) {
 	}
 }
 
+func TestEvaluateSignalFailsClosedWithoutQualityAfterTrustedMetricCutover(t *testing.T) {
+	result := EvaluateSignal(SignalInput{
+		Name:                  "青枫花园",
+		ListingPriceRange:     PriceRange{Min: 520, Max: 620},
+		TransactionPriceRange: PriceRange{Min: 495, Max: 545},
+		ListedHomes:           42,
+		ListedHomesChangePct:  18,
+		PriceCutHomes:         11,
+		AvgDaysOnMarket:       78,
+		TransactionMomentum:   TransactionMomentumWeak,
+		TargetLayoutSupply:    12,
+	})
+
+	if result.Status != NeighborhoodStatusInsufficientData {
+		t.Fatalf("Status = %q, want %q", result.Status, NeighborhoodStatusInsufficientData)
+	}
+	if result.QualityState != MarketQualityInsufficientData {
+		t.Fatalf("QualityState = %q, want %q", result.QualityState, MarketQualityInsufficientData)
+	}
+}
+
 func sufficientQuality() QualityAssessment {
 	return QualityAssessment{
 		Coverage:     CoverageFull,

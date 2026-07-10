@@ -269,13 +269,17 @@ func metricFromModel(model NeighborhoodMetricModel) appneighborhood.MetricSnapsh
 		NeighborhoodID:      model.NeighborhoodID,
 		ListedHomes:         model.ListedHomes,
 		PriceCutHomes:       model.PriceCutHomes,
-		AvgDaysOnMarket:     model.AvgDaysOnMarket,
-		ListingPriceMin:     model.ListingPriceMin,
-		ListingPriceMax:     model.ListingPriceMax,
-		TransactionPriceMin: model.TransactionPriceMin,
-		TransactionPriceMax: model.TransactionPriceMax,
+		AvgDaysOnMarket:     gormFloatPtr(model.AvgDaysOnMarket),
+		ListingPriceMin:     gormFloatPtr(model.ListingPriceMin),
+		ListingPriceMax:     gormFloatPtr(model.ListingPriceMax),
+		TransactionPriceMin: gormFloatPtr(model.TransactionPriceMin),
+		TransactionPriceMax: gormFloatPtr(model.TransactionPriceMax),
 		TransactionMomentum: domainneighborhood.TransactionMomentum(model.TransactionMomentum),
 		TargetLayoutSupply:  model.TargetLayoutSupply,
 		CalculatedAt:        model.CalculatedAt,
 	}
+}
+
+func gormFloatPtr(value float64) *float64 {
+	return &value
 }

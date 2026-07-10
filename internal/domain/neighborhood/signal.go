@@ -8,9 +8,10 @@ import (
 type TransactionMomentum string
 
 const (
-	TransactionMomentumWeak   TransactionMomentum = "weak"
-	TransactionMomentumStable TransactionMomentum = "stable"
-	TransactionMomentumStrong TransactionMomentum = "strong"
+	TransactionMomentumUnknown TransactionMomentum = "unknown"
+	TransactionMomentumWeak    TransactionMomentum = "weak"
+	TransactionMomentumStable  TransactionMomentum = "stable"
+	TransactionMomentumStrong  TransactionMomentum = "strong"
 )
 
 type SupplyPressure string
@@ -74,7 +75,15 @@ type SignalResult struct {
 }
 
 func EvaluateSignal(input SignalInput) SignalResult {
-	if input.Quality.State != "" && !input.Quality.CanRecommend {
+	if input.Quality.State == "" {
+		input.Quality = QualityAssessment{
+			Coverage:     CoverageUnknown,
+			Freshness:    FreshnessUnknown,
+			State:        MarketQualityInsufficientData,
+			CanRecommend: false,
+		}
+	}
+	if !input.Quality.CanRecommend {
 		return SignalResult{
 			Name:                 input.Name,
 			Status:               NeighborhoodStatusInsufficientData,

@@ -20,13 +20,13 @@ SELECT
   COALESCE(MAX(listing_price), 0)::numeric AS listing_price_max,
   COALESCE(MIN(transaction_price), 0)::numeric AS transaction_price_min,
   COALESCE(MAX(transaction_price), 0)::numeric AS transaction_price_max,
-  COUNT(*) FILTER (WHERE layout = $1)::int AS target_layout_supply
+  COUNT(*) FILTER (WHERE listing_snapshots.layout = $1)::int AS target_layout_supply
 FROM listing_snapshots
-WHERE neighborhood_id = $2
+WHERE listing_snapshots.neighborhood_id = $2
   AND collection_run_id = (
     SELECT collection_run_id
     FROM listing_snapshots
-    WHERE neighborhood_id = $2
+    WHERE listing_snapshots.neighborhood_id = $2
       AND collection_run_id IS NOT NULL
     GROUP BY collection_run_id
     ORDER BY MAX(captured_at) DESC, collection_run_id DESC
@@ -66,6 +66,259 @@ func (q *Queries) AggregateListingSnapshots(ctx context.Context, arg AggregateLi
 	return i, err
 }
 
+const aggregateMarketObservations = `-- name: AggregateMarketObservations :one
+WITH trigger_run AS (
+  SELECT id, data_source_id, neighborhood_id, collected_at, coverage
+  FROM collection_runs
+  WHERE collection_runs.id = $1
+    AND collection_runs.neighborhood_id = $2
+    AND collection_runs.status = 'completed'
+),
+inventory_run AS (
+  SELECT cr.id, cr.data_source_id, cr.neighborhood_id, cr.collected_at, cr.coverage
+  FROM collection_runs cr
+  JOIN trigger_run tr ON tr.neighborhood_id = cr.neighborhood_id
+  WHERE cr.status = 'completed'
+    AND cr.coverage = 'full'
+    AND (cr.collected_at, cr.id) <= (tr.collected_at, tr.id)
+  ORDER BY cr.collected_at DESC, cr.id DESC
+  LIMIT 1
+),
+previous_inventory_run AS (
+  SELECT cr.id
+  FROM collection_runs cr
+  JOIN inventory_run ir ON ir.neighborhood_id = cr.neighborhood_id
+  WHERE cr.status = 'completed'
+    AND cr.coverage = 'full'
+    AND (cr.collected_at, cr.id) < (ir.collected_at, ir.id)
+  ORDER BY cr.collected_at DESC, cr.id DESC
+  LIMIT 1
+),
+inventory_listings (
+  id,
+  collection_run_id,
+  neighborhood_id,
+  source_listing_id,
+  source_row,
+  listing_layout,
+  area_sqm,
+  listing_price,
+  days_on_market,
+  status,
+  captured_at,
+  attributes,
+  data_source_id
+) AS (
+  SELECT
+    lo.id,
+    lo.collection_run_id,
+    lo.neighborhood_id,
+    lo.source_listing_id,
+    lo.source_row,
+    lo.layout AS listing_layout,
+    lo.area_sqm,
+    lo.listing_price,
+    lo.days_on_market,
+    lo.status,
+    lo.captured_at,
+    lo.attributes,
+    ir.data_source_id
+  FROM inventory_run ir
+  JOIN listing_observations lo ON lo.collection_run_id = ir.id
+  WHERE lo.status = 'active'
+),
+listing_aggregate AS (
+  SELECT
+    COUNT(*)::int AS listed_homes,
+    AVG(days_on_market)::numeric AS avg_days_on_market,
+    MIN(listing_price)::numeric AS listing_price_min,
+    MAX(listing_price)::numeric AS listing_price_max,
+    MAX(captured_at) AS latest_listing_observed_at
+  FROM inventory_listings
+),
+target_layout_supply AS (
+  SELECT COUNT(*)::int AS target_layout_supply
+  FROM inventory_run ir
+  JOIN listing_observations lo ON lo.collection_run_id = ir.id
+  WHERE lo.status = 'active'
+    AND lo.layout = $3
+),
+previous_listing_aggregate AS (
+  SELECT COUNT(*)::int AS previous_listed_homes
+  FROM previous_inventory_run pir
+  JOIN listing_observations lo ON lo.collection_run_id = pir.id
+  WHERE lo.status = 'active'
+),
+price_cut_aggregate AS (
+  SELECT COUNT(*)::int AS price_cut_homes
+  FROM inventory_listings current_listing
+  JOIN trigger_run tr ON TRUE
+  WHERE (
+    SELECT prior_listing.listing_price
+    FROM listing_observations prior_listing
+    JOIN collection_runs prior_run ON prior_run.id = prior_listing.collection_run_id
+    WHERE prior_run.status = 'completed'
+      AND prior_run.data_source_id = current_listing.data_source_id
+      AND prior_run.neighborhood_id = current_listing.neighborhood_id
+      AND prior_listing.source_listing_id = current_listing.source_listing_id
+      AND (prior_run.collected_at, prior_run.id) < (tr.collected_at, tr.id)
+    ORDER BY prior_run.collected_at DESC, prior_run.id DESC, prior_listing.captured_at DESC
+    LIMIT 1
+  ) > current_listing.listing_price
+),
+latest_transactions AS (
+  SELECT DISTINCT ON (cr.data_source_id, tx.source_record_id)
+    tx.id, tx.collection_run_id, tx.neighborhood_id, tx.source_record_id, tx.source_row, tx.layout, tx.area_sqm, tx.transaction_price, tx.transaction_date, tx.original_listing_ref, tx.captured_at, cr.data_source_id
+  FROM transaction_observations tx
+  JOIN collection_runs cr ON cr.id = tx.collection_run_id
+  JOIN trigger_run tr ON tr.neighborhood_id = tx.neighborhood_id
+  WHERE cr.status = 'completed'
+    AND cr.neighborhood_id = tr.neighborhood_id
+    AND (cr.collected_at, cr.id) <= (tr.collected_at, tr.id)
+    AND tx.transaction_date >= (tr.collected_at::date - interval '90 days')
+    AND tx.transaction_date <= tr.collected_at::date
+  ORDER BY cr.data_source_id, tx.source_record_id, cr.collected_at DESC, cr.id DESC, tx.captured_at DESC
+),
+transaction_aggregate AS (
+  SELECT
+    COUNT(*)::int AS transaction_sample_count,
+    MIN(transaction_price)::numeric AS transaction_price_min,
+    MAX(transaction_price)::numeric AS transaction_price_max,
+    COUNT(*) FILTER (WHERE transaction_date > (SELECT collected_at::date - interval '30 days' FROM trigger_run))::int AS last_thirty_day_transaction_count,
+    COUNT(*) FILTER (
+      WHERE transaction_date <= (SELECT collected_at::date - interval '30 days' FROM trigger_run)
+        AND transaction_date >= (SELECT collected_at::date - interval '90 days' FROM trigger_run)
+    )::int AS preceding_sixty_day_transaction_count,
+    MAX(captured_at) AS latest_transaction_observed_at
+  FROM latest_transactions
+),
+source_ids AS (
+  SELECT COALESCE(jsonb_agg(DISTINCT source_id ORDER BY source_id), '[]'::jsonb) AS source_ids
+  FROM (
+    SELECT data_source_id::text AS source_id FROM trigger_run
+    UNION
+    SELECT data_source_id::text AS source_id FROM inventory_listings
+    UNION
+    SELECT data_source_id::text AS source_id FROM latest_transactions
+  ) s
+)
+SELECT
+  tr.id AS collection_run_id,
+  ir.id AS inventory_collection_run_id,
+  source_ids.source_ids,
+  COALESCE(GREATEST(la.latest_listing_observed_at, ta.latest_transaction_observed_at), tr.collected_at) AS latest_observed_at,
+  ir.collected_at AS inventory_collected_at,
+  tr.coverage AS coverage,
+  COALESCE(la.listed_homes, 0)::int AS listed_homes,
+  COALESCE(pca.price_cut_homes, 0)::int AS price_cut_homes,
+  la.avg_days_on_market,
+  la.listing_price_min,
+  la.listing_price_max,
+  ta.transaction_price_min,
+  ta.transaction_price_max,
+  COALESCE(tls.target_layout_supply, 0)::int AS target_layout_supply,
+  COALESCE(la.listed_homes, 0)::int AS listing_sample_count,
+  COALESCE(ta.transaction_sample_count, 0)::int AS transaction_sample_count,
+  COALESCE(ta.last_thirty_day_transaction_count, 0)::int AS last_thirty_day_transaction_count,
+  COALESCE(ta.preceding_sixty_day_transaction_count, 0)::int AS preceding_sixty_day_transaction_count,
+  CASE
+    WHEN pla.previous_listed_homes IS NULL OR pla.previous_listed_homes = 0 THEN NULL::numeric
+    ELSE ((COALESCE(la.listed_homes, 0) - pla.previous_listed_homes)::numeric / pla.previous_listed_homes::numeric) * 100
+  END AS listed_homes_change_pct
+FROM trigger_run tr
+CROSS JOIN source_ids
+LEFT JOIN inventory_run ir ON TRUE
+LEFT JOIN listing_aggregate la ON TRUE
+LEFT JOIN target_layout_supply tls ON TRUE
+LEFT JOIN previous_listing_aggregate pla ON TRUE
+LEFT JOIN price_cut_aggregate pca ON TRUE
+LEFT JOIN transaction_aggregate ta ON TRUE
+`
+
+type AggregateMarketObservationsParams struct {
+	TriggerRunID   pgtype.UUID
+	NeighborhoodID pgtype.UUID
+	TargetLayout   string
+}
+
+type AggregateMarketObservationsRow struct {
+	CollectionRunID                   pgtype.UUID
+	InventoryCollectionRunID          pgtype.UUID
+	SourceIds                         interface{}
+	LatestObservedAt                  pgtype.Timestamptz
+	InventoryCollectedAt              pgtype.Timestamptz
+	Coverage                          string
+	ListedHomes                       int32
+	PriceCutHomes                     int32
+	AvgDaysOnMarket                   pgtype.Numeric
+	ListingPriceMin                   pgtype.Numeric
+	ListingPriceMax                   pgtype.Numeric
+	TransactionPriceMin               pgtype.Numeric
+	TransactionPriceMax               pgtype.Numeric
+	TargetLayoutSupply                int32
+	ListingSampleCount                int32
+	TransactionSampleCount            int32
+	LastThirtyDayTransactionCount     int32
+	PrecedingSixtyDayTransactionCount int32
+	ListedHomesChangePct              interface{}
+}
+
+func (q *Queries) AggregateMarketObservations(ctx context.Context, arg AggregateMarketObservationsParams) (AggregateMarketObservationsRow, error) {
+	row := q.db.QueryRow(ctx, aggregateMarketObservations, arg.TriggerRunID, arg.NeighborhoodID, arg.TargetLayout)
+	var i AggregateMarketObservationsRow
+	err := row.Scan(
+		&i.CollectionRunID,
+		&i.InventoryCollectionRunID,
+		&i.SourceIds,
+		&i.LatestObservedAt,
+		&i.InventoryCollectedAt,
+		&i.Coverage,
+		&i.ListedHomes,
+		&i.PriceCutHomes,
+		&i.AvgDaysOnMarket,
+		&i.ListingPriceMin,
+		&i.ListingPriceMax,
+		&i.TransactionPriceMin,
+		&i.TransactionPriceMax,
+		&i.TargetLayoutSupply,
+		&i.ListingSampleCount,
+		&i.TransactionSampleCount,
+		&i.LastThirtyDayTransactionCount,
+		&i.PrecedingSixtyDayTransactionCount,
+		&i.ListedHomesChangePct,
+	)
+	return i, err
+}
+
+const getCompletedCollectionRun = `-- name: GetCompletedCollectionRun :one
+SELECT id, data_source_id, neighborhood_id, collected_at, coverage, metric_status
+FROM collection_runs
+WHERE id = $1 AND status = 'completed'
+`
+
+type GetCompletedCollectionRunRow struct {
+	ID             pgtype.UUID
+	DataSourceID   pgtype.UUID
+	NeighborhoodID pgtype.UUID
+	CollectedAt    pgtype.Timestamptz
+	Coverage       string
+	MetricStatus   string
+}
+
+func (q *Queries) GetCompletedCollectionRun(ctx context.Context, id pgtype.UUID) (GetCompletedCollectionRunRow, error) {
+	row := q.db.QueryRow(ctx, getCompletedCollectionRun, id)
+	var i GetCompletedCollectionRunRow
+	err := row.Scan(
+		&i.ID,
+		&i.DataSourceID,
+		&i.NeighborhoodID,
+		&i.CollectedAt,
+		&i.Coverage,
+		&i.MetricStatus,
+	)
+	return i, err
+}
+
 const insertNeighborhoodMetric = `-- name: InsertNeighborhoodMetric :one
 INSERT INTO neighborhood_metrics (
   neighborhood_id,
@@ -81,7 +334,7 @@ INSERT INTO neighborhood_metrics (
 ) VALUES (
   $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
 )
-RETURNING id, neighborhood_id, listed_homes, price_cut_homes, avg_days_on_market, listing_price_min, listing_price_max, transaction_price_min, transaction_price_max, transaction_momentum, target_layout_supply, calculated_at
+RETURNING id, neighborhood_id, listed_homes, price_cut_homes, avg_days_on_market, listing_price_min, listing_price_max, transaction_price_min, transaction_price_max, transaction_momentum, target_layout_supply, calculated_at, collection_run_id, inventory_collection_run_id, source_ids, listing_sample_count, transaction_sample_count, listed_homes_change_pct, coverage, freshness, quality_state, latest_observed_at, inventory_collected_at, quality_warnings
 `
 
 type InsertNeighborhoodMetricParams struct {
@@ -124,15 +377,99 @@ func (q *Queries) InsertNeighborhoodMetric(ctx context.Context, arg InsertNeighb
 		&i.TransactionMomentum,
 		&i.TargetLayoutSupply,
 		&i.CalculatedAt,
+		&i.CollectionRunID,
+		&i.InventoryCollectionRunID,
+		&i.SourceIds,
+		&i.ListingSampleCount,
+		&i.TransactionSampleCount,
+		&i.ListedHomesChangePct,
+		&i.Coverage,
+		&i.Freshness,
+		&i.QualityState,
+		&i.LatestObservedAt,
+		&i.InventoryCollectedAt,
+		&i.QualityWarnings,
+	)
+	return i, err
+}
+
+const latestCompletedCollectionRun = `-- name: LatestCompletedCollectionRun :one
+SELECT id, data_source_id, neighborhood_id, collected_at, coverage, metric_status
+FROM collection_runs
+WHERE neighborhood_id = $1 AND status = 'completed'
+ORDER BY collected_at DESC, id DESC
+LIMIT 1
+`
+
+type LatestCompletedCollectionRunRow struct {
+	ID             pgtype.UUID
+	DataSourceID   pgtype.UUID
+	NeighborhoodID pgtype.UUID
+	CollectedAt    pgtype.Timestamptz
+	Coverage       string
+	MetricStatus   string
+}
+
+func (q *Queries) LatestCompletedCollectionRun(ctx context.Context, neighborhoodID pgtype.UUID) (LatestCompletedCollectionRunRow, error) {
+	row := q.db.QueryRow(ctx, latestCompletedCollectionRun, neighborhoodID)
+	var i LatestCompletedCollectionRunRow
+	err := row.Scan(
+		&i.ID,
+		&i.DataSourceID,
+		&i.NeighborhoodID,
+		&i.CollectedAt,
+		&i.Coverage,
+		&i.MetricStatus,
+	)
+	return i, err
+}
+
+const latestCompletedFullCollectionRun = `-- name: LatestCompletedFullCollectionRun :one
+SELECT id, data_source_id, neighborhood_id, collected_at, coverage, metric_status
+FROM collection_runs
+WHERE neighborhood_id = $1
+  AND status = 'completed'
+  AND coverage = 'full'
+  AND (collected_at, id) <= ($2, $3::uuid)
+ORDER BY collected_at DESC, id DESC
+LIMIT 1
+`
+
+type LatestCompletedFullCollectionRunParams struct {
+	NeighborhoodID     pgtype.UUID
+	TriggerCollectedAt pgtype.Timestamptz
+	TriggerRunID       pgtype.UUID
+}
+
+type LatestCompletedFullCollectionRunRow struct {
+	ID             pgtype.UUID
+	DataSourceID   pgtype.UUID
+	NeighborhoodID pgtype.UUID
+	CollectedAt    pgtype.Timestamptz
+	Coverage       string
+	MetricStatus   string
+}
+
+func (q *Queries) LatestCompletedFullCollectionRun(ctx context.Context, arg LatestCompletedFullCollectionRunParams) (LatestCompletedFullCollectionRunRow, error) {
+	row := q.db.QueryRow(ctx, latestCompletedFullCollectionRun, arg.NeighborhoodID, arg.TriggerCollectedAt, arg.TriggerRunID)
+	var i LatestCompletedFullCollectionRunRow
+	err := row.Scan(
+		&i.ID,
+		&i.DataSourceID,
+		&i.NeighborhoodID,
+		&i.CollectedAt,
+		&i.Coverage,
+		&i.MetricStatus,
 	)
 	return i, err
 }
 
 const latestNeighborhoodMetric = `-- name: LatestNeighborhoodMetric :one
-SELECT id, neighborhood_id, listed_homes, price_cut_homes, avg_days_on_market, listing_price_min, listing_price_max, transaction_price_min, transaction_price_max, transaction_momentum, target_layout_supply, calculated_at
-FROM neighborhood_metrics
-WHERE neighborhood_id = $1
-ORDER BY calculated_at DESC
+SELECT nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.target_layout_supply, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings
+FROM neighborhood_metrics nm
+JOIN collection_runs cr ON cr.id = nm.collection_run_id
+WHERE nm.neighborhood_id = $1
+ORDER BY cr.collected_at DESC, cr.id DESC
 LIMIT 1
 `
 
@@ -152,6 +489,223 @@ func (q *Queries) LatestNeighborhoodMetric(ctx context.Context, neighborhoodID p
 		&i.TransactionMomentum,
 		&i.TargetLayoutSupply,
 		&i.CalculatedAt,
+		&i.CollectionRunID,
+		&i.InventoryCollectionRunID,
+		&i.SourceIds,
+		&i.ListingSampleCount,
+		&i.TransactionSampleCount,
+		&i.ListedHomesChangePct,
+		&i.Coverage,
+		&i.Freshness,
+		&i.QualityState,
+		&i.LatestObservedAt,
+		&i.InventoryCollectedAt,
+		&i.QualityWarnings,
+	)
+	return i, err
+}
+
+const listNeighborhoodMetricHistory = `-- name: ListNeighborhoodMetricHistory :many
+SELECT nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.target_layout_supply, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings
+FROM neighborhood_metrics nm
+JOIN collection_runs cr ON cr.id = nm.collection_run_id
+WHERE nm.neighborhood_id = $1
+  AND cr.collected_at >= $2
+ORDER BY cr.collected_at ASC, cr.id ASC
+`
+
+type ListNeighborhoodMetricHistoryParams struct {
+	NeighborhoodID pgtype.UUID
+	CollectedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) ListNeighborhoodMetricHistory(ctx context.Context, arg ListNeighborhoodMetricHistoryParams) ([]NeighborhoodMetric, error) {
+	rows, err := q.db.Query(ctx, listNeighborhoodMetricHistory, arg.NeighborhoodID, arg.CollectedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NeighborhoodMetric
+	for rows.Next() {
+		var i NeighborhoodMetric
+		if err := rows.Scan(
+			&i.ID,
+			&i.NeighborhoodID,
+			&i.ListedHomes,
+			&i.PriceCutHomes,
+			&i.AvgDaysOnMarket,
+			&i.ListingPriceMin,
+			&i.ListingPriceMax,
+			&i.TransactionPriceMin,
+			&i.TransactionPriceMax,
+			&i.TransactionMomentum,
+			&i.TargetLayoutSupply,
+			&i.CalculatedAt,
+			&i.CollectionRunID,
+			&i.InventoryCollectionRunID,
+			&i.SourceIds,
+			&i.ListingSampleCount,
+			&i.TransactionSampleCount,
+			&i.ListedHomesChangePct,
+			&i.Coverage,
+			&i.Freshness,
+			&i.QualityState,
+			&i.LatestObservedAt,
+			&i.InventoryCollectedAt,
+			&i.QualityWarnings,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markCollectionRunMetricCompleted = `-- name: MarkCollectionRunMetricCompleted :one
+UPDATE collection_runs
+SET metric_status = 'completed', updated_at = now()
+WHERE id = $1 AND status = 'completed'
+RETURNING id
+`
+
+func (q *Queries) MarkCollectionRunMetricCompleted(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, markCollectionRunMetricCompleted, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const upsertNeighborhoodMetric = `-- name: UpsertNeighborhoodMetric :one
+INSERT INTO neighborhood_metrics (
+  neighborhood_id,
+  listed_homes,
+  price_cut_homes,
+  avg_days_on_market,
+  listing_price_min,
+  listing_price_max,
+  transaction_price_min,
+  transaction_price_max,
+  transaction_momentum,
+  target_layout_supply,
+  collection_run_id,
+  inventory_collection_run_id,
+  source_ids,
+  listing_sample_count,
+  transaction_sample_count,
+  listed_homes_change_pct,
+  coverage,
+  freshness,
+  quality_state,
+  latest_observed_at,
+  inventory_collected_at,
+  quality_warnings
+) VALUES (
+  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+)
+ON CONFLICT (collection_run_id) DO UPDATE SET
+  listed_homes = EXCLUDED.listed_homes,
+  price_cut_homes = EXCLUDED.price_cut_homes,
+  avg_days_on_market = EXCLUDED.avg_days_on_market,
+  listing_price_min = EXCLUDED.listing_price_min,
+  listing_price_max = EXCLUDED.listing_price_max,
+  transaction_price_min = EXCLUDED.transaction_price_min,
+  transaction_price_max = EXCLUDED.transaction_price_max,
+  transaction_momentum = EXCLUDED.transaction_momentum,
+  target_layout_supply = EXCLUDED.target_layout_supply,
+  inventory_collection_run_id = EXCLUDED.inventory_collection_run_id,
+  source_ids = EXCLUDED.source_ids,
+  listing_sample_count = EXCLUDED.listing_sample_count,
+  transaction_sample_count = EXCLUDED.transaction_sample_count,
+  listed_homes_change_pct = EXCLUDED.listed_homes_change_pct,
+  coverage = EXCLUDED.coverage,
+  freshness = EXCLUDED.freshness,
+  quality_state = EXCLUDED.quality_state,
+  latest_observed_at = EXCLUDED.latest_observed_at,
+  inventory_collected_at = EXCLUDED.inventory_collected_at,
+  quality_warnings = EXCLUDED.quality_warnings,
+  calculated_at = now()
+RETURNING id, neighborhood_id, listed_homes, price_cut_homes, avg_days_on_market, listing_price_min, listing_price_max, transaction_price_min, transaction_price_max, transaction_momentum, target_layout_supply, calculated_at, collection_run_id, inventory_collection_run_id, source_ids, listing_sample_count, transaction_sample_count, listed_homes_change_pct, coverage, freshness, quality_state, latest_observed_at, inventory_collected_at, quality_warnings
+`
+
+type UpsertNeighborhoodMetricParams struct {
+	NeighborhoodID           pgtype.UUID
+	ListedHomes              int32
+	PriceCutHomes            int32
+	AvgDaysOnMarket          pgtype.Numeric
+	ListingPriceMin          pgtype.Numeric
+	ListingPriceMax          pgtype.Numeric
+	TransactionPriceMin      pgtype.Numeric
+	TransactionPriceMax      pgtype.Numeric
+	TransactionMomentum      string
+	TargetLayoutSupply       int32
+	CollectionRunID          pgtype.UUID
+	InventoryCollectionRunID pgtype.UUID
+	SourceIds                []byte
+	ListingSampleCount       int32
+	TransactionSampleCount   int32
+	ListedHomesChangePct     pgtype.Numeric
+	Coverage                 pgtype.Text
+	Freshness                pgtype.Text
+	QualityState             pgtype.Text
+	LatestObservedAt         pgtype.Timestamptz
+	InventoryCollectedAt     pgtype.Timestamptz
+	QualityWarnings          []byte
+}
+
+func (q *Queries) UpsertNeighborhoodMetric(ctx context.Context, arg UpsertNeighborhoodMetricParams) (NeighborhoodMetric, error) {
+	row := q.db.QueryRow(ctx, upsertNeighborhoodMetric,
+		arg.NeighborhoodID,
+		arg.ListedHomes,
+		arg.PriceCutHomes,
+		arg.AvgDaysOnMarket,
+		arg.ListingPriceMin,
+		arg.ListingPriceMax,
+		arg.TransactionPriceMin,
+		arg.TransactionPriceMax,
+		arg.TransactionMomentum,
+		arg.TargetLayoutSupply,
+		arg.CollectionRunID,
+		arg.InventoryCollectionRunID,
+		arg.SourceIds,
+		arg.ListingSampleCount,
+		arg.TransactionSampleCount,
+		arg.ListedHomesChangePct,
+		arg.Coverage,
+		arg.Freshness,
+		arg.QualityState,
+		arg.LatestObservedAt,
+		arg.InventoryCollectedAt,
+		arg.QualityWarnings,
+	)
+	var i NeighborhoodMetric
+	err := row.Scan(
+		&i.ID,
+		&i.NeighborhoodID,
+		&i.ListedHomes,
+		&i.PriceCutHomes,
+		&i.AvgDaysOnMarket,
+		&i.ListingPriceMin,
+		&i.ListingPriceMax,
+		&i.TransactionPriceMin,
+		&i.TransactionPriceMax,
+		&i.TransactionMomentum,
+		&i.TargetLayoutSupply,
+		&i.CalculatedAt,
+		&i.CollectionRunID,
+		&i.InventoryCollectionRunID,
+		&i.SourceIds,
+		&i.ListingSampleCount,
+		&i.TransactionSampleCount,
+		&i.ListedHomesChangePct,
+		&i.Coverage,
+		&i.Freshness,
+		&i.QualityState,
+		&i.LatestObservedAt,
+		&i.InventoryCollectedAt,
+		&i.QualityWarnings,
 	)
 	return i, err
 }

@@ -143,11 +143,11 @@ func TestGetNeighborhoodMetricsReturnsLatestSignal(t *testing.T) {
 				NeighborhoodID:      "neighborhood_1",
 				ListedHomes:         42,
 				PriceCutHomes:       11,
-				AvgDaysOnMarket:     78,
-				ListingPriceMin:     520,
-				ListingPriceMax:     620,
-				TransactionPriceMin: 495,
-				TransactionPriceMax: 545,
+				AvgDaysOnMarket:     handlerFloatPtr(78),
+				ListingPriceMin:     handlerFloatPtr(520),
+				ListingPriceMax:     handlerFloatPtr(620),
+				TransactionPriceMin: handlerFloatPtr(495),
+				TransactionPriceMax: handlerFloatPtr(545),
 				TransactionMomentum: domainneighborhood.TransactionMomentumWeak,
 				TargetLayoutSupply:  12,
 				CalculatedAt:        time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
@@ -180,6 +180,10 @@ func TestGetNeighborhoodMetricsReturnsLatestSignal(t *testing.T) {
 	if response.Status != "适合砍价" || response.SupplyPressure != "high" {
 		t.Fatalf("response = %#v", response)
 	}
+}
+
+func handlerFloatPtr(value float64) *float64 {
+	return &value
 }
 
 func TestCreateWatchlistItemUsesSingleUser(t *testing.T) {

@@ -96,15 +96,18 @@ func TestListWatchlistEvaluatesLatestMetric(t *testing.T) {
 			HasMetric:      true,
 			Metric: MetricSnapshot{
 				ListedHomes:          42,
-				ListedHomesChangePct: 18,
+				ListedHomesChangePct: testFloatPtr(18),
 				PriceCutHomes:        11,
-				AvgDaysOnMarket:      78,
-				ListingPriceMin:      520,
-				ListingPriceMax:      620,
-				TransactionPriceMin:  495,
-				TransactionPriceMax:  545,
+				AvgDaysOnMarket:      testFloatPtr(78),
+				ListingPriceMin:      testFloatPtr(520),
+				ListingPriceMax:      testFloatPtr(620),
+				TransactionPriceMin:  testFloatPtr(495),
+				TransactionPriceMax:  testFloatPtr(545),
 				TransactionMomentum:  domainneighborhood.TransactionMomentumWeak,
 				TargetLayoutSupply:   12,
+				Coverage:             domainneighborhood.CoverageFull,
+				Freshness:            domainneighborhood.FreshnessCurrent,
+				QualityState:         domainneighborhood.MarketQualitySufficient,
 				CalculatedAt:         time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 			},
 		},
@@ -185,15 +188,18 @@ func TestLatestMetricEvaluatesSignal(t *testing.T) {
 	repo := newMemoryRepository()
 	repo.metrics["neighborhood_1"] = MetricSnapshot{
 		ListedHomes:          14,
-		ListedHomesChangePct: -6,
+		ListedHomesChangePct: testFloatPtr(-6),
 		PriceCutHomes:        1,
-		AvgDaysOnMarket:      35,
-		ListingPriceMin:      700,
-		ListingPriceMax:      760,
-		TransactionPriceMin:  690,
-		TransactionPriceMax:  745,
+		AvgDaysOnMarket:      testFloatPtr(35),
+		ListingPriceMin:      testFloatPtr(700),
+		ListingPriceMax:      testFloatPtr(760),
+		TransactionPriceMin:  testFloatPtr(690),
+		TransactionPriceMax:  testFloatPtr(745),
 		TransactionMomentum:  domainneighborhood.TransactionMomentumStrong,
 		TargetLayoutSupply:   3,
+		Coverage:             domainneighborhood.CoverageFull,
+		Freshness:            domainneighborhood.FreshnessCurrent,
+		QualityState:         domainneighborhood.MarketQualitySufficient,
 		CalculatedAt:         time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 	}
 	service := NewService(repo)
@@ -277,4 +283,8 @@ func (m *memoryRepository) LatestMetric(_ context.Context, neighborhoodID string
 		return MetricSnapshot{}, ErrMetricNotFound
 	}
 	return metric, nil
+}
+
+func testFloatPtr(value float64) *float64 {
+	return &value
 }

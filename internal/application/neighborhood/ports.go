@@ -66,19 +66,30 @@ type WatchlistItemSummary struct {
 }
 
 type MetricSnapshot struct {
-	ID                   string
-	NeighborhoodID       string
-	ListedHomes          int
-	ListedHomesChangePct float64
-	PriceCutHomes        int
-	AvgDaysOnMarket      float64
-	ListingPriceMin      float64
-	ListingPriceMax      float64
-	TransactionPriceMin  float64
-	TransactionPriceMax  float64
-	TransactionMomentum  domainneighborhood.TransactionMomentum
-	TargetLayoutSupply   int
-	CalculatedAt         time.Time
+	ID                       string
+	NeighborhoodID           string
+	CollectionRunID          string
+	InventoryCollectionRunID *string
+	SourceIDs                []string
+	LatestObservedAt         time.Time
+	ListedHomes              int
+	PriceCutHomes            int
+	AvgDaysOnMarket          *float64
+	ListingPriceMin          *float64
+	ListingPriceMax          *float64
+	TransactionPriceMin      *float64
+	TransactionPriceMax      *float64
+	TransactionMomentum      domainneighborhood.TransactionMomentum
+	TargetLayoutSupply       int
+	ListingSampleCount       int
+	TransactionSampleCount   int
+	Coverage                 domainneighborhood.Coverage
+	Freshness                domainneighborhood.Freshness
+	InventoryCollectedAt     *time.Time
+	ListedHomesChangePct     *float64
+	QualityWarnings          []domainneighborhood.QualityWarning
+	QualityState             domainneighborhood.MarketQualityState
+	CalculatedAt             time.Time
 }
 
 type MetricWithSignal struct {

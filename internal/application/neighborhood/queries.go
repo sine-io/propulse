@@ -82,13 +82,27 @@ func (s *Service) LatestMetric(ctx context.Context, query LatestMetricQuery) (Me
 func evaluateMetric(name string, metric MetricSnapshot) domainneighborhood.SignalResult {
 	return domainneighborhood.EvaluateSignal(domainneighborhood.SignalInput{
 		Name:                  name,
-		ListingPriceRange:     domainneighborhood.PriceRange{Min: metric.ListingPriceMin, Max: metric.ListingPriceMax},
-		TransactionPriceRange: domainneighborhood.PriceRange{Min: metric.TransactionPriceMin, Max: metric.TransactionPriceMax},
+		ListingPriceRange:     domainneighborhood.PriceRange{Min: derefFloat(metric.ListingPriceMin), Max: derefFloat(metric.ListingPriceMax)},
+		TransactionPriceRange: domainneighborhood.PriceRange{Min: derefFloat(metric.TransactionPriceMin), Max: derefFloat(metric.TransactionPriceMax)},
 		ListedHomes:           metric.ListedHomes,
-		ListedHomesChangePct:  metric.ListedHomesChangePct,
+		ListedHomesChangePct:  derefFloat(metric.ListedHomesChangePct),
 		PriceCutHomes:         metric.PriceCutHomes,
-		AvgDaysOnMarket:       metric.AvgDaysOnMarket,
+		AvgDaysOnMarket:       derefFloat(metric.AvgDaysOnMarket),
 		TransactionMomentum:   metric.TransactionMomentum,
 		TargetLayoutSupply:    metric.TargetLayoutSupply,
+		Quality: domainneighborhood.QualityAssessment{
+			Coverage:     metric.Coverage,
+			Freshness:    metric.Freshness,
+			State:        metric.QualityState,
+			CanRecommend: metric.QualityState == domainneighborhood.MarketQualitySufficient,
+			Warnings:     metric.QualityWarnings,
+		},
 	})
+}
+
+func derefFloat(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
