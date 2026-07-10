@@ -606,10 +606,10 @@ func TestRunHTTPServerPassesRuntimeReadinessCheckerToRouter(t *testing.T) {
 		server.Handler.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+			return fmt.Errorf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 		}
 		if checker.calls != 1 {
-			t.Fatalf("runtime readiness check calls = %d, want 1", checker.calls)
+			return fmt.Errorf("runtime readiness check calls = %d, want 1", checker.calls)
 		}
 		return http.ErrServerClosed
 	}

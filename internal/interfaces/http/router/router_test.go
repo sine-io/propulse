@@ -179,17 +179,9 @@ func assertNotReadyResponse(t *testing.T, rec *httptest.ResponseRecorder) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
 	}
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("json.Unmarshal(response) error = %v; body=%s", err, rec.Body.String())
-	}
-	if body.Error.Code != "not_ready" || body.Error.Message != "service dependencies are not ready" {
-		t.Fatalf("response = %+v, want not_ready dependency message", body)
+	want := `{"error":{"code":"not_ready","message":"service dependencies are not ready"}}`
+	if got := rec.Body.String(); got != want {
+		t.Fatalf("body = %q, want exactly %q", got, want)
 	}
 }
 
