@@ -36,9 +36,28 @@ func TestEmbeddedMigrationSetIsSingleCoherentInitialSchema(t *testing.T) {
 	for _, required := range []string{
 		"collection_run_id UUID NOT NULL",
 		"idx_listing_snapshots_neighborhood_run_captured_at",
+		"CREATE TABLE data_sources",
+		"CREATE TABLE collection_runs",
+		"CREATE TABLE listing_observations",
+		"CREATE TABLE transaction_observations",
+		"UNIQUE (data_source_id, source_ref, content_checksum)",
+		"UNIQUE (collection_run_id, source_listing_id)",
+		"UNIQUE (collection_run_id, source_record_id)",
+		"metric_status TEXT NOT NULL",
+		"inventory_collection_run_id UUID",
+		"FOREIGN KEY (collection_run_id, neighborhood_id)",
+		"ON DELETE SET NULL (inventory_collection_run_id)",
+		"avg_days_on_market NUMERIC(8,2),",
+		"listing_price_min NUMERIC(12,2),",
+		"listing_price_max NUMERIC(12,2),",
+		"transaction_price_min NUMERIC(12,2),",
+		"transaction_price_max NUMERIC(12,2),",
+		"idx_collection_runs_neighborhood_collected_at",
+		"idx_listing_observations_source_history",
+		"idx_transaction_observations_neighborhood_date",
 	} {
 		if !strings.Contains(string(body), required) {
-			t.Fatalf("initial schema is missing %q", required)
+			t.Fatalf("expanded initial schema is missing %q", required)
 		}
 	}
 
