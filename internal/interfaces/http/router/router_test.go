@@ -401,6 +401,146 @@ func TestAdminImportRoute(t *testing.T) {
 	}
 }
 
+func TestRouterFallbackSharesNeighborhoodStateWithCollectionImports(t *testing.T) {
+	engine := New(Dependencies{
+		Log:         zerolog.New(io.Discard),
+		StaticFS:    webembed.Embedded(),
+		AccessToken: "secret-token",
+	})
+
+	createNeighborhood := httptest.NewRequest(http.MethodPost, "/api/v1/neighborhoods", strings.NewReader(`{
+		"name": "青枫花园",
+		"area": "滨江核心",
+		"targetLayout": "三房"
+	}`))
+	createNeighborhood.Header.Set("Content-Type", "application/json")
+	createNeighborhood.Header.Set("Authorization", "Bearer secret-token")
+	createNeighborhoodRecorder := httptest.NewRecorder()
+	engine.ServeHTTP(createNeighborhoodRecorder, createNeighborhood)
+	if createNeighborhoodRecorder.Code != http.StatusCreated {
+		t.Fatalf("create neighborhood status = %d, want 201; body=%s", createNeighborhoodRecorder.Code, createNeighborhoodRecorder.Body.String())
+	}
+	var neighborhood struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(createNeighborhoodRecorder.Body.Bytes(), &neighborhood); err != nil {
+		t.Fatalf("json.Unmarshal(neighborhood) error = %v", err)
+	}
+	if neighborhood.ID == "" {
+		t.Fatal("created neighborhood ID is empty")
+	}
+
+	importRequest := httptest.NewRequest(http.MethodPost, "/admin/api/imports", strings.NewReader(`{
+		"sourceType": "manual_json",
+		"sourceRef": "fallback-weekly-import",
+		"neighborhoodId": "`+neighborhood.ID+`",
+		"records": [{"listingPrice": 520, "daysOnMarket": 0}]
+	}`))
+	importRequest.Header.Set("Content-Type", "application/json")
+	importRequest.Header.Set("Authorization", "Bearer secret-token")
+	importRecorder := httptest.NewRecorder()
+	engine.ServeHTTP(importRecorder, importRequest)
+	if importRecorder.Code != http.StatusCreated {
+		t.Fatalf("import status = %d, want 201; body=%s", importRecorder.Code, importRecorder.Body.String())
+	}
+}
+
+func TestInMemoryCollectionRepositorySavesTrustedRunsInSharedMarketState(t *testing.T) {
+	ctx := context.Background()
+	marketState := newInMemoryMarketState()
+	neighborhoods := newInMemoryNeighborhoodRepository(marketState)
+	repo := newInMemoryCollectionRepository(neighborhoods, marketState)
+	neighborhood, err := neighborhoods.CreateNeighborhood(ctx, appneighborhood.CreateNeighborhoodInput{
+		ID:           "neighborhood_1",
+		Name:         "青枫花园",
+		Area:         "滨江核心",
+		TargetLayout: "三房",
+	})
+	if err != nil {
+		t.Fatalf("CreateNeighborhood() error = %v", err)
+	}
+	source, err := repo.CreateDataSource(ctx, appcollection.DataSource{
+		ID:         "source_1",
+		Name:       "链家手工",
+		SourceType: "manual_json",
+		City:       "杭州",
+		Notes:      "fallback source",
+	})
+	if err != nil {
+		t.Fatalf("CreateDataSource() error = %v", err)
+	}
+
+	exists, err := repo.NeighborhoodExists(ctx, neighborhood.ID)
+	if err != nil {
+		t.Fatalf("NeighborhoodExists() error = %v", err)
+	}
+	if !exists {
+		t.Fatal("NeighborhoodExists() = false, want true")
+	}
+	run := appcollection.CollectionRun{
+		ID:              "run_1",
+		DataSourceID:    source.ID,
+		NeighborhoodID:  neighborhood.ID,
+		SourceRef:       "weekly-2026-07-09",
+		CollectedAt:     time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		Coverage:        domainneighborhood.CoverageFull,
+		Format:          appcollection.ImportFormatJSON,
+		ContentChecksum: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		RawPayload:      []byte(`{"records":[]}`),
+		RawContentType:  "application/json",
+		ValidationSummary: appcollection.ValidationSummary{
+			RecordCount:      1,
+			ListingCount:     1,
+			TransactionCount: 0,
+			Issues:           []appcollection.ValidationIssue{},
+		},
+		Status:       appcollection.CollectionRunStatusCompleted,
+		MetricStatus: appcollection.MetricStatusPending,
+	}
+	result, err := repo.SaveCollectionRun(ctx, appcollection.ImportBatch{
+		Run: run,
+		Listings: []appcollection.ListingObservation{
+			{
+				ID:              "listing_1",
+				CollectionRunID: "wrong-run",
+				NeighborhoodID:  "wrong-neighborhood",
+				SourceListingID: "listing-source-1",
+				SourceRow:       1,
+				Layout:          "三房",
+				AreaSQM:         89,
+				ListingPrice:    520,
+				DaysOnMarket:    0,
+				Status:          appcollection.ListingStatusActive,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveCollectionRun() error = %v", err)
+	}
+	if !result.Created {
+		t.Fatal("SaveCollectionRun() Created = false, want true")
+	}
+	replay := run
+	replay.ID = "run_2"
+	replayResult, err := repo.SaveCollectionRun(ctx, appcollection.ImportBatch{Run: replay})
+	if err != nil {
+		t.Fatalf("SaveCollectionRun(replay) error = %v", err)
+	}
+	if replayResult.Created || replayResult.Run.ID != run.ID {
+		t.Fatalf("SaveCollectionRun(replay) = %#v, want existing run", replayResult)
+	}
+	detail, err := repo.GetCollectionRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetCollectionRun() error = %v", err)
+	}
+	if detail.Source.ID != source.ID || detail.Run.ID != run.ID || len(detail.Listings) != 1 {
+		t.Fatalf("detail = %#v", detail)
+	}
+	if detail.Listings[0].CollectionRunID != run.ID || detail.Listings[0].NeighborhoodID != neighborhood.ID {
+		t.Fatalf("listing IDs = %#v, want batch run/neighborhood ids", detail.Listings[0])
+	}
+}
+
 func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 	tests := []struct {
 		method string

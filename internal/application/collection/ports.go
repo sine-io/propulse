@@ -16,6 +16,16 @@ type Repository interface {
 	SaveImport(ctx context.Context, raw RawCollectionRecord, snapshots []ListingSnapshot) error
 }
 
+type TrustedRepository interface {
+	CreateDataSource(context.Context, DataSource) (DataSource, error)
+	ListDataSources(context.Context) ([]DataSource, error)
+	DataSourceExists(context.Context, string) (bool, error)
+	NeighborhoodExists(context.Context, string) (bool, error)
+	SaveCollectionRun(context.Context, ImportBatch) (SaveImportResult, error)
+	GetCollectionRun(context.Context, string) (CollectionRunDetail, error)
+	UpdateMetricStatus(context.Context, string, MetricStatus) error
+}
+
 type MetricCalculator interface {
 	CalculateNeighborhood(ctx context.Context, neighborhoodID string) error
 }

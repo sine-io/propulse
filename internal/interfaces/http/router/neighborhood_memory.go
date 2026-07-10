@@ -15,14 +15,23 @@ type inMemoryNeighborhoodRepository struct {
 	metrics       map[string]appneighborhood.MetricSnapshot
 	watchlist     map[string]appneighborhood.WatchlistItem
 	watchlistKeys []string
+	marketState   *inMemoryMarketState
 }
 
-func newInMemoryNeighborhoodRepository() *inMemoryNeighborhoodRepository {
+func newInMemoryNeighborhoodRepository(marketState ...*inMemoryMarketState) *inMemoryNeighborhoodRepository {
+	var state *inMemoryMarketState
+	if len(marketState) > 0 {
+		state = marketState[0]
+	}
+	if state == nil {
+		state = newInMemoryMarketState()
+	}
 	return &inMemoryNeighborhoodRepository{
 		neighborhoods: map[string]appneighborhood.Neighborhood{},
 		metrics:       map[string]appneighborhood.MetricSnapshot{},
 		watchlist:     map[string]appneighborhood.WatchlistItem{},
 		watchlistKeys: []string{},
+		marketState:   state,
 	}
 }
 
@@ -54,6 +63,13 @@ func (r *inMemoryNeighborhoodRepository) GetNeighborhood(_ context.Context, id s
 		return appneighborhood.Neighborhood{}, appneighborhood.ErrNeighborhoodNotFound
 	}
 	return neighborhood, nil
+}
+
+func (r *inMemoryNeighborhoodRepository) exists(_ context.Context, id string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.neighborhoods[id]
+	return ok, nil
 }
 
 func (r *inMemoryNeighborhoodRepository) AddWatchlistItem(_ context.Context, userID string, neighborhoodID string) (appneighborhood.WatchlistItem, error) {

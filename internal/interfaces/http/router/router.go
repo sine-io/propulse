@@ -76,6 +76,7 @@ func New(deps Dependencies) *gin.Engine {
 	api := engine.Group("/api/v1")
 	protected := api.Group("")
 	protected.Use(httpmiddleware.AccessAuth(deps.AccessToken))
+	marketState := newInMemoryMarketState()
 	capacityApp := deps.CapacityApplication
 	if capacityApp == nil {
 		capacityApp = appcapacity.NewService(newInMemoryCalculationRepository(), nil, nil)
@@ -85,8 +86,10 @@ func New(deps Dependencies) *gin.Engine {
 	protected.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
 
 	neighborhoodApp := deps.NeighborhoodApplication
+	var fallbackNeighborhoodRepo *inMemoryNeighborhoodRepository
 	if neighborhoodApp == nil {
-		neighborhoodApp = appneighborhood.NewService(newInMemoryNeighborhoodRepository())
+		fallbackNeighborhoodRepo = newInMemoryNeighborhoodRepository(marketState)
+		neighborhoodApp = appneighborhood.NewService(fallbackNeighborhoodRepo)
 	}
 	neighborhoodHandler := httphandler.NewNeighborhood(neighborhoodApp)
 	watchlistHandler := httphandler.NewWatchlist(neighborhoodApp)
@@ -107,7 +110,10 @@ func New(deps Dependencies) *gin.Engine {
 	admin.Use(httpmiddleware.AccessAuth(deps.AccessToken))
 	collectionApp := deps.CollectionApplication
 	if collectionApp == nil {
-		collectionApp = appcollection.NewService(newInMemoryCollectionRepository(), nil, nil)
+		if fallbackNeighborhoodRepo == nil {
+			fallbackNeighborhoodRepo = newInMemoryNeighborhoodRepository(marketState)
+		}
+		collectionApp = appcollection.NewService(newInMemoryCollectionRepository(fallbackNeighborhoodRepo, marketState), nil, nil)
 	}
 	adminImportsHandler := httphandler.NewAdminImports(collectionApp)
 	admin.POST("/imports", adminImportsHandler.CreateImport)
