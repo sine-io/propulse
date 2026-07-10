@@ -16,27 +16,30 @@ const (
 type SupplyPressure string
 
 const (
-	SupplyPressureLow    SupplyPressure = "low"
-	SupplyPressureMedium SupplyPressure = "medium"
-	SupplyPressureHigh   SupplyPressure = "high"
+	SupplyPressureUnknown SupplyPressure = "unknown"
+	SupplyPressureLow     SupplyPressure = "low"
+	SupplyPressureMedium  SupplyPressure = "medium"
+	SupplyPressureHigh    SupplyPressure = "high"
 )
 
 type NeighborhoodStatus string
 
 const (
-	NeighborhoodStatusFocus      NeighborhoodStatus = "重点看"
-	NeighborhoodStatusObserve    NeighborhoodStatus = "继续观察"
-	NeighborhoodStatusBargain    NeighborhoodStatus = "适合砍价"
-	NeighborhoodStatusPriceHard  NeighborhoodStatus = "价格偏硬"
-	NeighborhoodStatusNotSuggest NeighborhoodStatus = "暂不建议追"
+	NeighborhoodStatusInsufficientData NeighborhoodStatus = "数据不足"
+	NeighborhoodStatusFocus            NeighborhoodStatus = "重点看"
+	NeighborhoodStatusObserve          NeighborhoodStatus = "继续观察"
+	NeighborhoodStatusBargain          NeighborhoodStatus = "适合砍价"
+	NeighborhoodStatusPriceHard        NeighborhoodStatus = "价格偏硬"
+	NeighborhoodStatusNotSuggest       NeighborhoodStatus = "暂不建议追"
 )
 
 type Scarcity string
 
 const (
-	ScarcityLow    Scarcity = "low"
-	ScarcityMedium Scarcity = "medium"
-	ScarcityHigh   Scarcity = "high"
+	ScarcityUnknown Scarcity = "unknown"
+	ScarcityLow     Scarcity = "low"
+	ScarcityMedium  Scarcity = "medium"
+	ScarcityHigh    Scarcity = "high"
 )
 
 type PriceRange struct {
@@ -54,6 +57,7 @@ type SignalInput struct {
 	AvgDaysOnMarket       float64
 	TransactionMomentum   TransactionMomentum
 	TargetLayoutSupply    int
+	Quality               QualityAssessment
 }
 
 type SignalResult struct {
@@ -63,11 +67,26 @@ type SignalResult struct {
 	PriceCutShare        float64
 	PriceGapPct          float64
 	TargetLayoutScarcity Scarcity
+	QualityState         MarketQualityState
+	Warnings             []QualityWarning
 	NextAction           string
 	Reasons              []string
 }
 
 func EvaluateSignal(input SignalInput) SignalResult {
+	if input.Quality.State != "" && !input.Quality.CanRecommend {
+		return SignalResult{
+			Name:                 input.Name,
+			Status:               NeighborhoodStatusInsufficientData,
+			SupplyPressure:       SupplyPressureUnknown,
+			TargetLayoutScarcity: ScarcityUnknown,
+			QualityState:         input.Quality.State,
+			Warnings:             input.Quality.Warnings,
+			NextAction:           "等待补充完整且新鲜的挂牌与成交样本，再判断看房或议价时机。",
+			Reasons:              []string{"市场数据覆盖、样本量或新鲜度不足，不能据此给出买入或议价结论。"},
+		}
+	}
+
 	priceCutShare := float64(input.PriceCutHomes) / math.Max(float64(input.ListedHomes), 1)
 	listingMid := midpoint(input.ListingPriceRange)
 	transactionMid := midpoint(input.TransactionPriceRange)
@@ -131,6 +150,8 @@ func EvaluateSignal(input SignalInput) SignalResult {
 		PriceCutShare:        round(priceCutShare, 3),
 		PriceGapPct:          round(priceGapPct, 3),
 		TargetLayoutScarcity: targetLayoutScarcity,
+		QualityState:         input.Quality.State,
+		Warnings:             input.Quality.Warnings,
 		NextAction:           nextAction,
 		Reasons:              reasons,
 	}
