@@ -1,9 +1,9 @@
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const root = resolve(import.meta.dirname, "..");
-const source = resolve(root, "apps", "web", "out");
-const target = resolve(root, "web", "static");
+const webRoot = resolve(import.meta.dirname, "..");
+const source = resolve(webRoot, "out");
+const target = resolve(webRoot, "embed", "static");
 
 await rm(target, { recursive: true, force: true });
 await mkdir(target, { recursive: true });

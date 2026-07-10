@@ -6,7 +6,7 @@
     "dev": "next dev",
     "generate:api": "openapi-typescript ../../api/openapi.yaml -o src/lib/generated-api.d.ts",
     "build": "next build",
-    "build:web": "pnpm build && node ../../scripts/sync-static-web.mjs",
+    "build:web": "pnpm build && node scripts/sync-embed.mjs",
     "start": "next start",
     "lint": "eslint src --ext .ts,.tsx --max-warnings=0",
     "test": "vitest run",

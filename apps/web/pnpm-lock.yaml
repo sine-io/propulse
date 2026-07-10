@@ -6,7 +6,7 @@ settings:
 
 importers:
 
-  apps/web:
+  .:
     dependencies:
       '@radix-ui/react-slot':
         specifier: latest
