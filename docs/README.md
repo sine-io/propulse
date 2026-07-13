@@ -6,6 +6,7 @@
 - [信息架构](information-architecture.md)
 - [页面线框](wireframes.md)
 - [PRD 第一版](prd-v1.md)
+- [假数据与占位功能审计问题清单（2026-07-13）](audits/2026-07-13-fake-data-and-placeholder-issues.md)
 
 ## 当前产品方向
 
