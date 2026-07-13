@@ -10,7 +10,6 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "")
 	t.Setenv("PROPULSE_LOG_LEVEL", "")
 	t.Setenv("PROPULSE_LOG_PRETTY", "")
-	t.Setenv("PROPULSE_SEED_DEMO_DATA", "")
 	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "")
 
 	cfg, err := Load()
@@ -35,9 +34,6 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	}
 	if cfg.Log.Pretty {
 		t.Fatal("Log.Pretty must default to false")
-	}
-	if cfg.SeedDemoData {
-		t.Fatal("SeedDemoData must default to false")
 	}
 	if cfg.SchedulerInterval.String() != "1h0m0s" {
 		t.Fatalf("SchedulerInterval = %s, want 1h0m0s", cfg.SchedulerInterval)
@@ -67,19 +63,6 @@ func TestLoadDoesNotAcceptLegacyAdminToken(t *testing.T) {
 	}
 	if cfg.AccessToken != "" {
 		t.Fatalf("AccessToken = %q, want empty", cfg.AccessToken)
-	}
-}
-
-func TestLoadEnablesDemoSeedData(t *testing.T) {
-	t.Setenv("PROPULSE_SEED_DEMO_DATA", "true")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	if !cfg.SeedDemoData {
-		t.Fatal("SeedDemoData = false, want true")
 	}
 }
 

@@ -62,32 +62,6 @@ WHERE id = $1
 	}, nil
 }
 
-func (r *Repository) AggregateListingSnapshots(ctx context.Context, neighborhoodID string, targetLayout string) (appmetric.ListingSnapshotAggregate, error) {
-	id, err := uuidParam(neighborhoodID)
-	if err != nil {
-		return appmetric.ListingSnapshotAggregate{}, err
-	}
-
-	row, err := r.queries.AggregateListingSnapshots(ctx, sqlc.AggregateListingSnapshotsParams{
-		TargetLayout:   targetLayout,
-		NeighborhoodID: id,
-	})
-	if err != nil {
-		return appmetric.ListingSnapshotAggregate{}, err
-	}
-
-	return appmetric.ListingSnapshotAggregate{
-		ListedHomes:         int(row.ListedHomes),
-		PriceCutHomes:       int(row.PriceCutHomes),
-		AvgDaysOnMarket:     numericFloat(row.AvgDaysOnMarket),
-		ListingPriceMin:     numericFloat(row.ListingPriceMin),
-		ListingPriceMax:     numericFloat(row.ListingPriceMax),
-		TransactionPriceMin: numericFloat(row.TransactionPriceMin),
-		TransactionPriceMax: numericFloat(row.TransactionPriceMax),
-		TargetLayoutSupply:  int(row.TargetLayoutSupply),
-	}, nil
-}
-
 func (r *Repository) GetCompletedCollectionRun(ctx context.Context, id string) (appmetric.CompletedCollectionRun, error) {
 	runID, err := uuidParam(id)
 	if err != nil {
@@ -116,31 +90,6 @@ func (r *Repository) LatestCompletedCollectionRun(ctx context.Context, neighborh
 		return appmetric.CompletedCollectionRun{}, err
 	}
 	return completedRunFromLatestRow(row), nil
-}
-
-func (r *Repository) InsertNeighborhoodMetric(ctx context.Context, snapshot appmetric.MetricSnapshot) (appmetric.MetricSnapshot, error) {
-	neighborhoodID, err := uuidParam(snapshot.NeighborhoodID)
-	if err != nil {
-		return appmetric.MetricSnapshot{}, err
-	}
-
-	row, err := r.queries.InsertNeighborhoodMetric(ctx, sqlc.InsertNeighborhoodMetricParams{
-		NeighborhoodID:      neighborhoodID,
-		ListedHomes:         int32(snapshot.ListedHomes),
-		PriceCutHomes:       int32(snapshot.PriceCutHomes),
-		AvgDaysOnMarket:     numericPtrParam(snapshot.AvgDaysOnMarket),
-		ListingPriceMin:     numericPtrParam(snapshot.ListingPriceMin),
-		ListingPriceMax:     numericPtrParam(snapshot.ListingPriceMax),
-		TransactionPriceMin: numericPtrParam(snapshot.TransactionPriceMin),
-		TransactionPriceMax: numericPtrParam(snapshot.TransactionPriceMax),
-		TransactionMomentum: string(snapshot.TransactionMomentum),
-		TargetLayoutSupply:  int32(snapshot.TargetLayoutSupply),
-	})
-	if err != nil {
-		return appmetric.MetricSnapshot{}, err
-	}
-
-	return metricFromRow(row), nil
 }
 
 func (r *Repository) AggregateMarketObservations(ctx context.Context, params appmetric.AggregateMarketParams) (appmetric.MarketAggregate, error) {
@@ -202,9 +151,9 @@ func (r *Repository) UpsertNeighborhoodMetric(ctx context.Context, snapshot appm
 		ListingSampleCount:       int32(snapshot.ListingSampleCount),
 		TransactionSampleCount:   int32(snapshot.TransactionSampleCount),
 		ListedHomesChangePct:     numericPtrParam(snapshot.ListedHomesChangePct),
-		Coverage:                 textParam(string(snapshot.Coverage)),
-		Freshness:                textParam(string(snapshot.Freshness)),
-		QualityState:             textParam(string(snapshot.QualityState)),
+		Coverage:                 string(snapshot.Coverage),
+		Freshness:                string(snapshot.Freshness),
+		QualityState:             string(snapshot.QualityState),
 		LatestObservedAt:         timeParam(snapshot.LatestObservedAt),
 		InventoryCollectedAt:     optionalTimeParam(snapshot.InventoryCollectedAt),
 		QualityWarnings:          warnings,
@@ -279,12 +228,12 @@ func metricFromRow(row sqlc.NeighborhoodMetric) appmetric.MetricSnapshot {
 		TargetLayoutSupply:       int(row.TargetLayoutSupply),
 		ListingSampleCount:       int(row.ListingSampleCount),
 		TransactionSampleCount:   int(row.TransactionSampleCount),
-		Coverage:                 domainneighborhood.Coverage(row.Coverage.String),
-		Freshness:                domainneighborhood.Freshness(row.Freshness.String),
+		Coverage:                 domainneighborhood.Coverage(row.Coverage),
+		Freshness:                domainneighborhood.Freshness(row.Freshness),
 		InventoryCollectedAt:     timePtr(row.InventoryCollectedAt),
 		ListedHomesChangePct:     numericFloatPtr(row.ListedHomesChangePct),
 		QualityWarnings:          qualityWarnings(row.QualityWarnings),
-		QualityState:             domainneighborhood.MarketQualityState(row.QualityState.String),
+		QualityState:             domainneighborhood.MarketQualityState(row.QualityState),
 		CalculatedAt:             row.CalculatedAt.Time,
 	}
 }
@@ -308,12 +257,12 @@ func neighborhoodMetricFromRow(row sqlc.NeighborhoodMetric) appneighborhood.Metr
 		TargetLayoutSupply:       int(row.TargetLayoutSupply),
 		ListingSampleCount:       int(row.ListingSampleCount),
 		TransactionSampleCount:   int(row.TransactionSampleCount),
-		Coverage:                 domainneighborhood.Coverage(row.Coverage.String),
-		Freshness:                domainneighborhood.Freshness(row.Freshness.String),
+		Coverage:                 domainneighborhood.Coverage(row.Coverage),
+		Freshness:                domainneighborhood.Freshness(row.Freshness),
 		InventoryCollectedAt:     timePtr(row.InventoryCollectedAt),
 		ListedHomesChangePct:     numericFloatPtr(row.ListedHomesChangePct),
 		QualityWarnings:          qualityWarnings(row.QualityWarnings),
-		QualityState:             domainneighborhood.MarketQualityState(row.QualityState.String),
+		QualityState:             domainneighborhood.MarketQualityState(row.QualityState),
 		CalculatedAt:             row.CalculatedAt.Time,
 	}
 }
@@ -409,14 +358,6 @@ func numericPtrParam(value *float64) pgtype.Numeric {
 	return numericParam(*value)
 }
 
-func numericFloat(value pgtype.Numeric) float64 {
-	floatValue, err := value.Float64Value()
-	if err != nil || !floatValue.Valid {
-		return 0
-	}
-	return floatValue.Float64
-}
-
 func numericFloatPtr(value pgtype.Numeric) *float64 {
 	floatValue, err := value.Float64Value()
 	if err != nil || !floatValue.Valid {
@@ -446,10 +387,6 @@ func numericAnyFloatPtr(value any) (*float64, error) {
 	default:
 		return nil, fmt.Errorf("unsupported numeric value %T", value)
 	}
-}
-
-func textParam(value string) pgtype.Text {
-	return pgtype.Text{String: value, Valid: value != ""}
 }
 
 func timeParam(value time.Time) pgtype.Timestamptz {

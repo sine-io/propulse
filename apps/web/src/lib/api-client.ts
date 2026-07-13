@@ -1,4 +1,5 @@
 import type { components } from "./generated-api";
+import { clearAccessToken, getAccessToken } from "./access-token";
 
 export type HousingCapacityInput = components["schemas"]["HousingCapacityInput"];
 export type CapacityCalculationResponse =
@@ -8,6 +9,7 @@ export type WatchlistItem = components["schemas"]["WatchlistItem"];
 export type ActionWindowResponse =
   components["schemas"]["ActionWindowResponse"];
 export type ErrorResponse = components["schemas"]["ErrorResponse"];
+export type AccessStatusResponse = components["schemas"]["AccessStatusResponse"];
 
 export class ApiError extends Error {
   constructor(
@@ -50,8 +52,32 @@ export async function getActionWindow(
   );
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+export async function verifyAccessToken(
+  token: string,
+  signal?: AbortSignal,
+): Promise<AccessStatusResponse> {
+  return request<AccessStatusResponse>(
+    "/api/v1/access",
+    signal ? { signal } : undefined,
+    token,
+  );
+}
+
+async function request<T>(
+  url: string,
+  init?: RequestInit,
+  explicitToken?: string,
+): Promise<T> {
+  const storedToken = getAccessToken();
+  const token = explicitToken?.trim() || storedToken;
+  let requestInit = init;
+  if (token) {
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    requestInit = { ...init, headers };
+  }
+
+  const response = await fetch(url, requestInit);
   const data = (await response.json().catch(() => undefined)) as
     | T
     | ErrorResponse
@@ -65,6 +91,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
           message: response.statusText || "API request failed",
         };
 
+    if (response.status === 401 && storedToken && token === storedToken) {
+      clearAccessToken();
+    }
     throw new ApiError(error.code, error.message, response.status);
   }
 

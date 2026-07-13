@@ -18,6 +18,14 @@ type Decision struct {
 	app DecisionApplication
 }
 
+type actionWindowResponse struct {
+	Action     domaindecision.ActionWindow `json:"action"`
+	Confidence domaindecision.Confidence   `json:"confidence"`
+	Summary    string                      `json:"summary"`
+	Checklist  []string                    `json:"checklist"`
+	Risks      []string                    `json:"risks"`
+}
+
 func NewDecision(app DecisionApplication) Decision {
 	return Decision{app: app}
 }
@@ -47,5 +55,8 @@ func (h Decision) GetActionWindow(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, actionWindowResponse{
+		Action: result.Action, Confidence: result.Confidence, Summary: result.Summary,
+		Checklist: result.Checklist, Risks: result.Risks,
+	})
 }

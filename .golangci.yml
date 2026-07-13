@@ -1,0 +1,29 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - misspell
+    - nilerr
+    - revive
+    - staticcheck
+  exclusions:
+    rules:
+      - linters:
+          - revive
+        text: "^(exported|package-comments):"
+      - path: _test\.go
+        linters:
+          - revive
+        text: "^context-as-argument:"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -198,13 +198,12 @@ describe("NeighborhoodsPage", () => {
 });
 
 describe("ActionWindowPage", () => {
-  it("matches the reference action window recommendation", () => {
-    render(createElement(ActionWindowPage));
+	it("does not invent a recommendation when the API is unavailable", async () => {
+		render(createElement(ActionWindowPage));
 
-    expect(screen.getByText("当前核心策略")).toBeInTheDocument();
-    expect(screen.getByText("积极看房，大胆砍价")).toBeInTheDocument();
-    expect(screen.getByText("策略执行信心")).toBeInTheDocument();
-    expect(screen.getByText("风险警示")).toBeInTheDocument();
+		expect(await screen.findByText("暂时无法生成出手窗口")).toBeInTheDocument();
+		expect(screen.getByText("决策服务暂时不可用。")).toBeInTheDocument();
+		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
   });
 
   it("renders API action window recommendations", async () => {
@@ -238,19 +237,17 @@ describe("MethodsPage", () => {
 });
 
 describe("WatchlistPage", () => {
-  it("matches the reference observation pool summary", () => {
-    render(createElement(WatchlistPage));
+	it("does not fall back to sample communities when the API fails", async () => {
+		render(createElement(WatchlistPage));
 
-    expect(screen.getByText("导出本周报表")).toBeInTheDocument();
-    expect(screen.getByText("5")).toBeInTheDocument();
-    expect(screen.getByText("小区动态 (本周变化)")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "青枫花园 滨江核心 · 三房" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "云澜府 城东新区 · 四房" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("保存复盘记录")).toBeInTheDocument();
+		expect(screen.getByText("导出本周报表")).toBeInTheDocument();
+		expect(await screen.findByText("观察池暂时无法读取。")).toBeInTheDocument();
+		expect(screen.getAllByText("0")).toHaveLength(4);
+		expect(screen.getByText("小区动态 (本周变化)")).toBeInTheDocument();
+		expect(
+			screen.queryByRole("heading", { name: "青枫花园 滨江核心 · 三房" }),
+		).not.toBeInTheDocument();
+		expect(screen.getByText("保存复盘记录")).toBeInTheDocument();
   });
 
   it("renders API watchlist items when available", async () => {

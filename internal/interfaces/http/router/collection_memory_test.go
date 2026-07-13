@@ -11,7 +11,6 @@ import (
 )
 
 var _ appcollection.Repository = (*inMemoryCollectionRepository)(nil)
-var _ appcollection.TrustedRepository = (*inMemoryCollectionRepository)(nil)
 
 type inMemoryMarketState struct {
 	mu                      sync.RWMutex
@@ -21,8 +20,6 @@ type inMemoryMarketState struct {
 	collectionRunIdentities map[string]string
 	runDetails              map[string]appcollection.CollectionRunDetail
 	latestRunByNeighborhood map[string]string
-	rawRecords              map[string]appcollection.RawCollectionRecord
-	snapshots               map[string]appcollection.ListingSnapshot
 }
 
 func newInMemoryMarketState() *inMemoryMarketState {
@@ -33,8 +30,6 @@ func newInMemoryMarketState() *inMemoryMarketState {
 		collectionRunIdentities: map[string]string{},
 		runDetails:              map[string]appcollection.CollectionRunDetail{},
 		latestRunByNeighborhood: map[string]string{},
-		rawRecords:              map[string]appcollection.RawCollectionRecord{},
-		snapshots:               map[string]appcollection.ListingSnapshot{},
 	}
 }
 
@@ -58,20 +53,6 @@ func newInMemoryCollectionRepository(neighborhoods *inMemoryNeighborhoodReposito
 
 func (r *inMemoryCollectionRepository) NeighborhoodExists(ctx context.Context, id string) (bool, error) {
 	return r.neighborhoods.exists(ctx, id)
-}
-
-func (r *inMemoryCollectionRepository) SaveImport(_ context.Context, raw appcollection.RawCollectionRecord, snapshots []appcollection.ListingSnapshot) error {
-	r.marketState.mu.Lock()
-	defer r.marketState.mu.Unlock()
-
-	rawCopy := raw
-	rawCopy.Payload = append([]byte(nil), raw.Payload...)
-	r.marketState.rawRecords[raw.ID] = rawCopy
-	for _, snapshot := range snapshots {
-		snapshotCopy := snapshot
-		r.marketState.snapshots[snapshot.ID] = snapshotCopy
-	}
-	return nil
 }
 
 func (r *inMemoryCollectionRepository) CreateDataSource(_ context.Context, source appcollection.DataSource) (appcollection.DataSource, error) {
@@ -124,13 +105,13 @@ func (r *inMemoryCollectionRepository) DataSourceExists(_ context.Context, id st
 	return ok, nil
 }
 
-func (r *inMemoryCollectionRepository) SaveCollectionRun(ctx context.Context, batch appcollection.ImportBatch) (appcollection.SaveImportResult, error) {
+func (r *inMemoryCollectionRepository) SaveCollectionRun(ctx context.Context, batch appcollection.ImportBatch) (appcollection.SaveCollectionRunResult, error) {
 	neighborhoodExists, err := r.NeighborhoodExists(ctx, batch.Run.NeighborhoodID)
 	if err != nil {
-		return appcollection.SaveImportResult{}, err
+		return appcollection.SaveCollectionRunResult{}, err
 	}
 	if !neighborhoodExists {
-		return appcollection.SaveImportResult{}, appcollection.ErrNeighborhoodNotFound
+		return appcollection.SaveCollectionRunResult{}, appcollection.ErrNeighborhoodNotFound
 	}
 
 	r.marketState.mu.Lock()
@@ -138,12 +119,12 @@ func (r *inMemoryCollectionRepository) SaveCollectionRun(ctx context.Context, ba
 
 	source, sourceExists := r.marketState.sources[batch.Run.DataSourceID]
 	if !sourceExists {
-		return appcollection.SaveImportResult{}, appcollection.ErrDataSourceNotFound
+		return appcollection.SaveCollectionRunResult{}, appcollection.ErrDataSourceNotFound
 	}
 
 	key := collectionRunIdentity(batch.Run.DataSourceID, batch.Run.SourceRef, batch.Run.ContentChecksum)
 	if existingID, ok := r.marketState.collectionRunIdentities[key]; ok {
-		return appcollection.SaveImportResult{
+		return appcollection.SaveCollectionRunResult{
 			Run:     copyCollectionRun(r.marketState.collectionRuns[existingID]),
 			Created: false,
 		}, nil
@@ -167,7 +148,7 @@ func (r *inMemoryCollectionRepository) SaveCollectionRun(ctx context.Context, ba
 		r.marketState.latestRunByNeighborhood[run.NeighborhoodID] = run.ID
 	}
 
-	return appcollection.SaveImportResult{Run: copyCollectionRun(run), Created: true}, nil
+	return appcollection.SaveCollectionRunResult{Run: copyCollectionRun(run), Created: true}, nil
 }
 
 func (r *inMemoryCollectionRepository) GetCollectionRun(_ context.Context, id string) (appcollection.CollectionRunDetail, error) {
@@ -179,6 +160,35 @@ func (r *inMemoryCollectionRepository) GetCollectionRun(_ context.Context, id st
 		return appcollection.CollectionRunDetail{}, appcollection.ErrCollectionRunNotFound
 	}
 	return copyCollectionRunDetail(detail), nil
+}
+
+func (r *inMemoryCollectionRepository) ListMetricRefreshCandidates(_ context.Context, updatedBefore time.Time, limit int) ([]appcollection.MetricRefreshCandidate, error) {
+	r.marketState.mu.RLock()
+	defer r.marketState.mu.RUnlock()
+
+	runs := make([]appcollection.CollectionRun, 0)
+	for _, run := range r.marketState.collectionRuns {
+		if (run.MetricStatus == appcollection.MetricStatusPending || run.MetricStatus == appcollection.MetricStatusFailed) && !run.UpdatedAt.After(updatedBefore) {
+			runs = append(runs, run)
+		}
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		if !runs[i].UpdatedAt.Equal(runs[j].UpdatedAt) {
+			return runs[i].UpdatedAt.Before(runs[j].UpdatedAt)
+		}
+		return runs[i].ID < runs[j].ID
+	})
+	if len(runs) > limit {
+		runs = runs[:limit]
+	}
+	candidates := make([]appcollection.MetricRefreshCandidate, 0, len(runs))
+	for _, run := range runs {
+		candidates = append(candidates, appcollection.MetricRefreshCandidate{
+			CollectionRunID: run.ID,
+			NeighborhoodID:  run.NeighborhoodID,
+		})
+	}
+	return candidates, nil
 }
 
 func (r *inMemoryCollectionRepository) UpdateMetricStatus(_ context.Context, id string, status appcollection.MetricStatus) error {

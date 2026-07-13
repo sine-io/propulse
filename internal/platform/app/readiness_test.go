@@ -9,7 +9,7 @@ import (
 
 func TestReadinessCheckerReturnsNilWhenDependenciesAreReady(t *testing.T) {
 	calls := []string{}
-	checker := NewReadinessChecker(
+	checker := newReadinessChecker(
 		&sqlPingerStub{ping: recordReadinessPing(&calls, "sql", nil)},
 		&pgxPingerStub{ping: recordReadinessPing(&calls, "pgx", nil)},
 		&redisPingerStub{ping: recordReadinessPing(&calls, "redis", nil)},
@@ -24,7 +24,7 @@ func TestReadinessCheckerReturnsNilWhenDependenciesAreReady(t *testing.T) {
 
 func TestReadinessCheckerRejectsWhitespaceAccessTokenBeforePingingDependencies(t *testing.T) {
 	calls := []string{}
-	checker := NewReadinessChecker(
+	checker := newReadinessChecker(
 		&sqlPingerStub{ping: recordReadinessPing(&calls, "sql", nil)},
 		&pgxPingerStub{ping: recordReadinessPing(&calls, "pgx", nil)},
 		&redisPingerStub{ping: recordReadinessPing(&calls, "redis", nil)},
@@ -39,7 +39,7 @@ func TestReadinessCheckerRejectsWhitespaceAccessTokenBeforePingingDependencies(t
 }
 
 func TestReadinessCheckerRejectsEmptyAccessToken(t *testing.T) {
-	checker := NewReadinessChecker(
+	checker := newReadinessChecker(
 		&sqlPingerStub{ping: func(context.Context) error { return nil }},
 		&pgxPingerStub{ping: func(context.Context) error { return nil }},
 		&redisPingerStub{ping: func(context.Context) error { return nil }},
@@ -67,7 +67,7 @@ func TestReadinessCheckerWrapsDependencyErrorsAndShortCircuits(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dependencyErr := errors.New(tt.failure + " unavailable")
 			calls := []string{}
-			checker := NewReadinessChecker(
+			checker := newReadinessChecker(
 				&sqlPingerStub{ping: recordReadinessPing(&calls, "sql", readinessFailure(tt.failure, "sql", dependencyErr))},
 				&pgxPingerStub{ping: recordReadinessPing(&calls, "pgx", readinessFailure(tt.failure, "pgx", dependencyErr))},
 				&redisPingerStub{ping: recordReadinessPing(&calls, "redis", readinessFailure(tt.failure, "redis", dependencyErr))},

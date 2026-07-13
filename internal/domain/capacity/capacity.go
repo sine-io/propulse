@@ -1,6 +1,11 @@
 package capacity
 
-import "math"
+import (
+	"errors"
+	"math"
+)
+
+var ErrInvalidInput = errors.New("invalid housing capacity input")
 
 type PressureLevel string
 
@@ -16,31 +21,55 @@ const (
 )
 
 type HousingCapacityInput struct {
-	CashOnHand                float64 `json:"cashOnHand"`
-	OldHomeValue              float64 `json:"oldHomeValue"`
-	OldLoanBalance            float64 `json:"oldLoanBalance"`
-	MonthlyIncome             float64 `json:"monthlyIncome"`
-	CurrentMonthlyMortgage    float64 `json:"currentMonthlyMortgage"`
-	AcceptableMonthlyMortgage float64 `json:"acceptableMonthlyMortgage"`
-	TargetTotalPrice          float64 `json:"targetTotalPrice"`
-	RenovationBudget          float64 `json:"renovationBudget"`
-	TransactionCosts          float64 `json:"transactionCosts"`
-	TransitionRentCost        float64 `json:"transitionRentCost"`
+	CashOnHand                float64
+	OldHomeValue              float64
+	OldLoanBalance            float64
+	MonthlyIncome             float64
+	CurrentMonthlyMortgage    float64
+	AcceptableMonthlyMortgage float64
+	TargetTotalPrice          float64
+	RenovationBudget          float64
+	TransactionCosts          float64
+	TransitionRentCost        float64
 }
 
 type HousingCapacityResult struct {
-	NetOldHomeProceeds          float64       `json:"netOldHomeProceeds"`
-	DeployableCash              float64       `json:"deployableCash"`
-	SafeTotalPrice              float64       `json:"safeTotalPrice"`
-	StrainedTotalPrice          float64       `json:"strainedTotalPrice"`
-	DangerTotalPrice            float64       `json:"dangerTotalPrice"`
-	DownPaymentGap              float64       `json:"downPaymentGap"`
-	MonthlyPayment              float64       `json:"monthlyPayment"`
-	MonthlyPaymentRatio         float64       `json:"monthlyPaymentRatio"`
-	PressureLevel               PressureLevel `json:"pressureLevel"`
-	MinimumSafeOldHomeSalePrice float64       `json:"minimumSafeOldHomeSalePrice"`
-	Strategy                    string        `json:"strategy"`
-	Reasons                     []string      `json:"reasons"`
+	NetOldHomeProceeds          float64
+	DeployableCash              float64
+	SafeTotalPrice              float64
+	StrainedTotalPrice          float64
+	DangerTotalPrice            float64
+	DownPaymentGap              float64
+	MonthlyPayment              float64
+	MonthlyPaymentRatio         float64
+	PressureLevel               PressureLevel
+	MinimumSafeOldHomeSalePrice float64
+	Strategy                    string
+	Reasons                     []string
+}
+
+func (input HousingCapacityInput) Validate() error {
+	values := []float64{
+		input.CashOnHand,
+		input.OldHomeValue,
+		input.OldLoanBalance,
+		input.MonthlyIncome,
+		input.CurrentMonthlyMortgage,
+		input.AcceptableMonthlyMortgage,
+		input.TargetTotalPrice,
+		input.RenovationBudget,
+		input.TransactionCosts,
+		input.TransitionRentCost,
+	}
+	for _, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+			return ErrInvalidInput
+		}
+	}
+	if input.MonthlyIncome <= 0 || input.TargetTotalPrice <= 0 {
+		return ErrInvalidInput
+	}
+	return nil
 }
 
 func Calculate(input HousingCapacityInput) HousingCapacityResult {
@@ -89,11 +118,12 @@ func Calculate(input HousingCapacityInput) HousingCapacityResult {
 	if downPaymentGap > 0 {
 		reasons = append(reasons, "目标总价下存在首付或过渡资金缺口，需要先补足安全垫。")
 	}
-	if pressureLevel == PressureDanger {
+	switch pressureLevel {
+	case PressureDanger:
 		reasons = append(reasons, "目标总价对应的月供收入比超过危险线，现金流缓冲不足。")
-	} else if pressureLevel == PressureStrained {
+	case PressureStrained:
 		reasons = append(reasons, "目标总价已高于安全月供线，适合通过砍价或降低总价回到安全区。")
-	} else {
+	default:
 		reasons = append(reasons, "目标总价对应月供仍在安全线内，可以继续推进看房。")
 	}
 

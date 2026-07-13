@@ -79,13 +79,17 @@ func TestValidateAndNormalizeSplitsListingAndTransaction(t *testing.T) {
 	}
 
 	ids := []string{"run-1", "listing-id", "transaction-id"}
-	batch := normalized.NewBatch("", func() string {
+	importedAt := now.Add(time.Hour)
+	batch := normalized.NewBatch("", importedAt, func() string {
 		id := ids[0]
 		ids = ids[1:]
 		return id
 	})
 	if batch.Run.ID != "run-1" || batch.Run.Status != CollectionRunStatusCompleted || batch.Run.MetricStatus != MetricStatusPending {
 		t.Fatalf("run = %#v", batch.Run)
+	}
+	if !batch.Run.CreatedAt.Equal(importedAt) || !batch.Run.UpdatedAt.Equal(importedAt) {
+		t.Fatalf("run persistence timestamps = %v/%v, want %v", batch.Run.CreatedAt, batch.Run.UpdatedAt, importedAt)
 	}
 	if batch.Run.ContentChecksum == "" {
 		t.Fatal("ContentChecksum is empty")

@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { clearAccessToken, getAccessToken, setAccessToken } from "./access-token";
+
 import {
   ApiError,
   createCapacityCalculation,
   getActionWindow,
   getWatchlist,
+  verifyAccessToken,
   type HousingCapacityInput,
 } from "./api-client";
 
@@ -18,6 +21,7 @@ const jsonResponse = (body: unknown, init?: ResponseInit) =>
 describe("api-client", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    clearAccessToken();
   });
 
   it("posts capacity calculation input as JSON", async () => {
@@ -82,6 +86,42 @@ describe("api-client", () => {
       "/api/v1/decision/action-window",
       { signal },
     );
+  });
+
+  it("validates and attaches bearer access tokens", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse({ status: "unlocked" }));
+
+    await expect(verifyAccessToken("secret-token")).resolves.toEqual({
+      status: "unlocked",
+    });
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(new Headers(init?.headers).get("Authorization")).toBe(
+      "Bearer secret-token",
+    );
+  });
+
+  it("uses the session token and clears it after a 401", async () => {
+    setAccessToken("expired-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: "access_required",
+            message: "valid bearer access token is required",
+          },
+        },
+        { status: 401 },
+      ),
+    );
+
+    await expect(getWatchlist()).rejects.toMatchObject({ status: 401 });
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(new Headers(init?.headers).get("Authorization")).toBe(
+      "Bearer expired-token",
+    );
+    expect(getAccessToken()).toBeUndefined();
   });
 
   it("turns API error JSON into ApiError code and message", async () => {

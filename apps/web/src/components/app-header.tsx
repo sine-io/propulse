@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Activity, BookOpen, Calculator, Eye, Target } from "lucide-react";
 
+import { AccessControl } from "./access-control";
+
 const navItems = [
   { label: "换房测算", href: "/calculator", icon: Calculator },
   { label: "目标小区", href: "/neighborhoods", icon: Target },
@@ -67,10 +69,8 @@ export function AppHeader() {
             })}
           </nav>
 
-          <div className="flex items-center space-x-4">
-            <button className="hidden text-sm font-medium text-slate-500 hover:text-slate-900 sm:block">
-              登录
-            </button>
+	          <div className="flex items-center space-x-2 sm:space-x-3">
+	            <AccessControl />
             <Link
               href="/calculator"
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-md transition-colors hover:bg-slate-800"

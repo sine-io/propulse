@@ -50,11 +50,11 @@ type QualityInput struct {
 }
 
 type QualityAssessment struct {
-	Coverage     Coverage           `json:"coverage"`
-	Freshness    Freshness          `json:"freshness"`
-	State        MarketQualityState `json:"state"`
-	CanRecommend bool               `json:"canRecommend"`
-	Warnings     []QualityWarning   `json:"warnings"`
+	Coverage     Coverage
+	Freshness    Freshness
+	State        MarketQualityState
+	CanRecommend bool
+	Warnings     []QualityWarning
 }
 
 func AssessQuality(input QualityInput) QualityAssessment {

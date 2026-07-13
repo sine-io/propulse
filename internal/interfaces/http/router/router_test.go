@@ -23,6 +23,43 @@ import (
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
+func newTestEngine(t *testing.T, deps Dependencies) http.Handler {
+	t.Helper()
+
+	marketState := newInMemoryMarketState()
+	neighborhoodRepo := newInMemoryNeighborhoodRepository(marketState)
+	if deps.CapacityApplication == nil {
+		deps.CapacityApplication = appcapacity.NewService(newInMemoryCalculationRepository(), nil, nil)
+	}
+	if deps.NeighborhoodApplication == nil {
+		deps.NeighborhoodApplication = appneighborhood.NewService(neighborhoodRepo)
+	}
+	if deps.CollectionApplication == nil {
+		deps.CollectionApplication = appcollection.NewService(newInMemoryCollectionRepository(neighborhoodRepo, marketState), nil, nil)
+	}
+	if deps.DecisionApplication == nil {
+		deps.DecisionApplication = appdecision.NewService(deps.CapacityApplication, deps.NeighborhoodApplication)
+	}
+
+	engine, err := New(deps)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	return engine
+}
+
+func TestNewRejectsMissingApplicationDependencies(t *testing.T) {
+	_, err := New(Dependencies{})
+	if err == nil {
+		t.Fatal("New() error = nil, want missing dependency error")
+	}
+	for _, name := range []string{"CapacityApplication", "NeighborhoodApplication", "CollectionApplication", "DecisionApplication"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Fatalf("New() error = %q, want dependency %q", err, name)
+		}
+	}
+}
+
 func TestInMemoryWatchlistListsItemsByInsertionOrder(t *testing.T) {
 	repo := newInMemoryNeighborhoodRepository()
 	ctx := context.Background()
@@ -60,7 +97,7 @@ func TestInMemoryWatchlistListsItemsByInsertionOrder(t *testing.T) {
 }
 
 func TestHealthAndReadyRoutes(t *testing.T) {
-	engine := New(Dependencies{
+	engine := newTestEngine(t, Dependencies{
 		Log:      zerolog.New(io.Discard),
 		StaticFS: webembed.Embedded(),
 	})
@@ -82,7 +119,7 @@ func TestHealthAndReadyRoutes(t *testing.T) {
 
 func TestReadyRouteReturnsOKWhenDependenciesAreReady(t *testing.T) {
 	checker := &readinessStub{}
-	engine := newReadinessTestEngine(checker)
+	engine := newReadinessTestEngine(t, checker)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
@@ -100,7 +137,7 @@ func TestReadyRouteReturnsOKWhenDependenciesAreReady(t *testing.T) {
 
 func TestReadyRouteReturnsServiceUnavailableWhenDependencyFails(t *testing.T) {
 	dependencyErr := errors.New("database credentials leaked")
-	engine := newReadinessTestEngine(&readinessStub{err: dependencyErr})
+	engine := newReadinessTestEngine(t, &readinessStub{err: dependencyErr})
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
@@ -112,7 +149,7 @@ func TestReadyRouteReturnsServiceUnavailableWhenDependencyFails(t *testing.T) {
 }
 
 func TestReadyRouteFailsClosedWithoutChecker(t *testing.T) {
-	engine := newReadinessTestEngine(nil)
+	engine := newReadinessTestEngine(t, nil)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
@@ -122,7 +159,7 @@ func TestReadyRouteFailsClosedWithoutChecker(t *testing.T) {
 
 func TestHealthRouteRemainsOKWhenReadinessFails(t *testing.T) {
 	checker := &readinessStub{err: errors.New("redis unavailable")}
-	engine := newReadinessTestEngine(checker)
+	engine := newReadinessTestEngine(t, checker)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
@@ -155,7 +192,7 @@ func TestReadyRouteChecksDependenciesWithTwoSecondDeadline(t *testing.T) {
 			t.Fatalf("readiness context cause after request cancellation = %v, want canceled", context.Cause(ctx))
 		}
 	}}
-	engine := newReadinessTestEngine(checker)
+	engine := newReadinessTestEngine(t, checker)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(requestCtx, http.MethodGet, "/readyz", nil)
@@ -166,8 +203,9 @@ func TestReadyRouteChecksDependenciesWithTwoSecondDeadline(t *testing.T) {
 	}
 }
 
-func newReadinessTestEngine(checker ReadinessChecker) http.Handler {
-	return New(Dependencies{
+func newReadinessTestEngine(t *testing.T, checker ReadinessChecker) http.Handler {
+	t.Helper()
+	return newTestEngine(t, Dependencies{
 		Log:              zerolog.New(io.Discard),
 		StaticFS:         webembed.Embedded(),
 		ReadinessChecker: checker,
@@ -200,7 +238,7 @@ func (s *readinessStub) Check(ctx context.Context) error {
 }
 
 func TestAPI404DoesNotReturnFrontend(t *testing.T) {
-	engine := New(Dependencies{
+	engine := newTestEngine(t, Dependencies{
 		Log:      zerolog.New(io.Discard),
 		StaticFS: webembed.Embedded(),
 	})
@@ -223,7 +261,7 @@ func TestAPI404DoesNotReturnFrontend(t *testing.T) {
 }
 
 func TestFrontendRoutesServeEmbeddedHTML(t *testing.T) {
-	engine := New(Dependencies{
+	engine := newTestEngine(t, Dependencies{
 		Log:      zerolog.New(io.Discard),
 		StaticFS: webembed.Embedded(),
 	})
@@ -247,7 +285,7 @@ func TestFrontendRoutesServeEmbeddedHTML(t *testing.T) {
 
 func TestRequestIDMiddlewareEchoesInboundHeaderAndLogsRequest(t *testing.T) {
 	var logBuf bytes.Buffer
-	engine := New(Dependencies{
+	engine := newTestEngine(t, Dependencies{
 		Log:      zerolog.New(&logBuf),
 		StaticFS: webembed.Embedded(),
 	})
@@ -283,7 +321,7 @@ func TestRequestIDMiddlewareEchoesInboundHeaderAndLogsRequest(t *testing.T) {
 }
 
 func TestRequestIDMiddlewareGeneratesHeaderWhenMissing(t *testing.T) {
-	engine := New(Dependencies{
+	engine := newTestEngine(t, Dependencies{
 		Log:      zerolog.New(io.Discard),
 		StaticFS: webembed.Embedded(),
 	})
@@ -301,7 +339,7 @@ func TestRouterStopsWithCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	engine := New(Dependencies{
+	engine := newTestEngine(t, Dependencies{
 		Log:      zerolog.New(io.Discard),
 		StaticFS: webembed.Embedded(),
 	})
@@ -316,7 +354,7 @@ func TestRouterStopsWithCanceledContext(t *testing.T) {
 }
 
 func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
-	engine := New(Dependencies{
+	engine := newTestEngine(t, Dependencies{
 		Log:                     zerolog.New(io.Discard),
 		StaticFS:                webembed.Embedded(),
 		NeighborhoodApplication: &stubNeighborhoodApplication{},
@@ -350,7 +388,7 @@ func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
 }
 
 func TestDecisionActionWindowRoute(t *testing.T) {
-	engine := New(Dependencies{
+	engine := newTestEngine(t, Dependencies{
 		Log:                 zerolog.New(io.Discard),
 		StaticFS:            webembed.Embedded(),
 		DecisionApplication: &stubDecisionApplication{},
@@ -368,18 +406,20 @@ func TestDecisionActionWindowRoute(t *testing.T) {
 }
 
 func TestAdminImportRoute(t *testing.T) {
-	engine := New(Dependencies{
+	engine := newTestEngine(t, Dependencies{
 		Log:                   zerolog.New(io.Discard),
 		StaticFS:              webembed.Embedded(),
 		CollectionApplication: &stubCollectionApplication{},
 		AccessToken:           "secret-token",
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/api/imports", strings.NewReader(`{
-		"sourceType": "manual_json",
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/imports/json", strings.NewReader(`{
+		"dataSourceId": "11111111-1111-1111-1111-111111111111",
 		"sourceRef": "demo-weekly-import",
-		"neighborhoodId": "neighborhood_1",
-		"records": [{"listingPrice": 520, "daysOnMarket": 0}]
+		"neighborhoodId": "22222222-2222-2222-2222-222222222222",
+		"collectedAt": "2026-07-13T10:00:00Z",
+		"coverage": "full",
+		"records": [{"recordType":"listing","sourceRecordId":"listing-1","layout":"三房","areaSqm":89,"listingPrice":520,"daysOnMarket":0,"status":"active"}]
 	}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer secret-token")
@@ -390,19 +430,21 @@ func TestAdminImportRoute(t *testing.T) {
 		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
 	var response struct {
-		CollectionRunID       string `json:"collectionRunId"`
-		ImportedSnapshotCount int    `json:"importedSnapshotCount"`
+		CollectionRun struct {
+			ID string `json:"id"`
+		} `json:"collectionRun"`
+		ListingObservationCount int `json:"listingObservationCount"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if response.CollectionRunID != "collection_run_1" || response.ImportedSnapshotCount != 1 {
+	if response.CollectionRun.ID != "33333333-3333-3333-3333-333333333333" || response.ListingObservationCount != 1 {
 		t.Fatalf("response = %#v", response)
 	}
 }
 
-func TestRouterFallbackSharesNeighborhoodStateWithCollectionImports(t *testing.T) {
-	engine := New(Dependencies{
+func TestInjectedInMemoryApplicationsShareNeighborhoodStateWithCollectionImports(t *testing.T) {
+	engine := newTestEngine(t, Dependencies{
 		Log:         zerolog.New(io.Discard),
 		StaticFS:    webembed.Embedded(),
 		AccessToken: "secret-token",
@@ -430,11 +472,32 @@ func TestRouterFallbackSharesNeighborhoodStateWithCollectionImports(t *testing.T
 		t.Fatal("created neighborhood ID is empty")
 	}
 
-	importRequest := httptest.NewRequest(http.MethodPost, "/admin/api/imports", strings.NewReader(`{
+	createSource := httptest.NewRequest(http.MethodPost, "/admin/api/data-sources", strings.NewReader(`{
+		"name": "链家手工导入",
 		"sourceType": "manual_json",
+		"city": "杭州"
+	}`))
+	createSource.Header.Set("Content-Type", "application/json")
+	createSource.Header.Set("Authorization", "Bearer secret-token")
+	createSourceRecorder := httptest.NewRecorder()
+	engine.ServeHTTP(createSourceRecorder, createSource)
+	if createSourceRecorder.Code != http.StatusCreated {
+		t.Fatalf("create source status = %d, want 201; body=%s", createSourceRecorder.Code, createSourceRecorder.Body.String())
+	}
+	var source struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(createSourceRecorder.Body.Bytes(), &source); err != nil || source.ID == "" {
+		t.Fatalf("source response = %s, error=%v", createSourceRecorder.Body.String(), err)
+	}
+
+	importRequest := httptest.NewRequest(http.MethodPost, "/admin/api/imports/json", strings.NewReader(`{
+		"dataSourceId": "`+source.ID+`",
 		"sourceRef": "fallback-weekly-import",
 		"neighborhoodId": "`+neighborhood.ID+`",
-		"records": [{"listingPrice": 520, "daysOnMarket": 0}]
+		"collectedAt": "2026-07-13T10:00:00Z",
+		"coverage": "full",
+		"records": [{"recordType":"listing","sourceRecordId":"listing-1","layout":"三房","areaSqm":89,"listingPrice":520,"daysOnMarket":0,"status":"active"}]
 	}`))
 	importRequest.Header.Set("Content-Type", "application/json")
 	importRequest.Header.Set("Authorization", "Bearer secret-token")
@@ -548,12 +611,16 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 		body   string
 	}{
 		{method: http.MethodPost, path: "/api/v1/capacity/calculations", body: `{}`},
+		{method: http.MethodGet, path: "/api/v1/access"},
 		{method: http.MethodGet, path: "/api/v1/capacity/calculations/calculation_1"},
 		{method: http.MethodPost, path: "/api/v1/neighborhoods", body: `{}`},
 		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{}`},
 		{method: http.MethodGet, path: "/api/v1/watchlist"},
 		{method: http.MethodGet, path: "/api/v1/decision/action-window"},
-		{method: http.MethodPost, path: "/admin/api/imports", body: `{}`},
+		{method: http.MethodPost, path: "/admin/api/data-sources", body: `{}`},
+		{method: http.MethodGet, path: "/admin/api/data-sources"},
+		{method: http.MethodPost, path: "/admin/api/imports/json", body: `{}`},
+		{method: http.MethodGet, path: "/admin/api/imports/33333333-3333-3333-3333-333333333333"},
 	}
 
 	for _, tt := range tests {
@@ -562,7 +629,7 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 			neighborhoodApp := &stubNeighborhoodApplication{}
 			collectionApp := &stubCollectionApplication{}
 			decisionApp := &stubDecisionApplication{}
-			engine := New(Dependencies{
+			engine := newTestEngine(t, Dependencies{
 				Log:                     zerolog.New(io.Discard),
 				StaticFS:                webembed.Embedded(),
 				CapacityApplication:     capacityApp,
@@ -594,7 +661,7 @@ func TestPublicNeighborhoodReadsDoNotRequireAccessToken(t *testing.T) {
 	} {
 		t.Run(path, func(t *testing.T) {
 			service := &stubNeighborhoodApplication{}
-			engine := New(Dependencies{
+			engine := newTestEngine(t, Dependencies{
 				Log:                     zerolog.New(io.Discard),
 				StaticFS:                webembed.Embedded(),
 				NeighborhoodApplication: service,
@@ -693,9 +760,35 @@ type stubCollectionApplication struct {
 	calls int
 }
 
-func (s *stubCollectionApplication) ImportManualListings(_ context.Context, _ appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error) {
+func (s *stubCollectionApplication) CreateDataSource(_ context.Context, command appcollection.CreateDataSourceCommand) (appcollection.DataSource, error) {
 	s.calls++
-	return appcollection.ImportManualListingsResult{CollectionRunID: "collection_run_1", ImportedSnapshotCount: 1}, nil
+	now := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
+	return appcollection.DataSource{ID: "11111111-1111-1111-1111-111111111111", Name: command.Name, SourceType: command.SourceType, City: command.City, Notes: command.Notes, CreatedAt: now, UpdatedAt: now}, nil
+}
+
+func (s *stubCollectionApplication) ListDataSources(context.Context, appcollection.ListDataSourcesQuery) ([]appcollection.DataSource, error) {
+	s.calls++
+	return []appcollection.DataSource{}, nil
+}
+
+func (s *stubCollectionApplication) ImportCollectionRun(_ context.Context, command appcollection.ImportCollectionRunCommand) (appcollection.ImportCollectionRunResult, error) {
+	s.calls++
+	now := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
+	return appcollection.ImportCollectionRunResult{
+		Run: appcollection.CollectionRun{
+			ID: "33333333-3333-3333-3333-333333333333", DataSourceID: command.DataSourceID,
+			NeighborhoodID: command.NeighborhoodID, SourceRef: command.SourceRef, CollectedAt: command.CollectedAt,
+			Coverage: command.Coverage, Format: command.Format, RawContentType: command.RawContentType,
+			Status: appcollection.CollectionRunStatusCompleted, MetricStatus: appcollection.MetricStatusCompleted,
+			CreatedAt: now, UpdatedAt: now,
+		},
+		ListingCount: len(command.Records), MetricRefreshStatus: appcollection.MetricStatusCompleted,
+	}, nil
+}
+
+func (s *stubCollectionApplication) GetCollectionRun(context.Context, appcollection.GetCollectionRunQuery) (appcollection.CollectionRunDetail, error) {
+	s.calls++
+	return appcollection.CollectionRunDetail{}, nil
 }
 
 type stubDecisionApplication struct {

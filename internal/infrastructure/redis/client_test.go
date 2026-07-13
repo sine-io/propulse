@@ -49,7 +49,7 @@ func TestPingClientHonorsContextDeadline(t *testing.T) {
 			serverErr <- err
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		reader := bufio.NewReader(conn)
 		for {
 			command, err := readRedisCommand(reader)

@@ -60,6 +60,8 @@
 
 ## 本地开发与验证
 
+复制 `.env.example` 中需要的配置到本地环境，并至少替换 `PROPULSE_ACCESS_TOKEN`。
+
 安装前端依赖并运行完整前端校验：
 
 ```bash
@@ -85,10 +87,16 @@ go build ./cmd/propulse
 go test ./...
 ```
 
+也可以从仓库根目录执行完整校验。该命令会运行 Go race test、静态检查、前端校验和构建，并检查 OpenAPI 类型与 Go embed 静态产物是否漂移：
+
+```bash
+make verify
+```
+
 使用 Docker Compose 启动集成服务：
 
 ```bash
-docker compose up --build
+sudo docker compose up --build
 ```
 
 服务启动后可分别检查进程健康状态和依赖就绪状态：
@@ -104,6 +112,47 @@ Compose 会为个人与管理 API 设置 `PROPULSE_ACCESS_TOKEN=local-access-tok
 curl http://127.0.0.1:8317/api/v1/watchlist \
   -H "Authorization: Bearer local-access-token"
 ```
+
+嵌入式网页不会把令牌编译进静态文件。打开网页后使用顶部的“解锁”入口输入令牌；令牌只保存在当前浏览器会话中。
+
+### 可信市场数据
+
+新数据库默认没有市场数据，也不会自动写入演示小区或指标。完整数据链路为：创建目标小区、创建可信数据源、导入带来源和采集时间的批次，然后按该批次计算指标。
+
+管理接口包括：
+
+- `POST /admin/api/data-sources`：创建或复用数据源。
+- `GET /admin/api/data-sources`：列出数据源。
+- `POST /admin/api/imports/json`：导入完整或部分覆盖的 JSON 批次。
+- `GET /admin/api/imports/{id}`：查看规范化记录和 base64 编码的原始载荷。
+
+导入请求示例，其中两个 ID 分别来自数据源和目标小区创建响应：
+
+```bash
+curl http://127.0.0.1:8317/admin/api/imports/json \
+  -H "Authorization: Bearer local-access-token" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "dataSourceId": "11111111-1111-1111-1111-111111111111",
+    "neighborhoodId": "22222222-2222-2222-2222-222222222222",
+    "sourceRef": "weekly-2026-07-13",
+    "collectedAt": "2026-07-13T10:00:00Z",
+    "coverage": "full",
+    "records": [{
+      "recordType": "listing",
+      "sourceRecordId": "listing-1",
+      "layout": "三房",
+      "areaSqm": 89.5,
+      "listingPrice": 520,
+      "daysOnMarket": 12,
+      "status": "active"
+    }]
+  }'
+```
+
+`full` 批次可更新当前挂牌库存；`partial` 批次只补充观测，不会冒充完整库存。指标响应会同时返回来源 ID、触发批次、覆盖范围、新鲜度、样本数和质量告警。
+
+从数据库迁移版本 v2 升级到 v3 时，容量测算、小区和关注列表会保留；无法关联可信采集批次的旧快照与旧指标会被清理，需要通过上述接口重新导入。`scheduler` 只会扫描超过 5 分钟仍为 `pending` 或 `failed` 的采集批次，并携带准确的 `collectionRunId` 发起修复，不会按关注列表生成无来源指标。
 
 也可以运行本地集成冒烟脚本，完成 Compose 构建、健康与就绪检查、认证关注列表 API 和 E2E smoke test：
 

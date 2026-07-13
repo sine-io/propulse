@@ -34,6 +34,9 @@ func NewService(repo CalculationRepository, now func() time.Time, newID func() s
 }
 
 func (s *Service) CreateCalculation(ctx context.Context, command CreateCalculationCommand) (CalculationRecord, error) {
+	if err := command.Input.Validate(); err != nil {
+		return CalculationRecord{}, err
+	}
 	record := CalculationRecord{
 		ID:        s.newID(),
 		UserID:    command.UserID,

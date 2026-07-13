@@ -4,6 +4,43 @@
  */
 
 export interface paths {
+    "/api/v1/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Validate the configured personal access token */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Access token accepted */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AccessStatusResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/capacity/calculations": {
         parameters: {
             query?: never;
@@ -435,16 +472,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/api/imports": {
+    "/admin/api/data-sources": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List trusted market data sources */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Data sources */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["DataSource"][];
+                        };
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Data source operation failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
         put?: never;
-        /** Manually import listing snapshots from JSON */
+        /** Create or resolve a trusted market data source */
         post: {
             parameters: {
                 query?: never;
@@ -454,17 +523,94 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["ManualImportRequest"];
+                    "application/json": components["schemas"]["CreateDataSourceRequest"];
                 };
             };
             responses: {
-                /** @description Listings imported */
+                /** @description Data source created or resolved */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ManualImportResponse"];
+                        "application/json": components["schemas"]["DataSource"];
+                    };
+                };
+                /** @description Malformed request body */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Data source fields are invalid */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationErrorResponse"];
+                    };
+                };
+                /** @description Data source operation failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/imports/json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import a traceable JSON collection run */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImportJSONRequest"];
+                };
+            };
+            responses: {
+                /** @description Idempotent replay of an existing collection run */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportCollectionRunResponse"];
+                    };
+                };
+                /** @description Collection run imported */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportCollectionRunResponse"];
                     };
                 };
                 /** @description Invalid request */
@@ -477,13 +623,31 @@ export interface paths {
                     };
                 };
                 401: components["responses"]["AccessRequired"];
-                /** @description Neighborhood not found */
+                /** @description Selected source or neighborhood not found */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Request body exceeds 2 MiB */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Import records failed semantic validation */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationErrorResponse"];
                     };
                 };
                 /** @description Import failed */
@@ -497,6 +661,72 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/imports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a traceable collection run and normalized observations */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Collection run detail */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollectionRunDetail"];
+                    };
+                };
+                /** @description Invalid collection run ID */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Collection run not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Import lookup failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -567,24 +797,40 @@ export interface components {
         NeighborhoodMetricResponse: {
             id: string;
             neighborhoodId: string;
+            /** Format: uuid */
+            collectionRunId: string;
+            /** Format: uuid */
+            inventoryCollectionRunId?: string;
+            sourceIds: string[];
+            /** Format: date-time */
+            latestObservedAt: string;
             listedHomes: number;
             priceCutHomes: number;
-            avgDaysOnMarket: number;
-            listingPriceMin?: number;
-            listingPriceMax?: number;
-            transactionPriceMin?: number;
-            transactionPriceMax?: number;
+            avgDaysOnMarket: number | null;
+            listingPriceMin?: number | null;
+            listingPriceMax?: number | null;
+            transactionPriceMin?: number | null;
+            transactionPriceMax?: number | null;
             /** @enum {string} */
-            transactionMomentum: "weak" | "stable" | "strong";
+            transactionMomentum: "unknown" | "weak" | "stable" | "strong";
             targetLayoutSupply: number;
+            listingSampleCount: number;
+            transactionSampleCount: number;
             /** @enum {string} */
-            status: "重点看" | "继续观察" | "适合砍价" | "价格偏硬" | "暂不建议追";
+            coverage: "full" | "partial";
             /** @enum {string} */
-            supplyPressure: "low" | "medium" | "high";
+            freshness: "unknown" | "current" | "stale" | "expired";
+            /** @enum {string} */
+            qualityState: "sufficient" | "low_confidence" | "insufficient_data";
+            qualityWarnings: string[];
+            /** @enum {string} */
+            status: "数据不足" | "重点看" | "继续观察" | "适合砍价" | "价格偏硬" | "暂不建议追";
+            /** @enum {string} */
+            supplyPressure: "unknown" | "low" | "medium" | "high";
             priceCutShare?: number;
             priceGapPct?: number;
             /** @enum {string} */
-            targetLayoutScarcity?: "low" | "medium" | "high";
+            targetLayoutScarcity?: "unknown" | "low" | "medium" | "high";
             advice: string;
             reasons?: string[];
             /** Format: date-time */
@@ -643,26 +889,160 @@ export interface components {
              */
             risks: string[];
         };
-        ManualImportRequest: {
+        AccessStatusResponse: {
             /** @enum {string} */
-            sourceType: "manual_json";
-            /** @example weekly-import */
-            sourceRef: string;
+            status: "unlocked";
+        };
+        CreateDataSourceRequest: {
+            name: string;
+            sourceType: string;
+            city: string;
+            notes?: string;
+        };
+        DataSource: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            sourceType: string;
+            city: string;
+            notes: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ImportJSONRequest: {
+            /** Format: uuid */
+            dataSourceId: string;
             /** Format: uuid */
             neighborhoodId: string;
-            records: components["schemas"]["ManualImportRecord"][];
+            sourceRef: string;
+            /** Format: date-time */
+            collectedAt: string;
+            /** @enum {string} */
+            coverage: "full" | "partial";
+            records: components["schemas"]["ImportJSONRecord"][];
         };
-        ManualImportRecord: {
-            listingPrice: number;
-            transactionPrice?: number | null;
-            priceCut?: boolean;
-            daysOnMarket: number;
-            layout?: string;
+        ImportJSONRecord: {
+            /** @enum {string} */
+            recordType: "listing" | "transaction";
+            sourceRecordId: string;
+            layout: string;
+            areaSqm: number;
+            listingPrice?: number;
+            transactionPrice?: number;
+            /** Format: date */
+            transactionDate?: string;
+            daysOnMarket?: number;
+            /** @enum {string} */
+            status?: "active" | "pending" | "withdrawn" | "sold";
+            originalListingRef?: string;
+            attributes?: {
+                [key: string]: string;
+            };
         };
-        ManualImportResponse: {
+        CollectionRun: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            dataSourceId: string;
+            /** Format: uuid */
+            neighborhoodId: string;
+            sourceRef: string;
+            /** Format: date-time */
+            collectedAt: string;
+            /** @enum {string} */
+            coverage: "full" | "partial";
+            /** @enum {string} */
+            format: "json" | "csv";
+            contentChecksum: string;
+            rawContentType: string;
+            validationSummary: components["schemas"]["ValidationSummary"];
+            /** @enum {string} */
+            status: "completed";
+            /** @enum {string} */
+            metricStatus: "pending" | "completed" | "failed";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ValidationSummary: {
+            recordCount: number;
+            listingCount: number;
+            transactionCount: number;
+            issues: components["schemas"]["ValidationIssue"][];
+        };
+        ValidationIssue: {
+            row?: number;
+            field: string;
+            code: string;
+            message: string;
+        };
+        ImportCollectionRunResponse: {
+            collectionRun: components["schemas"]["CollectionRun"];
+            listingObservationCount: number;
+            transactionObservationCount: number;
+            idempotentReplay: boolean;
+            /** @enum {string} */
+            metricRefreshStatus: "pending" | "completed" | "failed";
+        };
+        ListingObservation: {
+            /** Format: uuid */
+            id: string;
             /** Format: uuid */
             collectionRunId: string;
-            importedSnapshotCount: number;
+            /** Format: uuid */
+            neighborhoodId: string;
+            sourceListingId: string;
+            sourceRow: number;
+            layout: string;
+            areaSqm: number;
+            /** @description 万元 */
+            listingPrice: number;
+            daysOnMarket: number;
+            /** @enum {string} */
+            status: "active" | "pending" | "withdrawn" | "sold";
+            /** Format: date-time */
+            capturedAt: string;
+            attributes: {
+                [key: string]: string;
+            };
+        };
+        TransactionObservation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            collectionRunId: string;
+            /** Format: uuid */
+            neighborhoodId: string;
+            sourceRecordId: string;
+            sourceRow: number;
+            layout: string;
+            areaSqm: number;
+            /** @description 万元 */
+            transactionPrice: number;
+            /** Format: date */
+            transactionDate: string;
+            originalListingRef?: string;
+            /** Format: date-time */
+            capturedAt: string;
+        };
+        CollectionRunDetail: {
+            collectionRun: components["schemas"]["CollectionRun"];
+            source: components["schemas"]["DataSource"];
+            listings: components["schemas"]["ListingObservation"][];
+            transactions: components["schemas"]["TransactionObservation"][];
+            /** Format: byte */
+            rawPayloadBase64: string;
+        };
+        ValidationErrorResponse: {
+            error: {
+                /** @enum {string} */
+                code: "validation_failed";
+                message: string;
+                details: components["schemas"]["ValidationIssue"][];
+            };
         };
         ErrorResponse: {
             error: {

@@ -9,58 +9,6 @@ import (
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
-func TestCalculateNeighborhoodAggregatesSnapshotsAndWritesMetric(t *testing.T) {
-	repo := &memoryRepository{
-		neighborhood: Neighborhood{
-			ID:           "neighborhood_1",
-			TargetLayout: "三房",
-		},
-		aggregate: ListingSnapshotAggregate{
-			ListedHomes:         42,
-			PriceCutHomes:       11,
-			AvgDaysOnMarket:     78,
-			ListingPriceMin:     520,
-			ListingPriceMax:     620,
-			TransactionPriceMin: 495,
-			TransactionPriceMax: 545,
-			TargetLayoutSupply:  12,
-		},
-		insertedMetric: MetricSnapshot{
-			ID:           "metric_1",
-			CalculatedAt: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
-		},
-	}
-	service := NewService(repo)
-
-	err := service.CalculateNeighborhood(context.Background(), "neighborhood_1")
-	if err != nil {
-		t.Fatalf("CalculateNeighborhood() error = %v", err)
-	}
-
-	if repo.aggregateNeighborhoodID != "neighborhood_1" {
-		t.Fatalf("aggregateNeighborhoodID = %q, want neighborhood_1", repo.aggregateNeighborhoodID)
-	}
-	if repo.aggregateTargetLayout != "三房" {
-		t.Fatalf("aggregateTargetLayout = %q, want 三房", repo.aggregateTargetLayout)
-	}
-	if repo.insertCount != 1 {
-		t.Fatalf("insertCount = %d, want 1", repo.insertCount)
-	}
-	got := repo.lastInserted
-	if got.NeighborhoodID != "neighborhood_1" {
-		t.Fatalf("NeighborhoodID = %q, want neighborhood_1", got.NeighborhoodID)
-	}
-	if got.ListedHomes != 42 || got.PriceCutHomes != 11 || got.TargetLayoutSupply != 12 {
-		t.Fatalf("metric counts = listed %d, cuts %d, target %d", got.ListedHomes, got.PriceCutHomes, got.TargetLayoutSupply)
-	}
-	if got.AvgDaysOnMarket == nil || *got.AvgDaysOnMarket != 78 || got.ListingPriceMin == nil || *got.ListingPriceMin != 520 || got.TransactionPriceMax == nil || *got.TransactionPriceMax != 545 {
-		t.Fatalf("metric values = %#v", got)
-	}
-	if got.TransactionMomentum != domainneighborhood.TransactionMomentumWeak {
-		t.Fatalf("TransactionMomentum = %q, want weak", got.TransactionMomentum)
-	}
-}
-
 func TestCalculateCollectionRunUsesLatestRunForProvenance(t *testing.T) {
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	inventoryAt := now.Add(-time.Hour)
@@ -217,45 +165,16 @@ func TestCalculateCollectionRunMarksResolvedRunMetricCompleted(t *testing.T) {
 	}
 }
 
-func TestCalculateNeighborhoodMapsStrongMomentum(t *testing.T) {
-	repo := &memoryRepository{
-		neighborhood: Neighborhood{ID: "neighborhood_1", TargetLayout: "四房"},
-		aggregate: ListingSnapshotAggregate{
-			ListedHomes:        14,
-			PriceCutHomes:      1,
-			AvgDaysOnMarket:    35,
-			ListingPriceMin:    700,
-			ListingPriceMax:    760,
-			TargetLayoutSupply: 3,
-		},
-	}
-	service := NewService(repo)
-
-	if err := service.CalculateNeighborhood(context.Background(), "neighborhood_1"); err != nil {
-		t.Fatalf("CalculateNeighborhood() error = %v", err)
-	}
-
-	if repo.lastInserted.TransactionMomentum != domainneighborhood.TransactionMomentumStrong {
-		t.Fatalf("TransactionMomentum = %q, want strong", repo.lastInserted.TransactionMomentum)
-	}
-}
-
 type memoryRepository struct {
 	neighborhood    Neighborhood
-	aggregate       ListingSnapshotAggregate
 	completedRuns   map[string]CompletedCollectionRun
 	latestRun       CompletedCollectionRun
 	marketAggregate MarketAggregate
 
-	aggregateNeighborhoodID string
-	aggregateTargetLayout   string
-	aggregateParams         AggregateMarketParams
-	lastInserted            MetricSnapshot
-	insertedMetric          MetricSnapshot
-	insertCount             int
-	lastUpserted            MetricSnapshot
-	upsertCount             int
-	markedRunID             string
+	aggregateParams AggregateMarketParams
+	lastUpserted    MetricSnapshot
+	upsertCount     int
+	markedRunID     string
 }
 
 func newMetricMemoryRepository() *memoryRepository {
@@ -302,12 +221,6 @@ func (m *memoryRepository) GetNeighborhood(_ context.Context, id string) (Neighb
 	return m.neighborhood, nil
 }
 
-func (m *memoryRepository) AggregateListingSnapshots(_ context.Context, neighborhoodID string, targetLayout string) (ListingSnapshotAggregate, error) {
-	m.aggregateNeighborhoodID = neighborhoodID
-	m.aggregateTargetLayout = targetLayout
-	return m.aggregate, nil
-}
-
 func (m *memoryRepository) GetCompletedCollectionRun(_ context.Context, id string) (CompletedCollectionRun, error) {
 	run, ok := m.completedRuns[id]
 	if !ok {
@@ -339,16 +252,6 @@ func (m *memoryRepository) UpsertNeighborhoodMetric(_ context.Context, snapshot 
 func (m *memoryRepository) MarkCollectionRunMetricCompleted(_ context.Context, collectionRunID string) error {
 	m.markedRunID = collectionRunID
 	return nil
-}
-
-func (m *memoryRepository) InsertNeighborhoodMetric(_ context.Context, snapshot MetricSnapshot) (MetricSnapshot, error) {
-	m.insertCount++
-	m.lastInserted = snapshot
-	if m.insertedMetric.ID != "" {
-		snapshot.ID = m.insertedMetric.ID
-		snapshot.CalculatedAt = m.insertedMetric.CalculatedAt
-	}
-	return snapshot, nil
 }
 
 func strPtr(value string) *string { return &value }

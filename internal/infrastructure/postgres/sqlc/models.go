@@ -59,18 +59,6 @@ type ListingObservation struct {
 	Attributes      []byte
 }
 
-type ListingSnapshot struct {
-	ID               pgtype.UUID
-	CollectionRunID  pgtype.UUID
-	NeighborhoodID   pgtype.UUID
-	ListingPrice     pgtype.Numeric
-	TransactionPrice pgtype.Numeric
-	PriceCut         bool
-	DaysOnMarket     int32
-	Layout           string
-	CapturedAt       pgtype.Timestamptz
-}
-
 type Neighborhood struct {
 	ID           pgtype.UUID
 	Name         string
@@ -98,20 +86,12 @@ type NeighborhoodMetric struct {
 	ListingSampleCount       int32
 	TransactionSampleCount   int32
 	ListedHomesChangePct     pgtype.Numeric
-	Coverage                 pgtype.Text
-	Freshness                pgtype.Text
-	QualityState             pgtype.Text
+	Coverage                 string
+	Freshness                string
+	QualityState             string
 	LatestObservedAt         pgtype.Timestamptz
 	InventoryCollectedAt     pgtype.Timestamptz
 	QualityWarnings          []byte
-}
-
-type RawCollectionRecord struct {
-	ID          pgtype.UUID
-	SourceType  string
-	SourceRef   string
-	Payload     []byte
-	CollectedAt pgtype.Timestamptz
 }
 
 type TransactionObservation struct {

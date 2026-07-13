@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Calculator, CheckCircle } from "lucide-react";
 
-import { createCapacityCalculation } from "@/lib/api-client";
+import { ApiError, createCapacityCalculation } from "@/lib/api-client";
 import {
   calculateHousingCapacity,
   type HousingCapacityInput,
@@ -120,8 +120,12 @@ export function CalculatorPanel() {
     try {
       const response = await createCapacityCalculation(input, controller.signal);
       setApiResult(response.result);
-    } catch {
-      setApiError("诊断报告暂时无法更新，请稍后重试。");
+	} catch (error) {
+		setApiError(
+			error instanceof ApiError && error.status === 401
+				? "个人空间尚未解锁。"
+				: "诊断报告暂时无法更新，请稍后重试。",
+		);
       setApiResult(undefined);
     } finally {
       setIsSubmitting(false);

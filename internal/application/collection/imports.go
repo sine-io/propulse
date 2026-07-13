@@ -2,138 +2,181 @@ package collection
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
+	appmetric "github.com/sine-io/propulse/internal/application/metric"
 )
 
-const manualJSONSourceType = "manual_json"
+const metricRepairSourceID = "import.retry"
+const defaultMetricRefreshCandidateLimit = 100
+const maxMetricRefreshCandidateLimit = 500
+
+var sourceTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 type Service struct {
 	repo             Repository
 	metricCalculator MetricCalculator
+	metricRepair     MetricRepairEnqueuer
 	now              func() time.Time
 	newID            func() string
 }
 
-func NewService(repo Repository, now func() time.Time, newID func() string, metricCalculator ...MetricCalculator) *Service {
+func NewService(repo Repository, now func() time.Time, newID func() string) *Service {
 	if now == nil {
 		now = time.Now
 	}
 	if newID == nil {
 		newID = uuid.NewString
 	}
-	var calculator MetricCalculator
-	if len(metricCalculator) > 0 {
-		calculator = metricCalculator[0]
-	}
-	return &Service{repo: repo, metricCalculator: calculator, now: now, newID: newID}
+	return &Service{repo: repo, now: now, newID: newID}
 }
 
-type ImportManualListingsCommand struct {
-	SourceType     string                `json:"sourceType"`
-	SourceRef      string                `json:"sourceRef"`
-	NeighborhoodID string                `json:"neighborhoodId"`
-	Records        []ManualListingRecord `json:"records"`
+func NewServiceWithMetricRefresh(
+	repo Repository,
+	now func() time.Time,
+	newID func() string,
+	calculator MetricCalculator,
+	repair MetricRepairEnqueuer,
+) *Service {
+	service := NewService(repo, now, newID)
+	service.metricCalculator = calculator
+	service.metricRepair = repair
+	return service
 }
 
-type ManualListingRecord struct {
-	ListingPrice     float64  `json:"listingPrice"`
-	TransactionPrice *float64 `json:"transactionPrice"`
-	PriceCut         bool     `json:"priceCut"`
-	DaysOnMarket     int      `json:"daysOnMarket"`
-	Layout           string   `json:"layout"`
-}
-
-type ImportManualListingsResult struct {
-	CollectionRunID       string
-	ImportedSnapshotCount int
-}
-
-func (s *Service) ImportManualListings(ctx context.Context, command ImportManualListingsCommand) (ImportManualListingsResult, error) {
+func (s *Service) CreateDataSource(ctx context.Context, command CreateDataSourceCommand) (DataSource, error) {
+	command.Name = strings.TrimSpace(command.Name)
 	command.SourceType = strings.TrimSpace(command.SourceType)
-	command.SourceRef = strings.TrimSpace(command.SourceRef)
-	command.NeighborhoodID = strings.TrimSpace(command.NeighborhoodID)
-	if err := validateImport(command); err != nil {
-		return ImportManualListingsResult{}, err
+	command.City = strings.TrimSpace(command.City)
+	command.Notes = strings.TrimSpace(command.Notes)
+
+	issues := validateDataSource(command)
+	if len(issues) > 0 {
+		return DataSource{}, &ValidationError{Issues: issues}
 	}
 
-	exists, err := s.repo.NeighborhoodExists(ctx, command.NeighborhoodID)
+	now := s.now().UTC()
+	return s.repo.CreateDataSource(ctx, DataSource{
+		ID:         s.newID(),
+		Name:       command.Name,
+		SourceType: command.SourceType,
+		City:       command.City,
+		Notes:      command.Notes,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+}
+
+type ListDataSourcesQuery struct{}
+
+func (s *Service) ListDataSources(ctx context.Context, _ ListDataSourcesQuery) ([]DataSource, error) {
+	return s.repo.ListDataSources(ctx)
+}
+
+func (s *Service) GetCollectionRun(ctx context.Context, query GetCollectionRunQuery) (CollectionRunDetail, error) {
+	if _, err := uuid.Parse(strings.TrimSpace(query.ID)); err != nil {
+		return CollectionRunDetail{}, ErrInvalidRequest
+	}
+	return s.repo.GetCollectionRun(ctx, strings.TrimSpace(query.ID))
+}
+
+func (s *Service) ListMetricRefreshCandidates(ctx context.Context, query ListMetricRefreshCandidatesQuery) ([]MetricRefreshCandidate, error) {
+	updatedBefore := query.UpdatedBefore.UTC()
+	if query.UpdatedBefore.IsZero() {
+		updatedBefore = s.now().UTC()
+	}
+	limit := query.Limit
+	if limit == 0 {
+		limit = defaultMetricRefreshCandidateLimit
+	}
+	if limit < 0 || limit > maxMetricRefreshCandidateLimit {
+		return nil, ErrInvalidRequest
+	}
+	return s.repo.ListMetricRefreshCandidates(ctx, updatedBefore, limit)
+}
+
+func (s *Service) ImportCollectionRun(ctx context.Context, command ImportCollectionRunCommand) (ImportCollectionRunResult, error) {
+	now := s.now().UTC()
+	normalized, issues := validateAndNormalize(command, now)
+	if len(issues) > 0 {
+		return ImportCollectionRunResult{}, &ValidationError{Issues: issues}
+	}
+
+	exists, err := s.repo.DataSourceExists(ctx, normalized.DataSourceID)
 	if err != nil {
-		return ImportManualListingsResult{}, fmt.Errorf("%w: %v", ErrImportFailed, err)
+		return ImportCollectionRunResult{}, fmt.Errorf("%w: %w", ErrImportFailed, err)
 	}
 	if !exists {
-		return ImportManualListingsResult{}, ErrNeighborhoodNotFound
+		return ImportCollectionRunResult{}, ErrDataSourceNotFound
 	}
 
-	collectedAt := s.now().UTC()
-	raw := RawCollectionRecord{
-		ID:          s.newID(),
-		SourceType:  command.SourceType,
-		SourceRef:   command.SourceRef,
-		CollectedAt: collectedAt,
-	}
-	raw.Payload, err = json.Marshal(command)
+	exists, err = s.repo.NeighborhoodExists(ctx, normalized.NeighborhoodID)
 	if err != nil {
-		return ImportManualListingsResult{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return ImportCollectionRunResult{}, fmt.Errorf("%w: %w", ErrImportFailed, err)
+	}
+	if !exists {
+		return ImportCollectionRunResult{}, ErrNeighborhoodNotFound
 	}
 
-	snapshots := make([]ListingSnapshot, 0, len(command.Records))
-	for _, record := range command.Records {
-		snapshots = append(snapshots, ListingSnapshot{
-			ID:               s.newID(),
-			CollectionRunID:  raw.ID,
-			NeighborhoodID:   command.NeighborhoodID,
-			ListingPrice:     record.ListingPrice,
-			TransactionPrice: record.TransactionPrice,
-			PriceCut:         record.PriceCut,
-			DaysOnMarket:     record.DaysOnMarket,
-			Layout:           record.Layout,
-			CapturedAt:       collectedAt,
-		})
+	saved, err := s.repo.SaveCollectionRun(ctx, normalized.NewBatch(s.newID(), now, s.newID))
+	if err != nil {
+		return ImportCollectionRunResult{}, fmt.Errorf("%w: %w", ErrImportFailed, err)
 	}
 
-	if err := s.repo.SaveImport(ctx, raw, snapshots); err != nil {
-		return ImportManualListingsResult{}, fmt.Errorf("%w: %v", ErrImportFailed, err)
+	response := ImportCollectionRunResult{
+		Run:                 saved.Run,
+		ListingCount:        len(normalized.Listings),
+		TransactionCount:    len(normalized.Transactions),
+		IdempotentReplay:    !saved.Created,
+		MetricRefreshStatus: saved.Run.MetricStatus,
 	}
-	if s.metricCalculator != nil {
-		if err := s.metricCalculator.CalculateNeighborhood(ctx, command.NeighborhoodID); err != nil {
-			return ImportManualListingsResult{}, fmt.Errorf("%w: %v", ErrImportFailed, err)
-		}
+	if response.MetricRefreshStatus == "" {
+		response.MetricRefreshStatus = MetricStatusPending
+	}
+	if s.metricCalculator == nil {
+		return response, nil
 	}
 
-	return ImportManualListingsResult{
-		CollectionRunID:       raw.ID,
-		ImportedSnapshotCount: len(snapshots),
-	}, nil
+	err = s.metricCalculator.CalculateCollectionRun(ctx, appmetric.CalculateCollectionRunCommand{
+		NeighborhoodID:  normalized.NeighborhoodID,
+		CollectionRunID: saved.Run.ID,
+	})
+	if err == nil {
+		response.MetricRefreshStatus = MetricStatusCompleted
+		response.Run.MetricStatus = MetricStatusCompleted
+		return response, nil
+	}
+
+	refreshStatus := MetricStatusFailed
+	if updateErr := s.repo.UpdateMetricStatus(ctx, saved.Run.ID, MetricStatusFailed); updateErr != nil {
+		refreshStatus = MetricStatusPending
+	}
+	if s.metricRepair != nil {
+		_ = s.metricRepair.EnqueueMetricCalculateNeighborhood(ctx, normalized.NeighborhoodID, saved.Run.ID, metricRepairSourceID)
+	}
+	response.MetricRefreshStatus = refreshStatus
+	response.Run.MetricStatus = refreshStatus
+	return response, nil
 }
 
-func validateImport(command ImportManualListingsCommand) error {
-	if command.SourceType != manualJSONSourceType {
-		return ErrInvalidRequest
+func validateDataSource(command CreateDataSourceCommand) []ValidationIssue {
+	issues := make([]ValidationIssue, 0, 4)
+	if length := utf8.RuneCountInString(command.Name); length < 1 || length > 128 {
+		issues = appendIssue(issues, nil, "name", "invalid_length", "name must contain 1 to 128 characters")
 	}
-	if command.SourceRef == "" {
-		return ErrInvalidRequest
+	if !sourceTypePattern.MatchString(command.SourceType) {
+		issues = appendIssue(issues, nil, "sourceType", "invalid", "sourceType must be a lowercase slug")
 	}
-	if command.NeighborhoodID == "" {
-		return ErrInvalidRequest
+	if length := utf8.RuneCountInString(command.City); length < 1 || length > 128 {
+		issues = appendIssue(issues, nil, "city", "invalid_length", "city must contain 1 to 128 characters")
 	}
-	if len(command.Records) < 1 || len(command.Records) > 500 {
-		return ErrInvalidRequest
+	if utf8.RuneCountInString(command.Notes) > 2048 {
+		issues = appendIssue(issues, nil, "notes", "too_long", "notes must be at most 2048 characters")
 	}
-	for _, record := range command.Records {
-		if record.ListingPrice <= 0 {
-			return ErrInvalidRequest
-		}
-		if record.TransactionPrice != nil && *record.TransactionPrice <= 0 {
-			return ErrInvalidRequest
-		}
-		if record.DaysOnMarket < 0 {
-			return ErrInvalidRequest
-		}
-	}
-	return nil
+	return issues
 }

@@ -2,6 +2,7 @@ package gormrepo
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 	migraterunner "github.com/sine-io/propulse/internal/infrastructure/migrate"
 )
 
-func TestNeighborhoodRepositoryPersistsWatchlistAndLatestMetric(t *testing.T) {
+func TestNeighborhoodRepositoryPersistsWatchlistWithoutInventingMetric(t *testing.T) {
 	databaseURL := os.Getenv("PROPULSE_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("PROPULSE_TEST_DATABASE_URL is not set")
@@ -28,7 +29,11 @@ func TestNeighborhoodRepositoryPersistsWatchlistAndLatestMetric(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
-	defer sqlDB.Close()
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
 
 	repo := NewNeighborhoodRepository(db)
 	neighborhood, err := repo.CreateNeighborhood(ctx, appneighborhood.CreateNeighborhoodInput{
@@ -44,23 +49,6 @@ func TestNeighborhoodRepositoryPersistsWatchlistAndLatestMetric(t *testing.T) {
 		t.Fatalf("AddWatchlistItem() error = %v", err)
 	}
 
-	metricID := uuid.NewString()
-	if err := db.WithContext(ctx).Create(&NeighborhoodMetricModel{
-		ID:                  metricID,
-		NeighborhoodID:      neighborhood.ID,
-		ListedHomes:         42,
-		PriceCutHomes:       11,
-		AvgDaysOnMarket:     78,
-		ListingPriceMin:     520,
-		ListingPriceMax:     620,
-		TransactionPriceMin: 495,
-		TransactionPriceMax: 545,
-		TransactionMomentum: string(domainneighborhood.TransactionMomentumWeak),
-		TargetLayoutSupply:  12,
-	}).Error; err != nil {
-		t.Fatalf("Create(metric) error = %v", err)
-	}
-
 	watchlist, err := repo.ListWatchlist(ctx, user.SingleUserID)
 	if err != nil {
 		t.Fatalf("ListWatchlist() error = %v", err)
@@ -68,16 +56,12 @@ func TestNeighborhoodRepositoryPersistsWatchlistAndLatestMetric(t *testing.T) {
 	if len(watchlist) == 0 {
 		t.Fatal("watchlist is empty")
 	}
-	if watchlist[0].Name != "青枫花园" || watchlist[0].Metric.ID != metricID {
+	if watchlist[0].Name != "青枫花园" || watchlist[0].HasMetric {
 		t.Fatalf("watchlist[0] = %#v", watchlist[0])
 	}
 
-	metric, err := repo.LatestMetric(ctx, neighborhood.ID)
-	if err != nil {
-		t.Fatalf("LatestMetric() error = %v", err)
-	}
-	if metric.TransactionMomentum != domainneighborhood.TransactionMomentumWeak {
-		t.Fatalf("TransactionMomentum = %q, want weak", metric.TransactionMomentum)
+	if _, err := repo.LatestMetric(ctx, neighborhood.ID); !errors.Is(err, appneighborhood.ErrMetricNotFound) {
+		t.Fatalf("LatestMetric() error = %v, want ErrMetricNotFound", err)
 	}
 }
 
@@ -96,7 +80,11 @@ func TestNeighborhoodRepositoryListWatchlistUsesConfiguredMetricReader(t *testin
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
-	defer sqlDB.Close()
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
 
 	neighborhoodID := uuid.NewString()
 	baseRepo := NewNeighborhoodRepository(db)

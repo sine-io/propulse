@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-docker compose up --build -d
+sudo docker compose up --build -d
 
 for _ in $(seq 1 30); do
   if curl -fsS --connect-timeout 1 --max-time 2 \

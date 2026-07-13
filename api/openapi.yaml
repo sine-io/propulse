@@ -3,6 +3,20 @@ info:
   title: Propulse Backend API
   version: 0.1.0
 paths:
+  /api/v1/access:
+    get:
+      summary: Validate the configured personal access token
+      security:
+        - AccessBearerAuth: []
+      responses:
+        '200':
+          description: Access token accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessStatusResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
   /api/v1/capacity/calculations:
     post:
       summary: Create a housing capacity calculation
@@ -242,9 +256,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /admin/api/imports:
+  /admin/api/data-sources:
     post:
-      summary: Manually import listing snapshots from JSON
+      summary: Create or resolve a trusted market data source
       security:
         - AccessBearerAuth: []
       requestBody:
@@ -252,14 +266,83 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ManualImportRequest'
+              $ref: '#/components/schemas/CreateDataSourceRequest'
       responses:
         '201':
-          description: Listings imported
+          description: Data source created or resolved
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ManualImportResponse'
+                $ref: '#/components/schemas/DataSource'
+        '400':
+          description: Malformed request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '422':
+          description: Data source fields are invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Data source operation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      summary: List trusted market data sources
+      security:
+        - AccessBearerAuth: []
+      responses:
+        '200':
+          description: Data sources
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DataSource'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '500':
+          description: Data source operation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/api/imports/json:
+    post:
+      summary: Import a traceable JSON collection run
+      security:
+        - AccessBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportJSONRequest'
+      responses:
+        '200':
+          description: Idempotent replay of an existing collection run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCollectionRunResponse'
+        '201':
+          description: Collection run imported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCollectionRunResponse'
         '400':
           description: Invalid request
           content:
@@ -269,13 +352,64 @@ paths:
         '401':
           $ref: '#/components/responses/AccessRequired'
         '404':
-          description: Neighborhood not found
+          description: Selected source or neighborhood not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 2 MiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Import records failed semantic validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Import failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/api/imports/{id}:
+    get:
+      summary: Get a traceable collection run and normalized observations
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Collection run detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionRunDetail'
+        '400':
+          description: Invalid collection run ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '404':
+          description: Collection run not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Import failed
+          description: Import lookup failed
           content:
             application/json:
               schema:
@@ -441,11 +575,20 @@ components:
       required:
         - id
         - neighborhoodId
+        - collectionRunId
+        - sourceIds
+        - latestObservedAt
         - listedHomes
         - priceCutHomes
         - avgDaysOnMarket
         - transactionMomentum
         - targetLayoutSupply
+        - listingSampleCount
+        - transactionSampleCount
+        - coverage
+        - freshness
+        - qualityState
+        - qualityWarnings
         - status
         - supplyPressure
         - advice
@@ -454,38 +597,74 @@ components:
           type: string
         neighborhoodId:
           type: string
+        collectionRunId:
+          type: string
+          format: uuid
+        inventoryCollectionRunId:
+          type: string
+          format: uuid
+        sourceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        latestObservedAt:
+          type: string
+          format: date-time
         listedHomes:
           type: integer
         priceCutHomes:
           type: integer
         avgDaysOnMarket:
           type: number
+          nullable: true
         listingPriceMin:
           type: number
+          nullable: true
         listingPriceMax:
           type: number
+          nullable: true
         transactionPriceMin:
           type: number
+          nullable: true
         transactionPriceMax:
           type: number
+          nullable: true
         transactionMomentum:
           type: string
-          enum: [weak, stable, strong]
+          enum: [unknown, weak, stable, strong]
         targetLayoutSupply:
           type: integer
+        listingSampleCount:
+          type: integer
+        transactionSampleCount:
+          type: integer
+        coverage:
+          type: string
+          enum: [full, partial]
+        freshness:
+          type: string
+          enum: [unknown, current, stale, expired]
+        qualityState:
+          type: string
+          enum: [sufficient, low_confidence, insufficient_data]
+        qualityWarnings:
+          type: array
+          items:
+            type: string
         status:
           type: string
-          enum: ["重点看", "继续观察", "适合砍价", "价格偏硬", "暂不建议追"]
+          enum: ["数据不足", "重点看", "继续观察", "适合砍价", "价格偏硬", "暂不建议追"]
         supplyPressure:
           type: string
-          enum: [low, medium, high]
+          enum: [unknown, low, medium, high]
         priceCutShare:
           type: number
         priceGapPct:
           type: number
         targetLayoutScarcity:
           type: string
-          enum: [low, medium, high]
+          enum: [unknown, low, medium, high]
         advice:
           type: string
         reasons:
@@ -585,54 +764,269 @@ components:
             type: string
           example:
             - "预算不是完全宽松，砍价失败时不要上调总价硬追。"
-    ManualImportRequest:
+    AccessStatusResponse:
       type: object
-      required: [sourceType, sourceRef, neighborhoodId, records]
+      required: [status]
       properties:
+        status:
+          type: string
+          enum: [unlocked]
+    CreateDataSourceRequest:
+      type: object
+      required: [name, sourceType, city]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
         sourceType:
           type: string
-          enum: [manual_json]
-        sourceRef:
+          pattern: '^[a-z][a-z0-9_]{0,63}$'
+        city:
           type: string
-          example: weekly-import
+          minLength: 1
+          maxLength: 128
+        notes:
+          type: string
+          maxLength: 2048
+    DataSource:
+      type: object
+      required: [id, name, sourceType, city, notes, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sourceType:
+          type: string
+        city:
+          type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ImportJSONRequest:
+      type: object
+      required: [dataSourceId, neighborhoodId, sourceRef, collectedAt, coverage, records]
+      properties:
+        dataSourceId:
+          type: string
+          format: uuid
         neighborhoodId:
           type: string
           format: uuid
+        sourceRef:
+          type: string
+          maxLength: 256
+        collectedAt:
+          type: string
+          format: date-time
+        coverage:
+          type: string
+          enum: [full, partial]
         records:
           type: array
           minItems: 1
           maxItems: 500
           items:
-            $ref: '#/components/schemas/ManualImportRecord'
-    ManualImportRecord:
+            $ref: '#/components/schemas/ImportJSONRecord'
+    ImportJSONRecord:
       type: object
-      required: [listingPrice, daysOnMarket]
+      required: [recordType, sourceRecordId, layout, areaSqm]
       properties:
+        recordType:
+          type: string
+          enum: [listing, transaction]
+        sourceRecordId:
+          type: string
+          maxLength: 128
+        layout:
+          type: string
+          maxLength: 64
+        areaSqm:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
         listingPrice:
           type: number
-          exclusiveMinimum: true
           minimum: 0
+          exclusiveMinimum: true
         transactionPrice:
           type: number
-          nullable: true
-          exclusiveMinimum: true
           minimum: 0
-        priceCut:
-          type: boolean
+          exclusiveMinimum: true
+        transactionDate:
+          type: string
+          format: date
         daysOnMarket:
           type: integer
           minimum: 0
-        layout:
+        status:
           type: string
-    ManualImportResponse:
+          enum: [active, pending, withdrawn, sold]
+        originalListingRef:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+    CollectionRun:
       type: object
-      required: [collectionRunId, importedSnapshotCount]
+      required: [id, dataSourceId, neighborhoodId, sourceRef, collectedAt, coverage, format, contentChecksum, rawContentType, validationSummary, status, metricStatus, createdAt, updatedAt]
       properties:
-        collectionRunId:
+        id:
           type: string
           format: uuid
-        importedSnapshotCount:
+        dataSourceId:
+          type: string
+          format: uuid
+        neighborhoodId:
+          type: string
+          format: uuid
+        sourceRef:
+          type: string
+        collectedAt:
+          type: string
+          format: date-time
+        coverage:
+          type: string
+          enum: [full, partial]
+        format:
+          type: string
+          enum: [json, csv]
+        contentChecksum:
+          type: string
+        rawContentType:
+          type: string
+        validationSummary:
+          $ref: '#/components/schemas/ValidationSummary'
+        status:
+          type: string
+          enum: [completed]
+        metricStatus:
+          type: string
+          enum: [pending, completed, failed]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ValidationSummary:
+      type: object
+      required: [recordCount, listingCount, transactionCount, issues]
+      properties:
+        recordCount:
           type: integer
+        listingCount:
+          type: integer
+        transactionCount:
+          type: integer
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+    ValidationIssue:
+      type: object
+      required: [field, code, message]
+      properties:
+        row:
+          type: integer
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+    ImportCollectionRunResponse:
+      type: object
+      required: [collectionRun, listingObservationCount, transactionObservationCount, idempotentReplay, metricRefreshStatus]
+      properties:
+        collectionRun:
+          $ref: '#/components/schemas/CollectionRun'
+        listingObservationCount:
+          type: integer
+        transactionObservationCount:
+          type: integer
+        idempotentReplay:
+          type: boolean
+        metricRefreshStatus:
+          type: string
+          enum: [pending, completed, failed]
+    ListingObservation:
+      type: object
+      required: [id, collectionRunId, neighborhoodId, sourceListingId, sourceRow, layout, areaSqm, listingPrice, daysOnMarket, status, capturedAt, attributes]
+      properties:
+        id: {type: string, format: uuid}
+        collectionRunId: {type: string, format: uuid}
+        neighborhoodId: {type: string, format: uuid}
+        sourceListingId: {type: string}
+        sourceRow: {type: integer}
+        layout: {type: string}
+        areaSqm: {type: number}
+        listingPrice: {type: number, description: 万元}
+        daysOnMarket: {type: integer}
+        status: {type: string, enum: [active, pending, withdrawn, sold]}
+        capturedAt: {type: string, format: date-time}
+        attributes:
+          type: object
+          additionalProperties: {type: string}
+    TransactionObservation:
+      type: object
+      required: [id, collectionRunId, neighborhoodId, sourceRecordId, sourceRow, layout, areaSqm, transactionPrice, transactionDate, capturedAt]
+      properties:
+        id: {type: string, format: uuid}
+        collectionRunId: {type: string, format: uuid}
+        neighborhoodId: {type: string, format: uuid}
+        sourceRecordId: {type: string}
+        sourceRow: {type: integer}
+        layout: {type: string}
+        areaSqm: {type: number}
+        transactionPrice: {type: number, description: 万元}
+        transactionDate: {type: string, format: date}
+        originalListingRef: {type: string}
+        capturedAt: {type: string, format: date-time}
+    CollectionRunDetail:
+      type: object
+      required: [collectionRun, source, listings, transactions, rawPayloadBase64]
+      properties:
+        collectionRun:
+          $ref: '#/components/schemas/CollectionRun'
+        source:
+          $ref: '#/components/schemas/DataSource'
+        listings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ListingObservation'
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionObservation'
+        rawPayloadBase64:
+          type: string
+          format: byte
+    ValidationErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+              enum: [validation_failed]
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ValidationIssue'
     ErrorResponse:
       type: object
       required: [error]

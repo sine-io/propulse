@@ -119,23 +119,6 @@ func (r *inMemoryNeighborhoodRepository) ListWatchlist(_ context.Context, userID
 	return items, nil
 }
 
-func (r *inMemoryNeighborhoodRepository) ListWatchlistNeighborhoodIDs(_ context.Context) ([]string, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	seen := map[string]bool{}
-	neighborhoodIDs := []string{}
-	for _, key := range r.watchlistKeys {
-		item := r.watchlist[key]
-		if seen[item.NeighborhoodID] {
-			continue
-		}
-		seen[item.NeighborhoodID] = true
-		neighborhoodIDs = append(neighborhoodIDs, item.NeighborhoodID)
-	}
-	return neighborhoodIDs, nil
-}
-
 func (r *inMemoryNeighborhoodRepository) LatestMetric(_ context.Context, neighborhoodID string) (appneighborhood.MetricSnapshot, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

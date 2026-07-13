@@ -16,7 +16,6 @@ type Repository interface {
 	GetNeighborhood(ctx context.Context, id string) (Neighborhood, error)
 	AddWatchlistItem(ctx context.Context, userID string, neighborhoodID string) (WatchlistItem, error)
 	ListWatchlist(ctx context.Context, userID string) ([]WatchlistSummary, error)
-	ListWatchlistNeighborhoodIDs(ctx context.Context) ([]string, error)
 	LatestMetric(ctx context.Context, neighborhoodID string) (MetricSnapshot, error)
 }
 

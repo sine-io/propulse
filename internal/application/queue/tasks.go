@@ -16,6 +16,7 @@ const (
 )
 
 type MetricCalculateNeighborhoodPayload struct {
-	NeighborhoodID string `json:"neighborhoodId"`
-	SourceID       string `json:"sourceId,omitempty"`
+	NeighborhoodID  string `json:"neighborhoodId"`
+	CollectionRunID string `json:"collectionRunId,omitempty"`
+	SourceID        string `json:"sourceId"`
 }

@@ -43,25 +43,35 @@ type neighborhoodResponse struct {
 }
 
 type metricResponse struct {
-	ID                   string                                 `json:"id"`
-	NeighborhoodID       string                                 `json:"neighborhoodId"`
-	ListedHomes          int                                    `json:"listedHomes"`
-	PriceCutHomes        int                                    `json:"priceCutHomes"`
-	AvgDaysOnMarket      float64                                `json:"avgDaysOnMarket"`
-	ListingPriceMin      float64                                `json:"listingPriceMin"`
-	ListingPriceMax      float64                                `json:"listingPriceMax"`
-	TransactionPriceMin  float64                                `json:"transactionPriceMin"`
-	TransactionPriceMax  float64                                `json:"transactionPriceMax"`
-	TransactionMomentum  domainneighborhood.TransactionMomentum `json:"transactionMomentum"`
-	TargetLayoutSupply   int                                    `json:"targetLayoutSupply"`
-	Status               domainneighborhood.NeighborhoodStatus  `json:"status"`
-	SupplyPressure       domainneighborhood.SupplyPressure      `json:"supplyPressure"`
-	PriceCutShare        float64                                `json:"priceCutShare"`
-	PriceGapPct          float64                                `json:"priceGapPct"`
-	TargetLayoutScarcity domainneighborhood.Scarcity            `json:"targetLayoutScarcity"`
-	Advice               string                                 `json:"advice"`
-	Reasons              []string                               `json:"reasons"`
-	CalculatedAt         string                                 `json:"calculatedAt"`
+	ID                       string                                 `json:"id"`
+	NeighborhoodID           string                                 `json:"neighborhoodId"`
+	CollectionRunID          string                                 `json:"collectionRunId"`
+	InventoryCollectionRunID *string                                `json:"inventoryCollectionRunId,omitempty"`
+	SourceIDs                []string                               `json:"sourceIds"`
+	LatestObservedAt         string                                 `json:"latestObservedAt"`
+	ListedHomes              int                                    `json:"listedHomes"`
+	PriceCutHomes            int                                    `json:"priceCutHomes"`
+	AvgDaysOnMarket          *float64                               `json:"avgDaysOnMarket"`
+	ListingPriceMin          *float64                               `json:"listingPriceMin"`
+	ListingPriceMax          *float64                               `json:"listingPriceMax"`
+	TransactionPriceMin      *float64                               `json:"transactionPriceMin"`
+	TransactionPriceMax      *float64                               `json:"transactionPriceMax"`
+	TransactionMomentum      domainneighborhood.TransactionMomentum `json:"transactionMomentum"`
+	TargetLayoutSupply       int                                    `json:"targetLayoutSupply"`
+	ListingSampleCount       int                                    `json:"listingSampleCount"`
+	TransactionSampleCount   int                                    `json:"transactionSampleCount"`
+	Coverage                 domainneighborhood.Coverage            `json:"coverage"`
+	Freshness                domainneighborhood.Freshness           `json:"freshness"`
+	QualityState             domainneighborhood.MarketQualityState  `json:"qualityState"`
+	QualityWarnings          []domainneighborhood.QualityWarning    `json:"qualityWarnings"`
+	Status                   domainneighborhood.NeighborhoodStatus  `json:"status"`
+	SupplyPressure           domainneighborhood.SupplyPressure      `json:"supplyPressure"`
+	PriceCutShare            float64                                `json:"priceCutShare"`
+	PriceGapPct              float64                                `json:"priceGapPct"`
+	TargetLayoutScarcity     domainneighborhood.Scarcity            `json:"targetLayoutScarcity"`
+	Advice                   string                                 `json:"advice"`
+	Reasons                  []string                               `json:"reasons"`
+	CalculatedAt             string                                 `json:"calculatedAt"`
 }
 
 func (h Neighborhood) CreateNeighborhood(c *gin.Context) {
@@ -134,31 +144,34 @@ func newNeighborhoodResponse(neighborhood appneighborhood.Neighborhood) neighbor
 
 func newMetricResponse(metric appneighborhood.MetricWithSignal) metricResponse {
 	return metricResponse{
-		ID:                   metric.Metric.ID,
-		NeighborhoodID:       metric.Metric.NeighborhoodID,
-		ListedHomes:          metric.Metric.ListedHomes,
-		PriceCutHomes:        metric.Metric.PriceCutHomes,
-		AvgDaysOnMarket:      floatPtrValue(metric.Metric.AvgDaysOnMarket),
-		ListingPriceMin:      floatPtrValue(metric.Metric.ListingPriceMin),
-		ListingPriceMax:      floatPtrValue(metric.Metric.ListingPriceMax),
-		TransactionPriceMin:  floatPtrValue(metric.Metric.TransactionPriceMin),
-		TransactionPriceMax:  floatPtrValue(metric.Metric.TransactionPriceMax),
-		TransactionMomentum:  metric.Metric.TransactionMomentum,
-		TargetLayoutSupply:   metric.Metric.TargetLayoutSupply,
-		Status:               metric.Signal.Status,
-		SupplyPressure:       metric.Signal.SupplyPressure,
-		PriceCutShare:        metric.Signal.PriceCutShare,
-		PriceGapPct:          metric.Signal.PriceGapPct,
-		TargetLayoutScarcity: metric.Signal.TargetLayoutScarcity,
-		Advice:               metric.Signal.NextAction,
-		Reasons:              metric.Signal.Reasons,
-		CalculatedAt:         metric.Metric.CalculatedAt.UTC().Format(time.RFC3339),
+		ID:                       metric.Metric.ID,
+		NeighborhoodID:           metric.Metric.NeighborhoodID,
+		CollectionRunID:          metric.Metric.CollectionRunID,
+		InventoryCollectionRunID: metric.Metric.InventoryCollectionRunID,
+		SourceIDs:                metric.Metric.SourceIDs,
+		LatestObservedAt:         metric.Metric.LatestObservedAt.UTC().Format(time.RFC3339),
+		ListedHomes:              metric.Metric.ListedHomes,
+		PriceCutHomes:            metric.Metric.PriceCutHomes,
+		AvgDaysOnMarket:          metric.Metric.AvgDaysOnMarket,
+		ListingPriceMin:          metric.Metric.ListingPriceMin,
+		ListingPriceMax:          metric.Metric.ListingPriceMax,
+		TransactionPriceMin:      metric.Metric.TransactionPriceMin,
+		TransactionPriceMax:      metric.Metric.TransactionPriceMax,
+		TransactionMomentum:      metric.Metric.TransactionMomentum,
+		TargetLayoutSupply:       metric.Metric.TargetLayoutSupply,
+		ListingSampleCount:       metric.Metric.ListingSampleCount,
+		TransactionSampleCount:   metric.Metric.TransactionSampleCount,
+		Coverage:                 metric.Metric.Coverage,
+		Freshness:                metric.Metric.Freshness,
+		QualityState:             metric.Metric.QualityState,
+		QualityWarnings:          metric.Metric.QualityWarnings,
+		Status:                   metric.Signal.Status,
+		SupplyPressure:           metric.Signal.SupplyPressure,
+		PriceCutShare:            metric.Signal.PriceCutShare,
+		PriceGapPct:              metric.Signal.PriceGapPct,
+		TargetLayoutScarcity:     metric.Signal.TargetLayoutScarcity,
+		Advice:                   metric.Signal.NextAction,
+		Reasons:                  metric.Signal.Reasons,
+		CalculatedAt:             metric.Metric.CalculatedAt.UTC().Format(time.RFC3339),
 	}
-}
-
-func floatPtrValue(value *float64) float64 {
-	if value == nil {
-		return 0
-	}
-	return *value
 }

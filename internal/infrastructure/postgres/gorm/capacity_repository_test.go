@@ -27,7 +27,11 @@ func TestCapacityRepositoryPersistsAndFindsCalculations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
-	defer sqlDB.Close()
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
 
 	repo := NewCapacityRepository(db)
 	record, err := repo.Save(ctx, appcapacity.CalculationRecord{

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestEmbeddedMigrationSetIsSingleCoherentInitialSchema(t *testing.T) {
+func TestEmbeddedMigrationSetIsCompleteAndOrdered(t *testing.T) {
 	entries, err := fs.ReadDir(FS, ".")
 	if err != nil {
 		t.Fatalf("ReadDir() error = %v", err)
@@ -24,6 +24,10 @@ func TestEmbeddedMigrationSetIsSingleCoherentInitialSchema(t *testing.T) {
 	want := []string{
 		"000001_initial_schema.down.sql",
 		"000001_initial_schema.up.sql",
+		"000002_listing_snapshots_collection_run.down.sql",
+		"000002_listing_snapshots_collection_run.up.sql",
+		"000003_trusted_market_data.down.sql",
+		"000003_trusted_market_data.up.sql",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("embedded migrations = %#v, want %#v", names, want)
@@ -35,7 +39,6 @@ func TestEmbeddedMigrationSetIsSingleCoherentInitialSchema(t *testing.T) {
 	}
 	for _, required := range []string{
 		"collection_run_id UUID NOT NULL",
-		"idx_listing_snapshots_neighborhood_run_captured_at",
 		"CREATE TABLE data_sources",
 		"CREATE TABLE collection_runs",
 		"CREATE TABLE listing_observations",
@@ -60,9 +63,45 @@ func TestEmbeddedMigrationSetIsSingleCoherentInitialSchema(t *testing.T) {
 			t.Fatalf("expanded initial schema is missing %q", required)
 		}
 	}
+	for _, forbidden := range []string{"raw_collection_records", "listing_snapshots"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("initial schema still contains legacy table %q", forbidden)
+		}
+	}
 
 	const stableUserDefault = "user_id TEXT NOT NULL DEFAULT 'propulse-user'"
 	if count := strings.Count(string(body), stableUserDefault); count != 2 {
 		t.Fatalf("initial schema has %d %q defaults, want 2", count, stableUserDefault)
+	}
+}
+
+func TestUpgradeMigrationsPreservePublishedVersionAndContractLegacyMarketData(t *testing.T) {
+	versionTwo, err := fs.ReadFile(FS, "000002_listing_snapshots_collection_run.up.sql")
+	if err != nil {
+		t.Fatalf("ReadFile(version 2) error = %v", err)
+	}
+	for _, required := range []string{
+		"to_regclass('public.listing_snapshots')",
+		"ADD COLUMN IF NOT EXISTS collection_run_id",
+	} {
+		if !strings.Contains(string(versionTwo), required) {
+			t.Fatalf("compatibility migration 2 is missing %q", required)
+		}
+	}
+
+	versionThree, err := fs.ReadFile(FS, "000003_trusted_market_data.up.sql")
+	if err != nil {
+		t.Fatalf("ReadFile(version 3) error = %v", err)
+	}
+	for _, required := range []string{
+		"CREATE TABLE IF NOT EXISTS data_sources",
+		"DELETE FROM neighborhood_metrics",
+		"ALTER COLUMN collection_run_id SET NOT NULL",
+		"DROP TABLE IF EXISTS listing_snapshots",
+		"DROP TABLE IF EXISTS raw_collection_records",
+	} {
+		if !strings.Contains(string(versionThree), required) {
+			t.Fatalf("trusted-data migration 3 is missing %q", required)
+		}
 	}
 }

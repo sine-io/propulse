@@ -49,6 +49,21 @@ func TestCreateCalculationPersistsComputedResult(t *testing.T) {
 	}
 }
 
+func TestCreateCalculationRejectsInvalidDomainInputBeforePersistence(t *testing.T) {
+	repo := &memoryCalculationRepository{}
+	service := NewService(repo, time.Now, func() string { return "unused" })
+
+	_, err := service.CreateCalculation(context.Background(), CreateCalculationCommand{
+		Input: domaincapacity.HousingCapacityInput{MonthlyIncome: 0, TargetTotalPrice: 550},
+	})
+	if !errors.Is(err, domaincapacity.ErrInvalidInput) {
+		t.Fatalf("CreateCalculation() error = %v, want ErrInvalidInput", err)
+	}
+	if len(repo.records) != 0 {
+		t.Fatalf("saved records = %d, want 0", len(repo.records))
+	}
+}
+
 func TestGetCalculationReturnsStoredRecord(t *testing.T) {
 	repo := &memoryCalculationRepository{
 		records: map[string]CalculationRecord{

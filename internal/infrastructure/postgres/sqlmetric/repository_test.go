@@ -3,7 +3,6 @@ package sqlmetric
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -70,42 +69,6 @@ func TestRepositoryLatestMetricMapsNoRows(t *testing.T) {
 	_, err := NewRepository(&latestMetricDB{row: latestMetricRow{err: pgx.ErrNoRows}}).LatestMetric(context.Background(), uuid.NewString())
 	if !errors.Is(err, appneighborhood.ErrMetricNotFound) {
 		t.Fatalf("LatestMetric() error = %v, want ErrMetricNotFound", err)
-	}
-}
-
-func TestRepositoryAggregateListingSnapshotsUsesLatestCollectionRun(t *testing.T) {
-	neighborhoodID := uuid.New()
-	db := &latestMetricDB{
-		row: latestMetricRow{
-			values: []any{
-				int32(2),
-				int32(1),
-				numericValue(t, "14"),
-				numericValue(t, "520"),
-				numericValue(t, "610"),
-				numericValue(t, "495"),
-				numericValue(t, "545"),
-				int32(2),
-			},
-		},
-	}
-
-	_, err := NewRepository(db).AggregateListingSnapshots(context.Background(), neighborhoodID.String(), "三房")
-	if err != nil {
-		t.Fatalf("AggregateListingSnapshots() error = %v", err)
-	}
-
-	if !strings.Contains(db.query, "collection_run_id") {
-		t.Fatalf("aggregate query does not scope by collection_run_id:\n%s", db.query)
-	}
-	if !strings.Contains(db.query, "MAX(captured_at)") {
-		t.Fatalf("aggregate query does not select the latest captured run:\n%s", db.query)
-	}
-	if db.targetLayout != "三房" {
-		t.Fatalf("targetLayout arg = %q, want 三房", db.targetLayout)
-	}
-	if db.neighborhoodID != uuidValue(neighborhoodID) {
-		t.Fatalf("neighborhoodID arg = %#v, want %#v", db.neighborhoodID, uuidValue(neighborhoodID))
 	}
 }
 

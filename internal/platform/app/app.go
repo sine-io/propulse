@@ -11,8 +11,11 @@ import (
 	webembed "github.com/sine-io/propulse/apps/web/embed"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
+	appdecision "github.com/sine-io/propulse/internal/application/decision"
+	appmetric "github.com/sine-io/propulse/internal/application/metric"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	appqueue "github.com/sine-io/propulse/internal/application/queue"
+	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 	migraterunner "github.com/sine-io/propulse/internal/infrastructure/migrate"
 	infrastructurequeue "github.com/sine-io/propulse/internal/infrastructure/queue"
@@ -20,7 +23,9 @@ import (
 )
 
 const Usage = "usage: propulse [serve|api|worker|scheduler|migrate up|migrate down]"
-const schedulerSourceID = "scheduler.watchlist"
+const schedulerSourceID = "scheduler.metric_repair"
+const schedulerMetricRepairGracePeriod = 5 * time.Minute
+const schedulerMetricRepairBatchSize = 100
 
 type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
@@ -34,19 +39,26 @@ type NeighborhoodApplication interface {
 	LatestMetric(ctx context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error)
 	AddWatchlistItem(ctx context.Context, command appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error)
 	ListWatchlist(ctx context.Context, query appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error)
-	ListWatchlistNeighborhoodIDs(ctx context.Context, query appneighborhood.ListWatchlistNeighborhoodIDsQuery) ([]string, error)
 }
 
 type CollectionApplication interface {
-	ImportManualListings(ctx context.Context, command appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error)
+	CreateDataSource(ctx context.Context, command appcollection.CreateDataSourceCommand) (appcollection.DataSource, error)
+	ListDataSources(ctx context.Context, query appcollection.ListDataSourcesQuery) ([]appcollection.DataSource, error)
+	ImportCollectionRun(ctx context.Context, command appcollection.ImportCollectionRunCommand) (appcollection.ImportCollectionRunResult, error)
+	GetCollectionRun(ctx context.Context, query appcollection.GetCollectionRunQuery) (appcollection.CollectionRunDetail, error)
+	ListMetricRefreshCandidates(ctx context.Context, query appcollection.ListMetricRefreshCandidatesQuery) ([]appcollection.MetricRefreshCandidate, error)
+}
+
+type DecisionApplication interface {
+	GetActionWindow(ctx context.Context, query appdecision.GetActionWindowQuery) (domaindecision.ActionWindowResult, error)
 }
 
 type MetricApplication interface {
-	CalculateNeighborhood(ctx context.Context, neighborhoodID string) error
+	CalculateCollectionRun(ctx context.Context, command appmetric.CalculateCollectionRunCommand) error
 }
 
 type MetricTaskEnqueuer interface {
-	EnqueueMetricCalculateNeighborhood(ctx context.Context, neighborhoodID string, sourceID string) error
+	EnqueueMetricCalculateNeighborhood(ctx context.Context, neighborhoodID string, collectionRunID string, sourceID string) error
 }
 
 var runMigrations = migraterunner.Run
@@ -160,7 +172,7 @@ func runScheduler(ctx context.Context, cfg config.Config, log zerolog.Logger, rt
 		interval = time.Hour
 	}
 
-	if err := enqueueWatchlistMetricJobs(ctx, rt.neighborhood, rt.enqueuer, log); err != nil {
+	if err := enqueueMetricRepairJobs(ctx, rt.collection, rt.enqueuer, log); err != nil {
 		return err
 	}
 
@@ -172,26 +184,30 @@ func runScheduler(ctx context.Context, cfg config.Config, log zerolog.Logger, rt
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := enqueueWatchlistMetricJobs(ctx, rt.neighborhood, rt.enqueuer, log); err != nil {
+			if err := enqueueMetricRepairJobs(ctx, rt.collection, rt.enqueuer, log); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func enqueueWatchlistMetricJobs(ctx context.Context, neighborhoodApp NeighborhoodApplication, enqueuer MetricTaskEnqueuer, log zerolog.Logger) error {
-	neighborhoodIDs, err := neighborhoodApp.ListWatchlistNeighborhoodIDs(ctx, appneighborhood.ListWatchlistNeighborhoodIDsQuery{})
+func enqueueMetricRepairJobs(ctx context.Context, collectionApp CollectionApplication, enqueuer MetricTaskEnqueuer, log zerolog.Logger) error {
+	candidates, err := collectionApp.ListMetricRefreshCandidates(ctx, appcollection.ListMetricRefreshCandidatesQuery{
+		UpdatedBefore: time.Now().UTC().Add(-schedulerMetricRepairGracePeriod),
+		Limit:         schedulerMetricRepairBatchSize,
+	})
 	if err != nil {
 		return err
 	}
 
-	for _, neighborhoodID := range neighborhoodIDs {
+	for _, candidate := range candidates {
 		log.Info().
 			Str("task_type", appqueue.TypeMetricCalculateNeighborhood).
 			Str("source_id", schedulerSourceID).
-			Str("neighborhood_id", neighborhoodID).
-			Msg("enqueueing metric calculation")
-		if err := enqueuer.EnqueueMetricCalculateNeighborhood(ctx, neighborhoodID, schedulerSourceID); err != nil {
+			Str("collection_run_id", candidate.CollectionRunID).
+			Str("neighborhood_id", candidate.NeighborhoodID).
+			Msg("enqueueing metric repair")
+		if err := enqueuer.EnqueueMetricCalculateNeighborhood(ctx, candidate.NeighborhoodID, candidate.CollectionRunID, schedulerSourceID); err != nil {
 			return err
 		}
 	}
@@ -199,15 +215,19 @@ func enqueueWatchlistMetricJobs(ctx context.Context, neighborhoodApp Neighborhoo
 }
 
 func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger, rt *runtime) error {
-	engine := router.New(router.Dependencies{
+	engine, err := router.New(router.Dependencies{
 		Log:                     log,
 		StaticFS:                webembed.Embedded(),
 		CapacityApplication:     rt.capacity,
 		NeighborhoodApplication: rt.neighborhood,
 		CollectionApplication:   rt.collection,
+		DecisionApplication:     rt.decision,
 		AccessToken:             cfg.AccessToken,
 		ReadinessChecker:        rt.readiness,
 	})
+	if err != nil {
+		return err
+	}
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -220,18 +240,18 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger, r
 		errCh <- listenAndServe(server)
 	}()
 
-	var err error
+	var serveErr error
 	select {
-	case err = <-errCh:
+	case serveErr = <-errCh:
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = server.Shutdown(shutdownCtx)
 		cancel()
-		err = <-errCh
+		serveErr = <-errCh
 	}
-	if errors.Is(err, http.ErrServerClosed) {
+	if errors.Is(serveErr, http.ErrServerClosed) {
 		return nil
 	}
 
-	return err
+	return serveErr
 }

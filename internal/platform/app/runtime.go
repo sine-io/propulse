@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
+	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appmetric "github.com/sine-io/propulse/internal/application/metric"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
@@ -33,6 +34,7 @@ type runtime struct {
 	capacity     CapacityApplication
 	neighborhood NeighborhoodApplication
 	collection   CollectionApplication
+	decision     DecisionApplication
 	metric       MetricApplication
 	enqueuer     MetricTaskEnqueuer
 	readiness    router.ReadinessChecker
@@ -50,15 +52,11 @@ var openQueueClient = func(addr string) (MetricTaskEnqueuer, io.Closer, error) {
 	client := infrastructurequeue.NewClient(addr)
 	return client, client, nil
 }
-var seedDemoDataFunc = func(ctx context.Context, repo *postgresgorm.NeighborhoodRepository) error {
-	return repo.SeedDemoData(ctx)
-}
-
 var closeSQLDB = (*sql.DB).Close
 var closePGXPool = (*pgxpool.Pool).Close
 var closeRedisClient = (*redisclient.Client).Close
 
-func openRuntime(ctx context.Context, cfg config.Config, log zerolog.Logger) (*runtime, error) {
+func openRuntime(ctx context.Context, cfg config.Config, _ zerolog.Logger) (*runtime, error) {
 	rt := &runtime{}
 
 	gormDB, sqlDB, err := openPostgres(cfg.DatabaseURL)
@@ -81,7 +79,7 @@ func openRuntime(ctx context.Context, cfg config.Config, log zerolog.Logger) (*r
 		return nil, err
 	}
 	rt.redis = redisClient
-	rt.readiness = NewReadinessChecker(
+	rt.readiness = newReadinessChecker(
 		rt.sqlDB,
 		rt.pgxPool,
 		infrastructureredis.NewPingClient(rt.redis),
@@ -104,15 +102,8 @@ func openRuntime(ctx context.Context, cfg config.Config, log zerolog.Logger) (*r
 	rt.capacity = appcapacity.NewService(capacityRepo, time.Now, nil)
 	rt.metric = appmetric.NewService(metricRepo)
 	rt.neighborhood = appneighborhood.NewService(neighborhoodRepo)
-	rt.collection = appcollection.NewService(collectionRepo, time.Now, nil, rt.metric)
-
-	if cfg.SeedDemoData {
-		if err := seedDemoDataFunc(ctx, neighborhoodRepo); err != nil {
-			_ = rt.Close()
-			return nil, err
-		}
-		log.Info().Msg("seeded demo neighborhood data")
-	}
+	rt.collection = appcollection.NewServiceWithMetricRefresh(collectionRepo, time.Now, nil, rt.metric, rt.enqueuer)
+	rt.decision = appdecision.NewService(rt.capacity, rt.neighborhood)
 
 	return rt, nil
 }

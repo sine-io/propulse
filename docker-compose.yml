@@ -9,7 +9,6 @@ services:
       PROPULSE_DATABASE_URL: postgres://propulse:propulse@postgres:5432/propulse?sslmode=disable
       PROPULSE_REDIS_ADDR: redis:6379
       PROPULSE_HTTP_ADDR: :8080
-      PROPULSE_SEED_DEMO_DATA: "true"
       PROPULSE_ACCESS_TOKEN: local-access-token
     ports:
       - "8317:8080"
@@ -27,7 +26,6 @@ services:
       PROPULSE_DATABASE_URL: postgres://propulse:propulse@postgres:5432/propulse?sslmode=disable
       PROPULSE_REDIS_ADDR: redis:6379
       PROPULSE_HTTP_ADDR: :8080
-      PROPULSE_SEED_DEMO_DATA: "true"
       PROPULSE_ACCESS_TOKEN: local-access-token
     depends_on:
       postgres:
@@ -45,7 +43,6 @@ services:
       PROPULSE_DATABASE_URL: postgres://propulse:propulse@postgres:5432/propulse?sslmode=disable
       PROPULSE_REDIS_ADDR: redis:6379
       PROPULSE_HTTP_ADDR: :8080
-      PROPULSE_SEED_DEMO_DATA: "true"
       PROPULSE_ACCESS_TOKEN: local-access-token
     depends_on:
       postgres:

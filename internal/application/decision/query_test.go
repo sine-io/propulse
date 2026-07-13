@@ -152,6 +152,30 @@ func TestGetActionWindowReturnsMetricRequiredWhenLatestMetricIsMissing(t *testin
 	}
 }
 
+func TestGetActionWindowWaitsWhenMarketQualityCannotSupportRecommendation(t *testing.T) {
+	for _, state := range []domainneighborhood.MarketQualityState{
+		domainneighborhood.MarketQualityLowConfidence,
+		domainneighborhood.MarketQualityInsufficientData,
+	} {
+		t.Run(string(state), func(t *testing.T) {
+			result, err := NewService(&stubCapacityReader{record: appcapacity.CalculationRecord{
+				Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
+			}}, &stubNeighborhoodReader{
+				watchlist: []appneighborhood.WatchlistItemSummary{{NeighborhoodID: "neighborhood_1"}},
+				metric: appneighborhood.MetricWithSignal{Signal: domainneighborhood.SignalResult{
+					Status: domainneighborhood.NeighborhoodStatusBargain, QualityState: state,
+				}},
+			}).GetActionWindow(context.Background(), GetActionWindowQuery{})
+			if err != nil {
+				t.Fatalf("GetActionWindow() error = %v", err)
+			}
+			if result.Action != domaindecision.ActionWait || result.Confidence != domaindecision.ConfidenceLow {
+				t.Fatalf("result = %#v, want low-confidence wait", result)
+			}
+		})
+	}
+}
+
 type stubCapacityReader struct {
 	userID string
 	record appcapacity.CalculationRecord

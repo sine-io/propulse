@@ -16,8 +16,10 @@ import (
 	"github.com/rs/zerolog"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
+	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
+	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 )
@@ -198,6 +200,7 @@ func TestRunWaitsForInFlightHTTPHandlerBeforeClosingRuntime(t *testing.T) {
 		capacity:     capacity,
 		neighborhood: &stubAppNeighborhoodApplication{},
 		collection:   &stubAppCollectionApplication{},
+		decision:     &stubAppDecisionApplication{},
 		queueClient:  closeSignalCloser{closed: runtimeClosed},
 	}
 	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
@@ -231,7 +234,7 @@ func TestRunWaitsForInFlightHTTPHandlerBeforeClosingRuntime(t *testing.T) {
 			requestErr <- err
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusCreated {
 			requestErr <- fmt.Errorf("response status = %d, want %d", resp.StatusCode, http.StatusCreated)
 			return
@@ -310,12 +313,15 @@ func TestRunSchedulerModeStartsOnlyScheduler(t *testing.T) {
 	}
 }
 
-func TestRunSchedulerEnqueuesMetricJobsForWatchlist(t *testing.T) {
-	neighborhoodApp := &stubAppNeighborhoodApplication{
-		watchlistNeighborhoodIDs: []string{"neighborhood_1", "neighborhood_2"},
+func TestRunSchedulerEnqueuesMetricRepairJobsForStaleRuns(t *testing.T) {
+	collectionApp := &stubAppCollectionApplication{
+		refreshCandidates: []appcollection.MetricRefreshCandidate{
+			{CollectionRunID: "run_1", NeighborhoodID: "neighborhood_1"},
+			{CollectionRunID: "run_2", NeighborhoodID: "neighborhood_2"},
+		},
 	}
 	enqueuer := &stubMetricTaskEnqueuer{}
-	rt := &runtime{neighborhood: neighborhoodApp, enqueuer: enqueuer}
+	rt := &runtime{collection: collectionApp, enqueuer: enqueuer}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -327,8 +333,8 @@ func TestRunSchedulerEnqueuesMetricJobsForWatchlist(t *testing.T) {
 	for enqueuer.count() < 2 {
 		select {
 		case <-deadline:
-			neighborhoodIDs, _ := enqueuer.snapshot()
-			t.Fatalf("scheduler did not enqueue watchlist jobs; got %#v", neighborhoodIDs)
+			neighborhoodIDs, collectionRunIDs, _ := enqueuer.snapshot()
+			t.Fatalf("scheduler did not enqueue metric repairs; got neighborhoods=%#v runs=%#v", neighborhoodIDs, collectionRunIDs)
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -338,10 +344,11 @@ func TestRunSchedulerEnqueuesMetricJobsForWatchlist(t *testing.T) {
 		t.Fatalf("runScheduler() error = %v", err)
 	}
 
-	want := []string{"neighborhood_1", "neighborhood_2"}
-	neighborhoodIDs, sourceIDs := enqueuer.snapshot()
-	if fmt.Sprint(neighborhoodIDs) != fmt.Sprint(want) {
-		t.Fatalf("enqueued neighborhood IDs = %#v, want %#v", neighborhoodIDs, want)
+	wantNeighborhoods := []string{"neighborhood_1", "neighborhood_2"}
+	wantRuns := []string{"run_1", "run_2"}
+	neighborhoodIDs, collectionRunIDs, sourceIDs := enqueuer.snapshot()
+	if fmt.Sprint(neighborhoodIDs) != fmt.Sprint(wantNeighborhoods) || fmt.Sprint(collectionRunIDs) != fmt.Sprint(wantRuns) {
+		t.Fatalf("enqueued jobs = neighborhoods %#v runs %#v", neighborhoodIDs, collectionRunIDs)
 	}
 	for _, sourceID := range sourceIDs {
 		if sourceID != schedulerSourceID {
@@ -350,27 +357,32 @@ func TestRunSchedulerEnqueuesMetricJobsForWatchlist(t *testing.T) {
 	}
 }
 
-func TestRunSchedulerUsesDistinctWatchlistNeighborhoodIDs(t *testing.T) {
-	neighborhoodApp := &stubAppNeighborhoodApplication{
-		watchlistNeighborhoodIDs: []string{"neighborhood_1", "neighborhood_2"},
+func TestEnqueueMetricRepairJobsUsesBoundedGracePeriodQuery(t *testing.T) {
+	collectionApp := &stubAppCollectionApplication{
+		refreshCandidates: []appcollection.MetricRefreshCandidate{
+			{CollectionRunID: "run_1", NeighborhoodID: "neighborhood_1"},
+		},
 	}
 	enqueuer := &stubMetricTaskEnqueuer{}
+	startedAt := time.Now().UTC()
 
-	if err := enqueueWatchlistMetricJobs(context.Background(), neighborhoodApp, enqueuer, zerolog.New(io.Discard)); err != nil {
-		t.Fatalf("enqueueWatchlistMetricJobs() error = %v", err)
+	if err := enqueueMetricRepairJobs(context.Background(), collectionApp, enqueuer, zerolog.New(io.Discard)); err != nil {
+		t.Fatalf("enqueueMetricRepairJobs() error = %v", err)
 	}
 
-	if neighborhoodApp.listCalled {
-		t.Fatal("scheduler used user-scoped ListWatchlist instead of distinct watchlist neighborhood IDs")
+	if !collectionApp.refreshCalled {
+		t.Fatal("scheduler did not query metric refresh candidates")
 	}
-	if !neighborhoodApp.listNeighborhoodIDsCalled {
-		t.Fatal("scheduler did not list distinct watchlist neighborhood IDs")
+	if collectionApp.refreshQuery.Limit != schedulerMetricRepairBatchSize {
+		t.Fatalf("candidate limit = %d, want %d", collectionApp.refreshQuery.Limit, schedulerMetricRepairBatchSize)
 	}
-
-	want := []string{"neighborhood_1", "neighborhood_2"}
-	neighborhoodIDs, _ := enqueuer.snapshot()
-	if fmt.Sprint(neighborhoodIDs) != fmt.Sprint(want) {
-		t.Fatalf("enqueued neighborhood IDs = %#v, want %#v", neighborhoodIDs, want)
+	wantBefore := startedAt.Add(-schedulerMetricRepairGracePeriod)
+	if collectionApp.refreshQuery.UpdatedBefore.Before(wantBefore) || collectionApp.refreshQuery.UpdatedBefore.After(time.Now().UTC().Add(-schedulerMetricRepairGracePeriod)) {
+		t.Fatalf("candidate cutoff = %v, want approximately %v", collectionApp.refreshQuery.UpdatedBefore, wantBefore)
+	}
+	_, collectionRunIDs, _ := enqueuer.snapshot()
+	if fmt.Sprint(collectionRunIDs) != fmt.Sprint([]string{"run_1"}) {
+		t.Fatalf("enqueued collection run IDs = %#v", collectionRunIDs)
 	}
 }
 
@@ -429,6 +441,7 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 			capacity:     service,
 			neighborhood: &stubAppNeighborhoodApplication{},
 			collection:   &stubAppCollectionApplication{},
+			decision:     &stubAppDecisionApplication{},
 			queueClient:  noopCloser{},
 		}, nil
 	}
@@ -501,6 +514,7 @@ func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 			capacity:     &stubAppCapacityApplication{},
 			neighborhood: service,
 			collection:   &stubAppCollectionApplication{},
+			decision:     &stubAppDecisionApplication{},
 			queueClient:  noopCloser{},
 		}, nil
 	}
@@ -544,9 +558,11 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 	}()
 
 	service := &stubAppCollectionApplication{
-		result: appcollection.ImportManualListingsResult{
-			CollectionRunID:       "collection_run_1",
-			ImportedSnapshotCount: 1,
+		result: appcollection.ImportCollectionRunResult{
+			Run: appcollection.CollectionRun{
+				ID: "33333333-3333-3333-3333-333333333333",
+			},
+			ListingCount: 1,
 		},
 	}
 
@@ -558,13 +574,14 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 			capacity:     &stubAppCapacityApplication{},
 			neighborhood: &stubAppNeighborhoodApplication{},
 			collection:   service,
+			decision:     &stubAppDecisionApplication{},
 			queueClient:  noopCloser{},
 		}, nil
 	}
 
 	listenAndServe = func(server *http.Server) error {
-		body := `{"sourceType":"manual_json","sourceRef":"demo-weekly-import","neighborhoodId":"neighborhood_1","records":[{"listingPrice":520,"daysOnMarket":0}]}`
-		req, err := http.NewRequest(http.MethodPost, "/admin/api/imports", bytes.NewBufferString(body))
+		body := `{"dataSourceId":"11111111-1111-1111-1111-111111111111","neighborhoodId":"22222222-2222-2222-2222-222222222222","sourceRef":"demo-weekly-import","collectedAt":"2026-07-13T10:00:00Z","coverage":"full","records":[{"recordType":"listing","sourceRecordId":"listing-1","layout":"三房","areaSqm":89,"listingPrice":520,"daysOnMarket":0,"status":"active"}]}`
+		req, err := http.NewRequest(http.MethodPost, "/admin/api/imports/json", bytes.NewBufferString(body))
 		if err != nil {
 			t.Fatalf("http.NewRequest() error = %v", err)
 		}
@@ -599,7 +616,13 @@ func TestRunHTTPServerPassesRuntimeReadinessCheckerToRouter(t *testing.T) {
 	defer func() { listenAndServe = originalListenAndServe }()
 
 	checker := &appReadinessStub{}
-	rt := &runtime{readiness: checker}
+	rt := &runtime{
+		capacity:     &stubAppCapacityApplication{},
+		neighborhood: &stubAppNeighborhoodApplication{},
+		collection:   &stubAppCollectionApplication{},
+		decision:     &stubAppDecisionApplication{},
+		readiness:    checker,
+	}
 	listenAndServe = func(server *http.Server) error {
 		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 		rec := httptest.NewRecorder()
@@ -635,6 +658,7 @@ func testRunStartsHTTPServer(t *testing.T, mode string) {
 			capacity:     &stubAppCapacityApplication{},
 			neighborhood: &stubAppNeighborhoodApplication{},
 			collection:   &stubAppCollectionApplication{},
+			decision:     &stubAppDecisionApplication{},
 			queueClient:  noopCloser{},
 		}, nil
 	}
@@ -747,10 +771,7 @@ func testRunModeComposition(t *testing.T, mode string) runModeCalls {
 	}()
 
 	deadline := time.After(2 * time.Second)
-	for {
-		if modeStarted(mode, calls.snapshot()) {
-			break
-		}
+	for !modeStarted(mode, calls.snapshot()) {
 		select {
 		case <-deadline:
 			t.Fatalf("Run(%q) did not start expected components; calls = %+v", mode, calls.snapshot())
@@ -788,7 +809,11 @@ func freeLocalAddr(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("net.Listen error = %v", err)
 	}
-	defer ln.Close()
+	defer func() {
+		if err := ln.Close(); err != nil {
+			t.Errorf("listener Close() error = %v", err)
+		}
+	}()
 
 	return ln.Addr().String()
 }
@@ -862,10 +887,8 @@ func (s *stubAppCapacityApplication) LatestCalculation(_ context.Context, _ appc
 }
 
 type stubAppNeighborhoodApplication struct {
-	listCalled                bool
-	listNeighborhoodIDsCalled bool
-	watchlist                 []appneighborhood.WatchlistItemSummary
-	watchlistNeighborhoodIDs  []string
+	listCalled bool
+	watchlist  []appneighborhood.WatchlistItemSummary
 }
 
 func (s *stubAppNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
@@ -889,26 +912,26 @@ func (s *stubAppNeighborhoodApplication) ListWatchlist(_ context.Context, _ appn
 	return s.watchlist, nil
 }
 
-func (s *stubAppNeighborhoodApplication) ListWatchlistNeighborhoodIDs(_ context.Context, _ appneighborhood.ListWatchlistNeighborhoodIDsQuery) ([]string, error) {
-	s.listNeighborhoodIDsCalled = true
-	return s.watchlistNeighborhoodIDs, nil
-}
-
 type stubAppCollectionApplication struct {
-	importCalled bool
-	result       appcollection.ImportManualListingsResult
+	importCalled      bool
+	result            appcollection.ImportCollectionRunResult
+	refreshCalled     bool
+	refreshQuery      appcollection.ListMetricRefreshCandidatesQuery
+	refreshCandidates []appcollection.MetricRefreshCandidate
 }
 
 type stubMetricTaskEnqueuer struct {
-	mu              sync.Mutex
-	neighborhoodIDs []string
-	sourceIDs       []string
+	mu               sync.Mutex
+	neighborhoodIDs  []string
+	collectionRunIDs []string
+	sourceIDs        []string
 }
 
-func (s *stubMetricTaskEnqueuer) EnqueueMetricCalculateNeighborhood(_ context.Context, neighborhoodID string, sourceID string) error {
+func (s *stubMetricTaskEnqueuer) EnqueueMetricCalculateNeighborhood(_ context.Context, neighborhoodID string, collectionRunID string, sourceID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.neighborhoodIDs = append(s.neighborhoodIDs, neighborhoodID)
+	s.collectionRunIDs = append(s.collectionRunIDs, collectionRunID)
 	s.sourceIDs = append(s.sourceIDs, sourceID)
 	return nil
 }
@@ -919,15 +942,39 @@ func (s *stubMetricTaskEnqueuer) count() int {
 	return len(s.neighborhoodIDs)
 }
 
-func (s *stubMetricTaskEnqueuer) snapshot() ([]string, []string) {
+func (s *stubMetricTaskEnqueuer) snapshot() ([]string, []string, []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]string(nil), s.neighborhoodIDs...), append([]string(nil), s.sourceIDs...)
+	return append([]string(nil), s.neighborhoodIDs...), append([]string(nil), s.collectionRunIDs...), append([]string(nil), s.sourceIDs...)
 }
 
-func (s *stubAppCollectionApplication) ImportManualListings(_ context.Context, _ appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error) {
+func (s *stubAppCollectionApplication) CreateDataSource(_ context.Context, command appcollection.CreateDataSourceCommand) (appcollection.DataSource, error) {
+	return appcollection.DataSource{Name: command.Name, SourceType: command.SourceType, City: command.City}, nil
+}
+
+func (s *stubAppCollectionApplication) ListDataSources(context.Context, appcollection.ListDataSourcesQuery) ([]appcollection.DataSource, error) {
+	return []appcollection.DataSource{}, nil
+}
+
+func (s *stubAppCollectionApplication) ImportCollectionRun(_ context.Context, _ appcollection.ImportCollectionRunCommand) (appcollection.ImportCollectionRunResult, error) {
 	s.importCalled = true
 	return s.result, nil
+}
+
+func (s *stubAppCollectionApplication) GetCollectionRun(context.Context, appcollection.GetCollectionRunQuery) (appcollection.CollectionRunDetail, error) {
+	return appcollection.CollectionRunDetail{}, nil
+}
+
+func (s *stubAppCollectionApplication) ListMetricRefreshCandidates(_ context.Context, query appcollection.ListMetricRefreshCandidatesQuery) ([]appcollection.MetricRefreshCandidate, error) {
+	s.refreshCalled = true
+	s.refreshQuery = query
+	return s.refreshCandidates, nil
+}
+
+type stubAppDecisionApplication struct{}
+
+func (*stubAppDecisionApplication) GetActionWindow(context.Context, appdecision.GetActionWindowQuery) (domaindecision.ActionWindowResult, error) {
+	return domaindecision.ActionWindowResult{}, nil
 }
 
 type noopCloser struct{}

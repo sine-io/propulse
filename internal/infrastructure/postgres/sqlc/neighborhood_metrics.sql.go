@@ -11,61 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const aggregateListingSnapshots = `-- name: AggregateListingSnapshots :one
-SELECT
-  COUNT(*)::int AS listed_homes,
-  COUNT(*) FILTER (WHERE price_cut)::int AS price_cut_homes,
-  COALESCE(AVG(days_on_market), 0)::numeric AS avg_days_on_market,
-  COALESCE(MIN(listing_price), 0)::numeric AS listing_price_min,
-  COALESCE(MAX(listing_price), 0)::numeric AS listing_price_max,
-  COALESCE(MIN(transaction_price), 0)::numeric AS transaction_price_min,
-  COALESCE(MAX(transaction_price), 0)::numeric AS transaction_price_max,
-  COUNT(*) FILTER (WHERE listing_snapshots.layout = $1)::int AS target_layout_supply
-FROM listing_snapshots
-WHERE listing_snapshots.neighborhood_id = $2
-  AND collection_run_id = (
-    SELECT collection_run_id
-    FROM listing_snapshots
-    WHERE listing_snapshots.neighborhood_id = $2
-      AND collection_run_id IS NOT NULL
-    GROUP BY collection_run_id
-    ORDER BY MAX(captured_at) DESC, collection_run_id DESC
-    LIMIT 1
-  )
-`
-
-type AggregateListingSnapshotsParams struct {
-	TargetLayout   string
-	NeighborhoodID pgtype.UUID
-}
-
-type AggregateListingSnapshotsRow struct {
-	ListedHomes         int32
-	PriceCutHomes       int32
-	AvgDaysOnMarket     pgtype.Numeric
-	ListingPriceMin     pgtype.Numeric
-	ListingPriceMax     pgtype.Numeric
-	TransactionPriceMin pgtype.Numeric
-	TransactionPriceMax pgtype.Numeric
-	TargetLayoutSupply  int32
-}
-
-func (q *Queries) AggregateListingSnapshots(ctx context.Context, arg AggregateListingSnapshotsParams) (AggregateListingSnapshotsRow, error) {
-	row := q.db.QueryRow(ctx, aggregateListingSnapshots, arg.TargetLayout, arg.NeighborhoodID)
-	var i AggregateListingSnapshotsRow
-	err := row.Scan(
-		&i.ListedHomes,
-		&i.PriceCutHomes,
-		&i.AvgDaysOnMarket,
-		&i.ListingPriceMin,
-		&i.ListingPriceMax,
-		&i.TransactionPriceMin,
-		&i.TransactionPriceMax,
-		&i.TargetLayoutSupply,
-	)
-	return i, err
-}
-
 const aggregateMarketObservations = `-- name: AggregateMarketObservations :one
 WITH trigger_run AS (
   SELECT id, data_source_id, neighborhood_id, collected_at, coverage
@@ -315,80 +260,6 @@ func (q *Queries) GetCompletedCollectionRun(ctx context.Context, id pgtype.UUID)
 		&i.CollectedAt,
 		&i.Coverage,
 		&i.MetricStatus,
-	)
-	return i, err
-}
-
-const insertNeighborhoodMetric = `-- name: InsertNeighborhoodMetric :one
-INSERT INTO neighborhood_metrics (
-  neighborhood_id,
-  listed_homes,
-  price_cut_homes,
-  avg_days_on_market,
-  listing_price_min,
-  listing_price_max,
-  transaction_price_min,
-  transaction_price_max,
-  transaction_momentum,
-  target_layout_supply
-) VALUES (
-  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
-)
-RETURNING id, neighborhood_id, listed_homes, price_cut_homes, avg_days_on_market, listing_price_min, listing_price_max, transaction_price_min, transaction_price_max, transaction_momentum, target_layout_supply, calculated_at, collection_run_id, inventory_collection_run_id, source_ids, listing_sample_count, transaction_sample_count, listed_homes_change_pct, coverage, freshness, quality_state, latest_observed_at, inventory_collected_at, quality_warnings
-`
-
-type InsertNeighborhoodMetricParams struct {
-	NeighborhoodID      pgtype.UUID
-	ListedHomes         int32
-	PriceCutHomes       int32
-	AvgDaysOnMarket     pgtype.Numeric
-	ListingPriceMin     pgtype.Numeric
-	ListingPriceMax     pgtype.Numeric
-	TransactionPriceMin pgtype.Numeric
-	TransactionPriceMax pgtype.Numeric
-	TransactionMomentum string
-	TargetLayoutSupply  int32
-}
-
-func (q *Queries) InsertNeighborhoodMetric(ctx context.Context, arg InsertNeighborhoodMetricParams) (NeighborhoodMetric, error) {
-	row := q.db.QueryRow(ctx, insertNeighborhoodMetric,
-		arg.NeighborhoodID,
-		arg.ListedHomes,
-		arg.PriceCutHomes,
-		arg.AvgDaysOnMarket,
-		arg.ListingPriceMin,
-		arg.ListingPriceMax,
-		arg.TransactionPriceMin,
-		arg.TransactionPriceMax,
-		arg.TransactionMomentum,
-		arg.TargetLayoutSupply,
-	)
-	var i NeighborhoodMetric
-	err := row.Scan(
-		&i.ID,
-		&i.NeighborhoodID,
-		&i.ListedHomes,
-		&i.PriceCutHomes,
-		&i.AvgDaysOnMarket,
-		&i.ListingPriceMin,
-		&i.ListingPriceMax,
-		&i.TransactionPriceMin,
-		&i.TransactionPriceMax,
-		&i.TransactionMomentum,
-		&i.TargetLayoutSupply,
-		&i.CalculatedAt,
-		&i.CollectionRunID,
-		&i.InventoryCollectionRunID,
-		&i.SourceIds,
-		&i.ListingSampleCount,
-		&i.TransactionSampleCount,
-		&i.ListedHomesChangePct,
-		&i.Coverage,
-		&i.Freshness,
-		&i.QualityState,
-		&i.LatestObservedAt,
-		&i.InventoryCollectedAt,
-		&i.QualityWarnings,
 	)
 	return i, err
 }
@@ -647,9 +518,9 @@ type UpsertNeighborhoodMetricParams struct {
 	ListingSampleCount       int32
 	TransactionSampleCount   int32
 	ListedHomesChangePct     pgtype.Numeric
-	Coverage                 pgtype.Text
-	Freshness                pgtype.Text
-	QualityState             pgtype.Text
+	Coverage                 string
+	Freshness                string
+	QualityState             string
 	LatestObservedAt         pgtype.Timestamptz
 	InventoryCollectedAt     pgtype.Timestamptz
 	QualityWarnings          []byte

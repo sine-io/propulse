@@ -21,7 +21,9 @@ func TestE2ESmoke(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET %s failed: %v", path, err)
 		}
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			t.Fatalf("close GET %s response: %v", path, err)
+		}
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET %s status = %d, want 200", path, resp.StatusCode)
 		}
@@ -31,7 +33,9 @@ func TestE2ESmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unauthenticated watchlist request failed: %v", err)
 	}
-	unauthorized.Body.Close()
+	if err := unauthorized.Body.Close(); err != nil {
+		t.Fatalf("close unauthenticated response: %v", err)
+	}
 	if unauthorized.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated watchlist status = %d, want 401", unauthorized.StatusCode)
 	}
@@ -45,7 +49,9 @@ func TestE2ESmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authorized watchlist request failed: %v", err)
 	}
-	authorized.Body.Close()
+	if err := authorized.Body.Close(); err != nil {
+		t.Fatalf("close authenticated response: %v", err)
+	}
 	if authorized.StatusCode != http.StatusOK {
 		t.Fatalf("authorized watchlist status = %d, want 200", authorized.StatusCode)
 	}

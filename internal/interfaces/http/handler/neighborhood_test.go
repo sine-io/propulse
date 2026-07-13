@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -360,19 +359,19 @@ type stubNeighborhoodApplication struct {
 	watchlistErr          error
 }
 
-func (s *stubNeighborhoodApplication) CreateNeighborhood(_ context.Context, command appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
+func (s *stubNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
 	s.createCalled = true
 	return s.createNeighborhood, s.createNeighborhoodErr
 }
 
-func (s *stubNeighborhoodApplication) GetNeighborhood(_ context.Context, query appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error) {
+func (s *stubNeighborhoodApplication) GetNeighborhood(_ context.Context, _ appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error) {
 	if s.getNeighborhoodErr != nil {
 		return appneighborhood.Neighborhood{}, s.getNeighborhoodErr
 	}
 	return s.getNeighborhood, nil
 }
 
-func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {
+func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, _ appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {
 	if s.latestMetricErr != nil {
 		return appneighborhood.MetricWithSignal{}, s.latestMetricErr
 	}
@@ -388,11 +387,9 @@ func (s *stubNeighborhoodApplication) AddWatchlistItem(_ context.Context, comman
 	return s.addWatchlistItem, nil
 }
 
-func (s *stubNeighborhoodApplication) ListWatchlist(_ context.Context, query appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {
+func (s *stubNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {
 	if s.watchlistErr != nil {
 		return nil, s.watchlistErr
 	}
 	return s.watchlist, nil
 }
-
-var errNeighborhoodBoom = errors.New("boom")

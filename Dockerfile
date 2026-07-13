@@ -37,9 +37,13 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/propulse ./cmd/propulse
 
 FROM alpine:3.22 AS runner
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates \
+    && addgroup -S propulse \
+    && adduser -S -G propulse propulse
 
 COPY --from=go-builder /out/propulse /usr/local/bin/propulse
+
+USER propulse
 
 EXPOSE 8080
 

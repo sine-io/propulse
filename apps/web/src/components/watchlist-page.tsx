@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Bell, CheckCircle, Eye } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { getWatchlist, type WatchlistItem } from "@/lib/api-client";
+import { ApiError, getWatchlist, type WatchlistItem } from "@/lib/api-client";
 import { StatusBadge } from "./status-badge";
 
 type CommunityView = {
@@ -21,52 +21,24 @@ type CommunityView = {
   transaction: string;
 };
 
-const fallbackCommunities: CommunityView[] = [
-  {
-    advice: "约看 500-530 万三房，尝试砍价，窗口期已打开。",
-    cuts: "11套",
-    emphasized: true,
-    icon: "check",
-    listed: "42套",
-    listedDelta: "(+8)",
-    meta: "滨江核心 · 三房",
-    name: "青枫花园",
-    status: "适合砍价",
-    statusTone: "emerald",
-    transaction: "偏弱",
-  },
-  {
-    advice: "挂牌价无明显松动，且超出安全预算，建议暂缓约看。",
-    cuts: "2套",
-    emphasized: false,
-    icon: "eye",
-    listed: "28套",
-    listedDelta: "(-)",
-    meta: "城东新区 · 四房",
-    name: "云澜府",
-    status: "继续观察",
-    statusTone: "amber",
-    transaction: "平稳",
-  },
-];
-
-const fallbackStats = {
-  bargain: 1,
-  hard: 2,
-  priceCuts: 2,
-  total: 5,
+const emptyStats = {
+	bargain: 0,
+	hard: 0,
+	priceCuts: 0,
+	total: 0,
 };
 
 export function WatchlistPage() {
-  const [communities, setCommunities] =
-    useState<CommunityView[]>(fallbackCommunities);
-  const [stats, setStats] = useState(fallbackStats);
+	const [communities, setCommunities] = useState<CommunityView[]>([]);
+	const [stats, setStats] = useState(emptyStats);
+	const [errorMessage, setErrorMessage] = useState<string>();
 
   useEffect(() => {
     const controller = new AbortController();
 
     getWatchlist(controller.signal)
-      .then((response) => {
+		.then((response) => {
+			setErrorMessage(undefined);
         const nextCommunities = response.items.map(toCommunityView);
         setCommunities(nextCommunities);
         setStats({
@@ -80,8 +52,13 @@ export function WatchlistPage() {
       })
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setCommunities(fallbackCommunities);
-          setStats(fallbackStats);
+				setCommunities([]);
+				setStats(emptyStats);
+				setErrorMessage(
+					error instanceof ApiError && error.status === 401
+						? "个人空间尚未解锁。"
+						: "观察池暂时无法读取。",
+				);
         }
       });
 
@@ -90,7 +67,7 @@ export function WatchlistPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <section className="mb-8 flex items-end justify-between">
+		<section className="mb-8 flex items-end justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">我的观察池</h1>
           <p className="mt-2 text-slate-500">每周跟踪，不错过买方窗口期。</p>
@@ -101,7 +78,13 @@ export function WatchlistPage() {
         >
           导出本周报表
         </Link>
-      </section>
+		</section>
+
+		{errorMessage ? (
+			<p role="status" className="mb-6 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+				{errorMessage}
+			</p>
+		) : null}
 
       <section className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
         {[

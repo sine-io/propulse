@@ -94,26 +94,6 @@ CREATE TABLE transaction_observations (
   UNIQUE (collection_run_id, source_record_id)
 );
 
-CREATE TABLE raw_collection_records (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_type TEXT NOT NULL,
-  source_ref TEXT NOT NULL,
-  payload JSONB NOT NULL,
-  collected_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE listing_snapshots (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  collection_run_id UUID NOT NULL REFERENCES raw_collection_records(id) ON DELETE CASCADE,
-  neighborhood_id UUID NOT NULL REFERENCES neighborhoods(id) ON DELETE CASCADE,
-  listing_price NUMERIC(12,2) NOT NULL,
-  transaction_price NUMERIC(12,2),
-  price_cut BOOLEAN NOT NULL DEFAULT false,
-  days_on_market INT NOT NULL DEFAULT 0,
-  layout TEXT NOT NULL DEFAULT '',
-  captured_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 CREATE TABLE neighborhood_metrics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   neighborhood_id UUID NOT NULL REFERENCES neighborhoods(id) ON DELETE CASCADE,
@@ -127,31 +107,25 @@ CREATE TABLE neighborhood_metrics (
   transaction_momentum TEXT NOT NULL,
   target_layout_supply INT NOT NULL,
   calculated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  collection_run_id UUID,
+  collection_run_id UUID NOT NULL,
   inventory_collection_run_id UUID,
   source_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
   listing_sample_count INT NOT NULL DEFAULT 0 CHECK (listing_sample_count >= 0),
   transaction_sample_count INT NOT NULL DEFAULT 0 CHECK (transaction_sample_count >= 0),
   listed_homes_change_pct NUMERIC(8,2),
-  coverage TEXT CHECK (coverage IN ('full', 'partial')),
-  freshness TEXT CHECK (freshness IN ('unknown', 'current', 'stale', 'expired')),
-  quality_state TEXT CHECK (quality_state IN ('sufficient', 'low_confidence', 'insufficient_data')),
-  latest_observed_at TIMESTAMPTZ,
+  coverage TEXT NOT NULL CHECK (coverage IN ('full', 'partial')),
+  freshness TEXT NOT NULL CHECK (freshness IN ('unknown', 'current', 'stale', 'expired')),
+  quality_state TEXT NOT NULL CHECK (quality_state IN ('sufficient', 'low_confidence', 'insufficient_data')),
+  latest_observed_at TIMESTAMPTZ NOT NULL,
   inventory_collected_at TIMESTAMPTZ,
   quality_warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
-  FOREIGN KEY (collection_run_id, neighborhood_id)
+  CONSTRAINT neighborhood_metrics_collection_run_fk FOREIGN KEY (collection_run_id, neighborhood_id)
     REFERENCES collection_runs(id, neighborhood_id) ON DELETE CASCADE,
-  FOREIGN KEY (inventory_collection_run_id, neighborhood_id)
+  CONSTRAINT neighborhood_metrics_inventory_run_fk FOREIGN KEY (inventory_collection_run_id, neighborhood_id)
     REFERENCES collection_runs(id, neighborhood_id)
     ON DELETE SET NULL (inventory_collection_run_id),
-  UNIQUE (collection_run_id)
+  CONSTRAINT neighborhood_metrics_collection_run_unique UNIQUE (collection_run_id)
 );
-
-CREATE INDEX idx_listing_snapshots_neighborhood_captured_at
-  ON listing_snapshots(neighborhood_id, captured_at DESC);
-
-CREATE INDEX idx_listing_snapshots_neighborhood_run_captured_at
-  ON listing_snapshots(neighborhood_id, collection_run_id, captured_at DESC);
 
 CREATE INDEX idx_collection_runs_neighborhood_collected_at
   ON collection_runs(neighborhood_id, collected_at DESC);

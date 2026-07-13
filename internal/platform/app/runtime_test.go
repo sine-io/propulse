@@ -12,7 +12,6 @@ import (
 	redisclient "github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
-	postgresgorm "github.com/sine-io/propulse/internal/infrastructure/postgres/gorm"
 	infrastructureredis "github.com/sine-io/propulse/internal/infrastructure/redis"
 	"gorm.io/gorm"
 )
@@ -61,16 +60,6 @@ func TestOpenRuntimeCleansUpOpenedResourcesOnFailure(t *testing.T) {
 			},
 			wantClosed: []string{"redis", "pgx", "sql"},
 		},
-		{
-			name: "seed",
-			configure: func() {
-				seedDemoDataFunc = func(context.Context, *postgresgorm.NeighborhoodRepository) error {
-					return openErr
-				}
-			},
-			cfg:        config.Config{SeedDemoData: true},
-			wantClosed: []string{"queue", "redis", "pgx", "sql"},
-		},
 	}
 
 	for _, tt := range tests {
@@ -90,9 +79,6 @@ func TestOpenRuntimeCleansUpOpenedResourcesOnFailure(t *testing.T) {
 			openQueueClient = func(string) (MetricTaskEnqueuer, io.Closer, error) {
 				queue := &trackedQueueClient{closer: tracker.closer("queue", nil)}
 				return queue, queue, nil
-			}
-			seedDemoDataFunc = func(context.Context, *postgresgorm.NeighborhoodRepository) error {
-				return nil
 			}
 			closeRedisClient = func(*redisclient.Client) error {
 				return tracker.close("redis", nil)
@@ -140,10 +126,10 @@ func TestRuntimeCloseAttemptsEveryResourceInReverseOrderAndReturnsFirstError(t *
 		redis:       &redisclient.Client{},
 		queueClient: tracker.closer("queue", queueErr),
 	}
-	if err := rt.Close(); err != queueErr {
+	if err := rt.Close(); !errors.Is(err, queueErr) {
 		t.Fatalf("Close() error = %v, want first error %v", err, queueErr)
 	}
-	if err := rt.Close(); err != queueErr {
+	if err := rt.Close(); !errors.Is(err, queueErr) {
 		t.Fatalf("second Close() error = %v, want cached first error %v", err, queueErr)
 	}
 	tracker.assertClosed(t, []string{"queue", "redis", "pgx", "sql"})
@@ -249,7 +235,6 @@ func preserveRuntimeSeams(t *testing.T) {
 	originalOpenPGXPool := openPGXPool
 	originalOpenRedisClient := openRedisClient
 	originalOpenQueueClient := openQueueClient
-	originalSeedDemoData := seedDemoDataFunc
 	originalCloseSQLDB := closeSQLDB
 	originalClosePGXPool := closePGXPool
 	originalCloseRedisClient := closeRedisClient
@@ -258,7 +243,6 @@ func preserveRuntimeSeams(t *testing.T) {
 		openPGXPool = originalOpenPGXPool
 		openRedisClient = originalOpenRedisClient
 		openQueueClient = originalOpenQueueClient
-		seedDemoDataFunc = originalSeedDemoData
 		closeSQLDB = originalCloseSQLDB
 		closePGXPool = originalClosePGXPool
 		closeRedisClient = originalCloseRedisClient
@@ -310,7 +294,7 @@ type trackedQueueClient struct {
 	closer io.Closer
 }
 
-func (*trackedQueueClient) EnqueueMetricCalculateNeighborhood(context.Context, string, string) error {
+func (*trackedQueueClient) EnqueueMetricCalculateNeighborhood(context.Context, string, string, string) error {
 	return nil
 }
 

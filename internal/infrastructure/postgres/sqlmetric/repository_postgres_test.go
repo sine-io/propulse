@@ -93,8 +93,8 @@ func TestRepositoryUpsertNeighborhoodMetricPersistsProvenance(t *testing.T) {
 	neighborhoodID, sourceID := createMetricFixtures(t, ctx, db)
 	run := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC), "full")
 	avg := 22.0
-	min := 500.0
-	max := 650.0
+	minPrice := 500.0
+	maxPrice := 650.0
 	inventoryAt := run.collectedAt
 
 	got, err := repo.UpsertNeighborhoodMetric(ctx, appmetric.MetricSnapshot{
@@ -106,10 +106,10 @@ func TestRepositoryUpsertNeighborhoodMetricPersistsProvenance(t *testing.T) {
 		ListedHomes:              6,
 		PriceCutHomes:            1,
 		AvgDaysOnMarket:          &avg,
-		ListingPriceMin:          &min,
-		ListingPriceMax:          &max,
-		TransactionPriceMin:      &min,
-		TransactionPriceMax:      &max,
+		ListingPriceMin:          &minPrice,
+		ListingPriceMax:          &maxPrice,
+		TransactionPriceMin:      &minPrice,
+		TransactionPriceMax:      &maxPrice,
 		TransactionMomentum:      domainneighborhood.TransactionMomentumStable,
 		TargetLayoutSupply:       2,
 		ListingSampleCount:       6,

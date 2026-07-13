@@ -37,7 +37,7 @@ func TestAssessQualityFreshnessBoundaries(t *testing.T) {
 }
 
 func TestAssessQualityAllowsFullCurrentMinimumSamples(t *testing.T) {
-	got := AssessQuality(qualityInputWithDefaults(func(input *QualityInput) {}))
+	got := AssessQuality(qualityInputWithDefaults(func(_ *QualityInput) {}))
 
 	if got.State != MarketQualitySufficient {
 		t.Fatalf("State = %q, want %q", got.State, MarketQualitySufficient)

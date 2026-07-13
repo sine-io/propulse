@@ -82,8 +82,8 @@ func (r *CollectionRepository) DataSourceExists(ctx context.Context, id string) 
 	return count > 0, nil
 }
 
-func (r *CollectionRepository) SaveCollectionRun(ctx context.Context, batch appcollection.ImportBatch) (appcollection.SaveImportResult, error) {
-	var result appcollection.SaveImportResult
+func (r *CollectionRepository) SaveCollectionRun(ctx context.Context, batch appcollection.ImportBatch) (appcollection.SaveCollectionRunResult, error) {
+	var result appcollection.SaveCollectionRunResult
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		run := collectionRunModel(batch.Run)
 		create := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&run)
@@ -95,7 +95,7 @@ func (r *CollectionRepository) SaveCollectionRun(ctx context.Context, batch appc
 			if err := tx.Where("data_source_id = ? AND source_ref = ? AND content_checksum = ?", run.DataSourceID, run.SourceRef, run.ContentChecksum).First(&existing).Error; err != nil {
 				return err
 			}
-			result = appcollection.SaveImportResult{Run: collectionRunFromModel(existing), Created: false}
+			result = appcollection.SaveCollectionRunResult{Run: collectionRunFromModel(existing), Created: false}
 			return nil
 		}
 
@@ -114,7 +114,7 @@ func (r *CollectionRepository) SaveCollectionRun(ctx context.Context, batch appc
 				return err
 			}
 		}
-		result = appcollection.SaveImportResult{Run: collectionRunFromModel(run), Created: true}
+		result = appcollection.SaveCollectionRunResult{Run: collectionRunFromModel(run), Created: true}
 		return nil
 	})
 	return result, err
@@ -151,6 +151,28 @@ func (r *CollectionRepository) GetCollectionRun(ctx context.Context, id string) 
 	}, nil
 }
 
+func (r *CollectionRepository) ListMetricRefreshCandidates(ctx context.Context, updatedBefore time.Time, limit int) ([]appcollection.MetricRefreshCandidate, error) {
+	var runs []CollectionRunModel
+	if err := r.db.WithContext(ctx).
+		Select("id", "neighborhood_id").
+		Where("metric_status IN ?", []string{string(appcollection.MetricStatusPending), string(appcollection.MetricStatusFailed)}).
+		Where("updated_at <= ?", updatedBefore).
+		Order("updated_at ASC, id ASC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
+		return nil, err
+	}
+
+	candidates := make([]appcollection.MetricRefreshCandidate, 0, len(runs))
+	for _, run := range runs {
+		candidates = append(candidates, appcollection.MetricRefreshCandidate{
+			CollectionRunID: run.ID,
+			NeighborhoodID:  run.NeighborhoodID,
+		})
+	}
+	return candidates, nil
+}
+
 func (r *CollectionRepository) UpdateMetricStatus(ctx context.Context, id string, status appcollection.MetricStatus) error {
 	updated := r.db.WithContext(ctx).
 		Model(&CollectionRunModel{}).
@@ -166,40 +188,6 @@ func (r *CollectionRepository) UpdateMetricStatus(ctx context.Context, id string
 		return appcollection.ErrCollectionRunNotFound
 	}
 	return nil
-}
-
-func (r *CollectionRepository) SaveImport(ctx context.Context, raw appcollection.RawCollectionRecord, snapshots []appcollection.ListingSnapshot) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		rawModel := RawCollectionRecordModel{
-			ID:          raw.ID,
-			SourceType:  raw.SourceType,
-			SourceRef:   raw.SourceRef,
-			Payload:     raw.Payload,
-			CollectedAt: raw.CollectedAt,
-		}
-		if err := tx.Create(&rawModel).Error; err != nil {
-			return err
-		}
-
-		models := make([]ListingSnapshotModel, 0, len(snapshots))
-		for _, snapshot := range snapshots {
-			models = append(models, ListingSnapshotModel{
-				ID:               snapshot.ID,
-				CollectionRunID:  snapshot.CollectionRunID,
-				NeighborhoodID:   snapshot.NeighborhoodID,
-				ListingPrice:     snapshot.ListingPrice,
-				TransactionPrice: snapshot.TransactionPrice,
-				PriceCut:         snapshot.PriceCut,
-				DaysOnMarket:     snapshot.DaysOnMarket,
-				Layout:           snapshot.Layout,
-				CapturedAt:       snapshot.CapturedAt,
-			})
-		}
-		if len(models) == 0 {
-			return errors.New("listing snapshots are required")
-		}
-		return tx.Create(&models).Error
-	})
 }
 
 func dataSourceModel(source appcollection.DataSource) DataSourceModel {

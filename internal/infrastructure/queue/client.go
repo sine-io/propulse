@@ -18,10 +18,11 @@ func NewClient(redisAddr string) *Client {
 	}
 }
 
-func (c *Client) EnqueueMetricCalculateNeighborhood(ctx context.Context, neighborhoodID string, sourceID string) error {
+func (c *Client) EnqueueMetricCalculateNeighborhood(ctx context.Context, neighborhoodID string, collectionRunID string, sourceID string) error {
 	task := NewMetricCalculateNeighborhoodTask(appqueue.MetricCalculateNeighborhoodPayload{
-		NeighborhoodID: neighborhoodID,
-		SourceID:       sourceID,
+		NeighborhoodID:  neighborhoodID,
+		CollectionRunID: collectionRunID,
+		SourceID:        sourceID,
 	})
 	_, err := c.client.EnqueueContext(ctx, task, asynq.Queue(appqueue.QueueDefault))
 	return err

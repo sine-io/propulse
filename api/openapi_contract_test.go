@@ -37,6 +37,7 @@ func TestAccessProtectionContract(t *testing.T) {
 	}
 
 	contracts := []operationContract{
+		{path: "/api/v1/access", method: "get", protected: true},
 		{path: "/api/v1/capacity/calculations", method: "post", protected: true},
 		{path: "/api/v1/capacity/calculations/{id}", method: "get", protected: true},
 		{path: "/api/v1/neighborhoods", method: "post", protected: true},
@@ -45,7 +46,10 @@ func TestAccessProtectionContract(t *testing.T) {
 		{path: "/api/v1/watchlist/items", method: "post", protected: true},
 		{path: "/api/v1/watchlist", method: "get", protected: true},
 		{path: "/api/v1/decision/action-window", method: "get", protected: true},
-		{path: "/admin/api/imports", method: "post", protected: true},
+		{path: "/admin/api/data-sources", method: "post", protected: true},
+		{path: "/admin/api/data-sources", method: "get", protected: true},
+		{path: "/admin/api/imports/json", method: "post", protected: true},
+		{path: "/admin/api/imports/{id}", method: "get", protected: true},
 	}
 
 	paths := requiredMap(t, spec, "paths")
@@ -81,7 +85,7 @@ func TestAccessProtectionContract(t *testing.T) {
 		})
 	}
 
-	importOperation := requiredMap(t, requiredMap(t, paths, "/admin/api/imports"), "post")
+	importOperation := requiredMap(t, requiredMap(t, paths, "/admin/api/imports/json"), "post")
 	if importResponses := requiredMap(t, importOperation, "responses"); hasKey(importResponses, "403") {
 		t.Fatal("admin import operation must not retain the obsolete 403 response")
 	}

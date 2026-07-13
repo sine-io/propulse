@@ -16,8 +16,6 @@ type Repository interface {
 	GetNeighborhood(ctx context.Context, id string) (Neighborhood, error)
 	GetCompletedCollectionRun(context.Context, string) (CompletedCollectionRun, error)
 	LatestCompletedCollectionRun(context.Context, string) (CompletedCollectionRun, error)
-	AggregateListingSnapshots(ctx context.Context, neighborhoodID string, targetLayout string) (ListingSnapshotAggregate, error)
-	InsertNeighborhoodMetric(ctx context.Context, snapshot MetricSnapshot) (MetricSnapshot, error)
 	AggregateMarketObservations(context.Context, AggregateMarketParams) (MarketAggregate, error)
 	UpsertNeighborhoodMetric(context.Context, MetricSnapshot) (MetricSnapshot, error)
 	MarkCollectionRunMetricCompleted(context.Context, string) error
@@ -26,17 +24,6 @@ type Repository interface {
 type Neighborhood struct {
 	ID           string
 	TargetLayout string
-}
-
-type ListingSnapshotAggregate struct {
-	ListedHomes         int
-	PriceCutHomes       int
-	AvgDaysOnMarket     float64
-	ListingPriceMin     float64
-	ListingPriceMax     float64
-	TransactionPriceMin float64
-	TransactionPriceMax float64
-	TargetLayoutSupply  int
 }
 
 type MetricSnapshot struct {

@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"math"
 	"net/http"
 	"time"
 
@@ -38,32 +37,58 @@ type createCalculationResult struct {
 }
 
 type calculationResponse struct {
-	ID        string                               `json:"id"`
-	Input     domaincapacity.HousingCapacityInput  `json:"input"`
-	Result    domaincapacity.HousingCapacityResult `json:"result"`
-	CreatedAt string                               `json:"createdAt"`
+	ID        string                        `json:"id"`
+	Input     housingCapacityInputResponse  `json:"input"`
+	Result    housingCapacityResultResponse `json:"result"`
+	CreatedAt string                        `json:"createdAt"`
 }
 
-type errorResponse struct {
-	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
+type housingCapacityInputResponse struct {
+	CashOnHand                float64 `json:"cashOnHand"`
+	OldHomeValue              float64 `json:"oldHomeValue"`
+	OldLoanBalance            float64 `json:"oldLoanBalance"`
+	MonthlyIncome             float64 `json:"monthlyIncome"`
+	CurrentMonthlyMortgage    float64 `json:"currentMonthlyMortgage"`
+	AcceptableMonthlyMortgage float64 `json:"acceptableMonthlyMortgage"`
+	TargetTotalPrice          float64 `json:"targetTotalPrice"`
+	RenovationBudget          float64 `json:"renovationBudget"`
+	TransactionCosts          float64 `json:"transactionCosts"`
+	TransitionRentCost        float64 `json:"transitionRentCost"`
+}
+
+type housingCapacityResultResponse struct {
+	NetOldHomeProceeds          float64                      `json:"netOldHomeProceeds"`
+	DeployableCash              float64                      `json:"deployableCash"`
+	SafeTotalPrice              float64                      `json:"safeTotalPrice"`
+	StrainedTotalPrice          float64                      `json:"strainedTotalPrice"`
+	DangerTotalPrice            float64                      `json:"dangerTotalPrice"`
+	DownPaymentGap              float64                      `json:"downPaymentGap"`
+	MonthlyPayment              float64                      `json:"monthlyPayment"`
+	MonthlyPaymentRatio         float64                      `json:"monthlyPaymentRatio"`
+	PressureLevel               domaincapacity.PressureLevel `json:"pressureLevel"`
+	MinimumSafeOldHomeSalePrice float64                      `json:"minimumSafeOldHomeSalePrice"`
+	Strategy                    string                       `json:"strategy"`
+	Reasons                     []string                     `json:"reasons"`
 }
 
 func (h Capacity) CreateCalculation(c *gin.Context) {
-	var input domaincapacity.HousingCapacityInput
-	if err := c.ShouldBindJSON(&input); err != nil {
+	var request housingCapacityInputResponse
+	if err := c.ShouldBindJSON(&request); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
 		return
 	}
-	if !validCapacityInput(input) {
+	input := request.domainInput()
+	if err := input.Validate(); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
 		return
 	}
 
 	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{UserID: user.SingleUserID, Input: input})
 	if err != nil {
+		if errors.Is(err, domaincapacity.ErrInvalidInput) {
+			writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
@@ -90,36 +115,39 @@ func (h Capacity) GetCalculation(c *gin.Context) {
 
 	c.JSON(http.StatusOK, calculationResponse{
 		ID:        record.ID,
-		Input:     record.Input,
-		Result:    record.Result,
+		Input:     newHousingCapacityInputResponse(record.Input),
+		Result:    newHousingCapacityResultResponse(record.Result),
 		CreatedAt: record.CreatedAt.UTC().Format(time.RFC3339),
 	})
 }
 
-func validCapacityInput(input domaincapacity.HousingCapacityInput) bool {
-	values := []float64{
-		input.CashOnHand,
-		input.OldHomeValue,
-		input.OldLoanBalance,
-		input.MonthlyIncome,
-		input.CurrentMonthlyMortgage,
-		input.AcceptableMonthlyMortgage,
-		input.TargetTotalPrice,
-		input.RenovationBudget,
-		input.TransactionCosts,
-		input.TransitionRentCost,
+func (response housingCapacityInputResponse) domainInput() domaincapacity.HousingCapacityInput {
+	return domaincapacity.HousingCapacityInput{
+		CashOnHand: response.CashOnHand, OldHomeValue: response.OldHomeValue, OldLoanBalance: response.OldLoanBalance,
+		MonthlyIncome: response.MonthlyIncome, CurrentMonthlyMortgage: response.CurrentMonthlyMortgage,
+		AcceptableMonthlyMortgage: response.AcceptableMonthlyMortgage, TargetTotalPrice: response.TargetTotalPrice,
+		RenovationBudget: response.RenovationBudget, TransactionCosts: response.TransactionCosts,
+		TransitionRentCost: response.TransitionRentCost,
 	}
-	for _, value := range values {
-		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
-			return false
-		}
-	}
-	return input.MonthlyIncome > 0 && input.TargetTotalPrice > 0
 }
 
-func writeError(c *gin.Context, status int, code, message string) {
-	var response errorResponse
-	response.Error.Code = code
-	response.Error.Message = message
-	c.JSON(status, response)
+func newHousingCapacityInputResponse(input domaincapacity.HousingCapacityInput) housingCapacityInputResponse {
+	return housingCapacityInputResponse{
+		CashOnHand: input.CashOnHand, OldHomeValue: input.OldHomeValue, OldLoanBalance: input.OldLoanBalance,
+		MonthlyIncome: input.MonthlyIncome, CurrentMonthlyMortgage: input.CurrentMonthlyMortgage,
+		AcceptableMonthlyMortgage: input.AcceptableMonthlyMortgage, TargetTotalPrice: input.TargetTotalPrice,
+		RenovationBudget: input.RenovationBudget, TransactionCosts: input.TransactionCosts,
+		TransitionRentCost: input.TransitionRentCost,
+	}
+}
+
+func newHousingCapacityResultResponse(result domaincapacity.HousingCapacityResult) housingCapacityResultResponse {
+	return housingCapacityResultResponse{
+		NetOldHomeProceeds: result.NetOldHomeProceeds, DeployableCash: result.DeployableCash,
+		SafeTotalPrice: result.SafeTotalPrice, StrainedTotalPrice: result.StrainedTotalPrice,
+		DangerTotalPrice: result.DangerTotalPrice, DownPaymentGap: result.DownPaymentGap,
+		MonthlyPayment: result.MonthlyPayment, MonthlyPaymentRatio: result.MonthlyPaymentRatio,
+		PressureLevel: result.PressureLevel, MinimumSafeOldHomeSalePrice: result.MinimumSafeOldHomeSalePrice,
+		Strategy: result.Strategy, Reasons: result.Reasons,
+	}
 }

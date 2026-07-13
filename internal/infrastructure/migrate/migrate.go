@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/golang-migrate/migrate/v4"
+	// Register the PostgreSQL migration driver.
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	_ "github.com/lib/pq"
 	migrationfiles "github.com/sine-io/propulse/migrations"
 )
 
@@ -27,7 +27,9 @@ func Run(_ context.Context, databaseURL string, direction string) error {
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+	defer func() {
+		_, _ = m.Close()
+	}()
 
 	switch direction {
 	case "up":

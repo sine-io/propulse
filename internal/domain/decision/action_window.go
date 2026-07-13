@@ -31,11 +31,11 @@ type ActionWindowInput struct {
 }
 
 type ActionWindowResult struct {
-	Action     ActionWindow `json:"action"`
-	Confidence Confidence   `json:"confidence"`
-	Summary    string       `json:"summary"`
-	Checklist  []string     `json:"checklist"`
-	Risks      []string     `json:"risks"`
+	Action     ActionWindow
+	Confidence Confidence
+	Summary    string
+	Checklist  []string
+	Risks      []string
 }
 
 func RecommendActionWindow(input ActionWindowInput) ActionWindowResult {

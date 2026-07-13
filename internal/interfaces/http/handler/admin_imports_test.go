@@ -3,138 +3,124 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
 )
 
-func TestAdminImportsCreatesManualImport(t *testing.T) {
-	gin.SetMode(gin.ReleaseMode)
-	service := &stubCollectionApplication{
-		result: appcollection.ImportManualListingsResult{
-			CollectionRunID:       "collection_run_1",
-			ImportedSnapshotCount: 2,
-		},
-	}
+func TestAdminImportsJSONPreservesRawPayloadAndNormalizesRecords(t *testing.T) {
+	app := &stubTrustedCollectionApplication{result: trustedImportResult(false)}
 	engine := gin.New()
-	engine.POST("/admin/api/imports", NewAdminImports(service).CreateImport)
+	engine.POST("/imports/json", NewAdminImports(app).CreateJSON)
+	body := `{"dataSourceId":"11111111-1111-1111-1111-111111111111","neighborhoodId":"22222222-2222-2222-2222-222222222222","sourceRef":"weekly-1","collectedAt":"2026-07-13T10:00:00Z","coverage":"full","records":[{"recordType":"listing","sourceRecordId":"listing-1","layout":"三房","areaSqm":89.5,"listingPrice":520.25,"daysOnMarket":12,"status":"active"},{"recordType":"transaction","sourceRecordId":"tx-1","layout":"三房","areaSqm":89.5,"transactionPrice":505.5,"transactionDate":"2026-07-01"}]}`
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/api/imports", bytes.NewBufferString(`{
-		"sourceType": "manual_json",
-		"sourceRef": "demo-weekly-import",
-		"neighborhoodId": "neighborhood_1",
-		"records": [
-			{"listingPrice": 520, "transactionPrice": 495, "priceCut": true, "daysOnMarket": 78, "layout": "三房"},
-			{"listingPrice": 610, "transactionPrice": 0, "priceCut": false, "daysOnMarket": 14, "layout": "三房"}
-		]
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, req)
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/imports/json", bytes.NewBufferString(body)))
 
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", recorder.Code, recorder.Body.String())
 	}
-	if service.command.SourceType != "manual_json" || service.command.NeighborhoodID != "neighborhood_1" || len(service.command.Records) != 2 {
-		t.Fatalf("command = %#v", service.command)
+	if string(app.command.RawPayload) != body || len(app.command.Records) != 2 {
+		t.Fatalf("command raw/records = %q / %#v", app.command.RawPayload, app.command.Records)
 	}
+	if app.command.Records[1].TransactionDate == nil || app.command.Records[1].TransactionDate.Format(time.DateOnly) != "2026-07-01" {
+		t.Fatalf("transaction date = %#v", app.command.Records[1].TransactionDate)
+	}
+}
 
+func TestAdminImportsJSONReturnsOKForReplay(t *testing.T) {
+	app := &stubTrustedCollectionApplication{result: trustedImportResult(true)}
+	engine := gin.New()
+	engine.POST("/imports/json", NewAdminImports(app).CreateJSON)
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/imports/json", bytes.NewBufferString(validTrustedImportBody())))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAdminImportsJSONReturnsValidationDetails(t *testing.T) {
+	row := 1
+	app := &stubTrustedCollectionApplication{err: &appcollection.ValidationError{Issues: []appcollection.ValidationIssue{{Row: &row, Field: "listingPrice", Code: "required", Message: "listingPrice is required"}}}}
+	engine := gin.New()
+	engine.POST("/imports/json", NewAdminImports(app).CreateJSON)
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/imports/json", bytes.NewBufferString(validTrustedImportBody())))
+	if recorder.Code != http.StatusUnprocessableEntity || !bytes.Contains(recorder.Body.Bytes(), []byte(`"details"`)) {
+		t.Fatalf("status/body = %d / %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAdminImportsRejectsOversizedBodyBeforeApplication(t *testing.T) {
+	app := &stubTrustedCollectionApplication{}
+	engine := gin.New()
+	engine.POST("/imports/json", NewAdminImports(app).CreateJSON)
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/imports/json", bytes.NewReader(make([]byte, maxImportBytes+1))))
+	if recorder.Code != http.StatusRequestEntityTooLarge || app.importCalls != 0 {
+		t.Fatalf("status/calls = %d/%d", recorder.Code, app.importCalls)
+	}
+}
+
+func TestAdminImportsGetDetailReturnsBase64Traceability(t *testing.T) {
+	runID := "33333333-3333-3333-3333-333333333333"
+	app := &stubTrustedCollectionApplication{detail: appcollection.CollectionRunDetail{
+		Run: appcollection.CollectionRun{ID: runID, RawPayload: []byte(`{"source":"raw"}`), ValidationSummary: appcollection.ValidationSummary{}},
+	}}
+	engine := gin.New()
+	engine.GET("/imports/:id", NewAdminImports(app).GetDetail)
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/imports/"+runID, nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", recorder.Code, recorder.Body.String())
+	}
 	var response struct {
-		CollectionRunID       string `json:"collectionRunId"`
-		ImportedSnapshotCount int    `json:"importedSnapshotCount"`
+		RawPayloadBase64 string `json:"rawPayloadBase64"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
 	}
-	if response.CollectionRunID != "collection_run_1" || response.ImportedSnapshotCount != 2 {
-		t.Fatalf("response = %#v", response)
-	}
-}
-
-func TestAdminImportsMapsApplicationErrors(t *testing.T) {
-	tests := []struct {
-		name       string
-		appErr     error
-		wantStatus int
-		wantCode   string
-	}{
-		{name: "invalid request", appErr: appcollection.ErrInvalidRequest, wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
-		{name: "neighborhood not found", appErr: appcollection.ErrNeighborhoodNotFound, wantStatus: http.StatusNotFound, wantCode: "neighborhood_not_found"},
-		{name: "import failed", appErr: appcollection.ErrImportFailed, wantStatus: http.StatusInternalServerError, wantCode: "import_failed"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.ReleaseMode)
-			engine := gin.New()
-			engine.POST("/admin/api/imports", NewAdminImports(&stubCollectionApplication{err: tt.appErr}).CreateImport)
-
-			req := httptest.NewRequest(http.MethodPost, "/admin/api/imports", bytes.NewBufferString(`{
-				"sourceType": "manual_json",
-				"sourceRef": "demo-weekly-import",
-				"neighborhoodId": "neighborhood_1",
-				"records": [{"listingPrice": 520, "daysOnMarket": 0}]
-			}`))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
-			engine.ServeHTTP(rec, req)
-
-			if rec.Code != tt.wantStatus {
-				t.Fatalf("status = %d, want %d; body=%s", rec.Code, tt.wantStatus, rec.Body.String())
-			}
-			var response struct {
-				Error struct {
-					Code string `json:"code"`
-				} `json:"error"`
-			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-				t.Fatalf("json.Unmarshal() error = %v", err)
-			}
-			if response.Error.Code != tt.wantCode {
-				t.Fatalf("error code = %q, want %q", response.Error.Code, tt.wantCode)
-			}
-		})
+	if response.RawPayloadBase64 != base64.StdEncoding.EncodeToString(app.detail.Run.RawPayload) {
+		t.Fatalf("rawPayloadBase64 = %q", response.RawPayloadBase64)
 	}
 }
 
-func TestAdminImportsRejectsInvalidJSON(t *testing.T) {
-	gin.SetMode(gin.ReleaseMode)
-	service := &stubCollectionApplication{}
-	engine := gin.New()
-	engine.POST("/admin/api/imports", NewAdminImports(service).CreateImport)
+func validTrustedImportBody() string {
+	return `{"dataSourceId":"11111111-1111-1111-1111-111111111111","neighborhoodId":"22222222-2222-2222-2222-222222222222","sourceRef":"weekly-1","collectedAt":"2026-07-13T10:00:00Z","coverage":"full","records":[{"recordType":"listing","sourceRecordId":"listing-1","layout":"三房","areaSqm":89.5,"listingPrice":520,"daysOnMarket":12,"status":"active"}]}`
+}
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/api/imports", bytes.NewBufferString(`{`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
-	}
-	if service.called {
-		t.Fatal("ImportManualListings was called for invalid JSON")
+func trustedImportResult(replay bool) appcollection.ImportCollectionRunResult {
+	now := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
+	return appcollection.ImportCollectionRunResult{
+		Run:          appcollection.CollectionRun{ID: "33333333-3333-3333-3333-333333333333", CollectedAt: now, CreatedAt: now, UpdatedAt: now, MetricStatus: appcollection.MetricStatusCompleted},
+		ListingCount: 1, IdempotentReplay: replay, MetricRefreshStatus: appcollection.MetricStatusCompleted,
 	}
 }
 
-type stubCollectionApplication struct {
-	command appcollection.ImportManualListingsCommand
-	result  appcollection.ImportManualListingsResult
-	err     error
-	called  bool
+type stubTrustedCollectionApplication struct {
+	command     appcollection.ImportCollectionRunCommand
+	result      appcollection.ImportCollectionRunResult
+	detail      appcollection.CollectionRunDetail
+	err         error
+	importCalls int
 }
 
-func (s *stubCollectionApplication) ImportManualListings(_ context.Context, command appcollection.ImportManualListingsCommand) (appcollection.ImportManualListingsResult, error) {
-	s.called = true
+func (s *stubTrustedCollectionApplication) ImportCollectionRun(_ context.Context, command appcollection.ImportCollectionRunCommand) (appcollection.ImportCollectionRunResult, error) {
+	s.importCalls++
 	s.command = command
-	if s.err != nil {
-		return appcollection.ImportManualListingsResult{}, s.err
-	}
-	return s.result, nil
+	return s.result, s.err
 }
 
-var errAdminImportBoom = errors.New("boom")
+func (s *stubTrustedCollectionApplication) GetCollectionRun(context.Context, appcollection.GetCollectionRunQuery) (appcollection.CollectionRunDetail, error) {
+	if s.err != nil && !errors.As(s.err, new(*appcollection.ValidationError)) {
+		return appcollection.CollectionRunDetail{}, s.err
+	}
+	return s.detail, nil
+}

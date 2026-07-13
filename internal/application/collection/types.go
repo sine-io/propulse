@@ -180,7 +180,7 @@ type ImportBatch struct {
 	Transactions []TransactionObservation
 }
 
-type SaveImportResult struct {
+type SaveCollectionRunResult struct {
 	Run     CollectionRun
 	Created bool
 }
@@ -196,6 +196,16 @@ type GetCollectionRunQuery struct {
 	ID string
 }
 
+type MetricRefreshCandidate struct {
+	CollectionRunID string
+	NeighborhoodID  string
+}
+
+type ListMetricRefreshCandidatesQuery struct {
+	UpdatedBefore time.Time
+	Limit         int
+}
+
 type ImportCollectionRunResult struct {
 	Run                 CollectionRun
 	ListingCount        int
@@ -204,7 +214,7 @@ type ImportCollectionRunResult struct {
 	MetricRefreshStatus MetricStatus
 }
 
-func (normalized NormalizedImport) NewBatch(runID string, newID func() string) ImportBatch {
+func (normalized NormalizedImport) NewBatch(runID string, importedAt time.Time, newID func() string) ImportBatch {
 	if runID == "" {
 		runID = newID()
 	}
@@ -223,8 +233,8 @@ func (normalized NormalizedImport) NewBatch(runID string, newID func() string) I
 		ValidationSummary: normalized.ValidationSummary,
 		Status:            CollectionRunStatusCompleted,
 		MetricStatus:      MetricStatusPending,
-		CreatedAt:         normalized.CollectedAt,
-		UpdatedAt:         normalized.CollectedAt,
+		CreatedAt:         importedAt.UTC(),
+		UpdatedAt:         importedAt.UTC(),
 	}
 	listings := append([]ListingObservation(nil), normalized.Listings...)
 	for i := range listings {

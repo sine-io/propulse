@@ -2,6 +2,10 @@
   "name": "@propulse/web",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "generate:api": "openapi-typescript ../../api/openapi.yaml -o src/lib/generated-api.d.ts",

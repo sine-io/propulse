@@ -3,6 +3,7 @@ package gormrepo
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"sync"
@@ -17,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var _ appcollection.TrustedRepository = (*CollectionRepository)(nil)
+var _ appcollection.Repository = (*CollectionRepository)(nil)
 
 func TestCollectionRepositorySaveCollectionRunPersistsRunAndBothObservationTypes(t *testing.T) {
 	ctx, db, repo := openCollectionRepositoryTest(t)
@@ -48,8 +49,12 @@ func TestCollectionRepositorySaveCollectionRunPersistsRunAndBothObservationTypes
 	if run.ContentChecksum != batch.Run.ContentChecksum {
 		t.Fatalf("content checksum = %q, want %q", run.ContentChecksum, batch.Run.ContentChecksum)
 	}
-	if !bytes.Contains(run.ValidationSummary, []byte(`"issues":[]`)) {
-		t.Fatalf("validation summary = %s, want empty issues array", run.ValidationSummary)
+	var validationSummary appcollection.ValidationSummary
+	if err := json.Unmarshal(run.ValidationSummary, &validationSummary); err != nil {
+		t.Fatalf("decode validation summary: %v", err)
+	}
+	if len(validationSummary.Issues) != 0 || validationSummary.RecordCount != 2 || validationSummary.ListingCount != 1 || validationSummary.TransactionCount != 1 {
+		t.Fatalf("validation summary = %#v", validationSummary)
 	}
 
 	var storedSource DataSourceModel
@@ -70,8 +75,12 @@ func TestCollectionRepositorySaveCollectionRunPersistsRunAndBothObservationTypes
 	if listings[0].CollectionRunID != batch.Run.ID || listings[0].NeighborhoodID != neighborhood.ID || listings[0].SourceListingID != "listing-source-1" || listings[0].SourceRow != 1 || listings[0].Layout != "三房" || listings[0].AreaSQM != 89.5 || listings[0].ListingPrice != 520 || listings[0].DaysOnMarket != 78 || listings[0].Status != string(appcollection.ListingStatusActive) {
 		t.Fatalf("listing observation = %#v", listings[0])
 	}
-	if !bytes.Contains(listings[0].Attributes, []byte(`"orientation":"south"`)) {
-		t.Fatalf("listing attributes = %s", listings[0].Attributes)
+	var attributes map[string]string
+	if err := json.Unmarshal(listings[0].Attributes, &attributes); err != nil {
+		t.Fatalf("decode listing attributes: %v", err)
+	}
+	if attributes["orientation"] != "south" {
+		t.Fatalf("listing attributes = %#v", attributes)
 	}
 
 	var transactions []TransactionObservationModel
@@ -211,7 +220,7 @@ func TestCollectionRepositoryConcurrentDuplicateImportsCreateOneRun(t *testing.T
 	batch := collectionRepositoryBatch(source.ID, neighborhood.ID)
 
 	var wg sync.WaitGroup
-	results := make([]appcollection.SaveImportResult, 2)
+	results := make([]appcollection.SaveCollectionRunResult, 2)
 	errs := make([]error, 2)
 	for i := range results {
 		wg.Add(1)
@@ -250,6 +259,41 @@ func TestCollectionRepositoryConcurrentDuplicateImportsCreateOneRun(t *testing.T
 	}
 
 	assertCollectionRepositoryRowCount(t, ctx, db, &CollectionRunModel{}, "data_source_id = ? AND source_ref = ? AND content_checksum = ?", 1, source.ID, batch.Run.SourceRef, batch.Run.ContentChecksum)
+}
+
+func TestCollectionRepositoryListsOnlyStaleIncompleteMetricRuns(t *testing.T) {
+	ctx, db, repo := openCollectionRepositoryTest(t)
+	source, neighborhood := createCollectionRepositoryFixtures(t, ctx, repo, db)
+	batch := collectionRepositoryBatch(source.ID, neighborhood.ID)
+	result, err := repo.SaveCollectionRun(ctx, batch)
+	if err != nil {
+		t.Fatalf("SaveCollectionRun() error = %v", err)
+	}
+	staleAt := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := db.WithContext(ctx).Model(&CollectionRunModel{}).Where("id = ?", result.Run.ID).Update("updated_at", staleAt).Error; err != nil {
+		t.Fatalf("age collection run: %v", err)
+	}
+
+	candidates, err := repo.ListMetricRefreshCandidates(ctx, staleAt.Add(time.Minute), 1)
+	if err != nil {
+		t.Fatalf("ListMetricRefreshCandidates() error = %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].CollectionRunID != result.Run.ID || candidates[0].NeighborhoodID != neighborhood.ID {
+		t.Fatalf("candidates = %#v", candidates)
+	}
+
+	if err := repo.UpdateMetricStatus(ctx, result.Run.ID, appcollection.MetricStatusCompleted); err != nil {
+		t.Fatalf("UpdateMetricStatus() error = %v", err)
+	}
+	candidates, err = repo.ListMetricRefreshCandidates(ctx, time.Now().UTC().Add(time.Hour), 500)
+	if err != nil {
+		t.Fatalf("ListMetricRefreshCandidates(completed) error = %v", err)
+	}
+	for _, candidate := range candidates {
+		if candidate.CollectionRunID == result.Run.ID {
+			t.Fatalf("completed run remained a repair candidate: %#v", candidate)
+		}
+	}
 }
 
 func openCollectionRepositoryTest(t *testing.T) (context.Context, *gorm.DB, *CollectionRepository) {

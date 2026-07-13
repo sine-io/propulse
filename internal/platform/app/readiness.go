@@ -26,7 +26,7 @@ type readinessChecker struct {
 	accessToken string
 }
 
-func NewReadinessChecker(sql SQLPinger, pgx PGXPinger, redis RedisPinger, accessToken string) readinessChecker {
+func newReadinessChecker(sql SQLPinger, pgx PGXPinger, redis RedisPinger, accessToken string) readinessChecker {
 	return readinessChecker{
 		sql:         sql,
 		pgx:         pgx,
