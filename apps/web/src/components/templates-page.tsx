@@ -1,8 +1,40 @@
+"use client";
+
+import { useState } from "react";
+
 import { templates } from "@/lib/sample-data";
 
 import { StatusBadge } from "./status-badge";
 
+function buildTemplateStructure(template: (typeof templates)[number]): string {
+  return [
+    `# ${template.title}`,
+    template.description,
+    "",
+    ...template.fields.map((field) => `- ${field}：`),
+  ].join("\n");
+}
+
 export function TemplatesPage() {
+  const [copiedTitle, setCopiedTitle] = useState<string>();
+  const [copyError, setCopyError] = useState<string>();
+
+  const copyStructure = async (template: (typeof templates)[number]) => {
+    const structure = buildTemplateStructure(template);
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(structure);
+      setCopyError(undefined);
+      setCopiedTitle(template.title);
+    } catch {
+      setCopiedTitle(undefined);
+      setCopyError(template.title);
+    }
+  };
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <section className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm">
@@ -34,9 +66,18 @@ export function TemplatesPage() {
                 </StatusBadge>
               ))}
             </div>
-            <button className="mt-6 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white">
-              复制模板结构
+            <button
+              type="button"
+              onClick={() => copyStructure(template)}
+              className="mt-6 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
+            >
+              {copiedTitle === template.title ? "已复制到剪贴板" : "复制模板结构"}
             </button>
+            {copyError === template.title ? (
+              <p role="alert" className="mt-2 text-xs font-medium text-rose-600">
+                复制失败，请手动选择内容复制。
+              </p>
+            ) : null}
           </article>
         ))}
       </section>

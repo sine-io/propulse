@@ -14,6 +14,15 @@ export function ActionWindowPage() {
   const [recommendation, setRecommendation] =
     useState<ActionWindowResponse>();
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [checkedItems, setCheckedItems] = useState<string[]>([]);
+
+  const toggleChecklistItem = (item: string) => {
+    setCheckedItems((current) =>
+      current.includes(item)
+        ? current.filter((value) => value !== item)
+        : [...current, item],
+    );
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -22,6 +31,7 @@ export function ActionWindowPage() {
       .then((response) => {
         setRecommendation(response);
         setErrorMessage(undefined);
+        setCheckedItems([]);
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -85,12 +95,25 @@ export function ActionWindowPage() {
                 <span className="ml-2">行动清单</span>
               </h3>
               <ul className="space-y-3 text-sm text-slate-200">
-                {recommendation.checklist.map((item) => (
-                  <li key={item} className="flex items-start gap-3">
-                    <CheckCircle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-emerald-400" />
-                    <span>{item}</span>
-                  </li>
-                ))}
+                {recommendation.checklist.map((item) => {
+                  const checked = checkedItems.includes(item);
+
+                  return (
+                    <li key={item}>
+                      <label className="flex cursor-pointer items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleChecklistItem(item)}
+                          className="mt-0.5 h-4 w-4 flex-none rounded border-slate-500 bg-slate-800 text-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                        />
+                        <span className={checked ? "text-slate-400 line-through" : undefined}>
+                          {item}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
 

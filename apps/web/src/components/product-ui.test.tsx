@@ -121,20 +121,95 @@ describe("HomePage", () => {
     );
     expect(screen.getByText("可以开始看房，但不急下定")).toBeInTheDocument();
   });
+
+  it("labels the dashboard preview as sample data (HOME-001)", () => {
+    render(createElement(HomePage));
+
+    expect(screen.getByText("示例数据")).toBeInTheDocument();
+    expect(screen.getByText("示例结论")).toBeInTheDocument();
+    expect(
+      screen.getByText(/以上为演示示例，非你的个人测算结果/),
+    ).toBeInTheDocument();
+  });
+
+  it("does not overclaim real-data coverage in prototype copy (HOME-002)", () => {
+    render(createElement(HomePage));
+
+    expect(screen.queryByText(/不看营销软文，只看真实数据/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/精准计算安全总价/)).not.toBeInTheDocument();
+  });
 });
 
 describe("CalculatorPanel", () => {
+  const fillCoreInput = (targetTotalPrice: string, monthlyIncome = "3.5") => {
+    fireEvent.change(screen.getByLabelText("家庭月收入 (万)"), {
+      target: { value: monthlyIncome },
+    });
+    fireEvent.change(screen.getByLabelText("目标总价（万）"), {
+      target: { value: targetTotalPrice },
+    });
+  };
+
+  it("starts with an empty form and no personal numbers until core input is provided", () => {
+    render(createElement(CalculatorPanel));
+
+    // 不再预填任何虚构家庭财务数据（CALC-001）。
+    expect(screen.getByLabelText("目标总价（万）")).toHaveValue("");
+    expect(screen.getByLabelText("家庭月收入 (万)")).toHaveValue("");
+    expect(
+      screen.getByText(/填写左侧.*生成你的换房压力诊断/),
+    ).toBeInTheDocument();
+    // 无固定个人结论（CALC-005）。
+    expect(screen.queryByText(/占比超 60%/)).not.toBeInTheDocument();
+  });
+
   it("updates the diagnosis when target price becomes unsafe", () => {
     render(createElement(CalculatorPanel));
 
-    expect(screen.queryByText(/^月供压力：/)).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("目标总价（万）"), {
-      target: { value: "720" },
-    });
+    fillCoreInput("720");
 
     expect(screen.getByText("危险")).toBeInTheDocument();
     expect(screen.getByText("暂缓改善")).toBeInTheDocument();
+  });
+
+  it("uses one formula for 550 with no reference-scenario override", () => {
+    // CALC-003：549 / 550 / 551 万不得存在特殊代码路径。
+    const readMetrics = () => {
+      const metrics = screen
+        .getAllByText(/^\d+(?:\.\d+)?$/)
+        .map((node) => node.textContent);
+      return metrics.join("|");
+    };
+
+    render(createElement(CalculatorPanel));
+    fillCoreInput("549");
+    const at549 = readMetrics();
+    fillCoreInput("550");
+    const at550 = readMetrics();
+    fillCoreInput("551");
+    const at551 = readMetrics();
+
+    // 550 不再触发 520/约35/42% 的固定覆盖，与相邻取值连续。
+    expect(new Set([at549, at550, at551]).size).toBe(3);
+    expect(screen.queryByText("约 35")).not.toBeInTheDocument();
+  });
+
+  it("exposes the previously hidden mortgage and transaction-cost fields", () => {
+    // CALC-002：两个参与计算的字段必须可见可编辑。
+    render(createElement(CalculatorPanel));
+
+    expect(screen.getByLabelText("当前月供（元）")).toBeInTheDocument();
+    expect(screen.getByLabelText("交易税费（万）")).toBeInTheDocument();
+  });
+
+  it("links the method cards to a real, keyboard-reachable page", () => {
+    // CALC-007：方法卡片是真实链接而非假 <article>。
+    render(createElement(CalculatorPanel));
+
+    const link = screen.getByRole("link", {
+      name: /为什么月供安全线比总价更重要/,
+    });
+    expect(link).toHaveAttribute("href", "/methods");
   });
 
   it("posts current input and displays the API diagnosis when regenerated", async () => {
@@ -147,9 +222,7 @@ describe("CalculatorPanel", () => {
     });
     render(createElement(CalculatorPanel));
 
-    fireEvent.change(screen.getByLabelText("目标总价（万）"), {
-      target: { value: "500" },
-    });
+    fillCoreInput("500");
     fireEvent.click(screen.getByRole("button", { name: "重新生成诊断报告" }));
 
     await waitFor(() => {
@@ -170,9 +243,7 @@ describe("CalculatorPanel", () => {
     );
     render(createElement(CalculatorPanel));
 
-    fireEvent.change(screen.getByLabelText("目标总价（万）"), {
-      target: { value: "720" },
-    });
+    fillCoreInput("720");
     fireEvent.click(screen.getByRole("button", { name: "重新生成诊断报告" }));
 
     expect(await screen.findByText("诊断报告暂时无法更新，请稍后重试。")).toBeInTheDocument();
@@ -221,6 +292,22 @@ describe("ActionWindowPage", () => {
     expect(screen.getByText("确认贷款批复。")).toBeInTheDocument();
     expect(screen.getByText("不要因为稀缺而突破预算。")).toBeInTheDocument();
   });
+
+  it("lets the user tick off checklist items (ACTION-005)", async () => {
+    vi.mocked(getActionWindow).mockResolvedValueOnce({
+      action: "出手",
+      confidence: "高",
+      summary: "预算安全且目标户型稀缺，可以准备出手。",
+      checklist: ["确认贷款批复。", "准备谈价底线。"],
+      risks: ["不要因为稀缺而突破预算。"],
+    });
+    render(createElement(ActionWindowPage));
+
+    const checkbox = await screen.findByRole("checkbox", { name: "确认贷款批复。" });
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+  });
 });
 
 describe("MethodsPage", () => {
@@ -233,6 +320,20 @@ describe("MethodsPage", () => {
     expect(screen.getByText("常见误判")).toBeInTheDocument();
     expect(screen.getByText("你需要盯住的关键指标")).toBeInTheDocument();
     expect(screen.getByText("前往目标小区实践")).toBeInTheDocument();
+  });
+
+  it("does not fake navigation for topics without content (METHOD-001)", () => {
+    render(createElement(MethodsPage));
+
+    // 已完成的主题是真实锚点。
+    expect(
+      screen.getByRole("link", { name: "挂牌变多但成交弱，说明什么？" }),
+    ).toHaveAttribute("href", "#main-method");
+    // 未完成主题不再是假链接，且明确标注即将上线。
+    expect(
+      screen.queryByRole("link", { name: /为什么不能只看挂牌均价/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByText("即将上线")).toHaveLength(5);
   });
 });
 
@@ -310,5 +411,26 @@ describe("TemplatesPage", () => {
     ]) {
       expect(screen.getByText(title)).toBeInTheDocument();
     }
+  });
+
+  it("copies the template structure to the clipboard (TEMPLATE-001)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(createElement(TemplatesPage));
+
+    const [firstCopyButton] = screen.getAllByRole("button", {
+      name: "复制模板结构",
+    });
+    fireEvent.click(firstCopyButton);
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledTimes(1);
+    });
+    const copied = writeText.mock.calls[0][0] as string;
+    expect(copied).toContain("# 换房预算表");
+    expect(copied).toContain("- 现金：");
+    expect(await screen.findByText("已复制到剪贴板")).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
   });
 });

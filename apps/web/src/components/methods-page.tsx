@@ -1,12 +1,13 @@
 import Link from "next/link";
 
-const topics = [
-  "挂牌变多但成交弱，说明什么？",
-  "为什么不能只看挂牌均价？",
-  "什么是真正的“买方窗口”？",
-  "降价房源变多，一定会大跌吗？",
-  "改善换房为什么要看新旧差？",
-  "为什么月供安全线比总价重要？",
+// 目录只对已完成的文章开放跳转；其余主题标注为即将上线，不再假装可点击（METHOD-001）。
+const topics: Array<{ title: string; available: boolean }> = [
+  { title: "挂牌变多但成交弱，说明什么？", available: true },
+  { title: "为什么不能只看挂牌均价？", available: false },
+  { title: "什么是真正的“买方窗口”？", available: false },
+  { title: "降价房源变多，一定会大跌吗？", available: false },
+  { title: "改善换房为什么要看新旧差？", available: false },
+  { title: "为什么月供安全线比总价重要？", available: false },
 ];
 
 export function MethodsPage() {
@@ -28,19 +29,29 @@ export function MethodsPage() {
               问题场景目录
             </h2>
             <nav className="text-sm font-medium text-slate-600" aria-label="问题场景目录">
-              {topics.map((topic, index) => (
-                <a
-                  key={topic}
-                  href="#main-method"
-                  className={`block cursor-pointer border-l-4 px-4 py-3 transition-colors ${
-                    index === 0
-                      ? "border-blue-600 bg-blue-50 text-blue-700"
-                      : "border-transparent hover:border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  {topic}
-                </a>
-              ))}
+              {topics.map((topic) =>
+                topic.available ? (
+                  <a
+                    key={topic.title}
+                    href="#main-method"
+                    aria-current="page"
+                    className="block border-l-4 border-blue-600 bg-blue-50 px-4 py-3 text-blue-700 transition-colors"
+                  >
+                    {topic.title}
+                  </a>
+                ) : (
+                  <span
+                    key={topic.title}
+                    aria-disabled="true"
+                    className="flex items-center justify-between gap-2 border-l-4 border-transparent px-4 py-3 text-slate-400"
+                  >
+                    <span>{topic.title}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-400">
+                      即将上线
+                    </span>
+                  </span>
+                ),
+              )}
             </nav>
           </div>
         </aside>

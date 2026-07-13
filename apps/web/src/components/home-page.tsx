@@ -46,9 +46,12 @@ export function HomePage() {
         </div>
 
         <div className="relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-8 shadow-xl">
-          <h2 className="relative z-10 mb-6 text-sm font-semibold uppercase tracking-wider text-slate-400">
-            决策仪表盘 预览
-          </h2>
+          <div className="relative z-10 mb-6 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+              决策仪表盘 预览
+            </h2>
+            <StatusBadge tone="amber">示例数据</StatusBadge>
+          </div>
 
           <div className="relative z-10 space-y-6">
             <section className="rounded-xl border border-slate-100 bg-slate-50/50 p-5 transition-colors hover:bg-white">
@@ -91,12 +94,18 @@ export function HomePage() {
             </section>
 
             <section className="rounded-xl border border-blue-100 bg-blue-50 p-5">
-              <h3 className="mb-2 font-semibold text-blue-900">当前综合建议</h3>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="font-semibold text-blue-900">当前综合建议</h3>
+                <span className="text-xs font-medium text-blue-500">示例结论</span>
+              </div>
               <p className="mb-1 text-lg font-medium text-blue-800">
                 可以开始看房，但不急下定
               </p>
               <p className="text-sm text-blue-600/80">
                 下一步：重点关注 500-530 万三房，针对挂牌超 60 天房源尝试砍价。
+              </p>
+              <p className="mt-3 text-xs text-blue-500/80">
+                以上为演示示例，非你的个人测算结果。输入你的数据后请以测算页结论为准。
               </p>
             </section>
           </div>
@@ -109,14 +118,14 @@ export function HomePage() {
           iconClassName="bg-blue-100 text-blue-600"
           title="测算换房能力"
         >
-          告别模糊估算。精准计算安全总价、月供压力和资金缺口，知道自己“能买多大的房”。
+          用统一规则估算安全总价、月供压力和资金缺口，帮你判断自己“能买多大的房”。
         </Feature>
         <Feature
           icon={Eye}
           iconClassName="bg-emerald-100 text-emerald-600"
           title="追踪小区情绪"
         >
-          不看营销软文，只看真实数据。追踪挂牌、成交、降价频率，判断房东预期和供应压力。
+          围绕挂牌、成交、降价频率组织判断，帮你观察房东预期和供应压力。接入真实数据源前，页面指标为示例。
         </Feature>
         <Link href="/methods" className="group space-y-4">
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-purple-100 text-purple-600 transition-colors group-hover:bg-purple-200">

@@ -1,21 +1,7 @@
 import type {
   ActionWindowInput,
-  HousingCapacityInput,
   NeighborhoodSignalInput,
 } from "./decision";
-
-export const defaultHousingInput: HousingCapacityInput = {
-  cashOnHand: 150,
-  oldHomeValue: 320,
-  oldLoanBalance: 80,
-  monthlyIncome: 3.5,
-  currentMonthlyMortgage: 0,
-  acceptableMonthlyMortgage: 1.5,
-  targetTotalPrice: 550,
-  renovationBudget: 40,
-  transactionCosts: 18,
-  transitionRentCost: 5,
-};
 
 export const defaultNeighborhoodInput: NeighborhoodSignalInput = {
   name: "青枫花园",
