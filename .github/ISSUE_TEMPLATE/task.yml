@@ -1,0 +1,129 @@
+name: 可执行任务（原子看板卡）
+description: 单一关注点、单个 PR、1-2 天可完成的原子任务。范围更大请改用 Epic 模板。
+title: "[MODULE-XXX] 一句话描述要交付的结果"
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 填写须知（来自 2026-07-13 Issue 原子性评审）
+        - **三段不得雷同**：「目标」「当前问题」「验收标准」必须内容互异。验收标准若只是复述目标，评审会直接打回。
+        - **验收写成可观测断言**：用 Given/When/Then 或勾选式，每条都能截图或跑测试验证。
+        - **实现范围禁止样板**：列出具体文件 / 函数 / 迁移 / OpenAPI 路径，而不是「按期望行为完成前端后端」。
+        - **单一路径**：不要把「完整实现」和「占位/删除」两条互斥路径塞进一张卡。
+        - 常用验收片段见 [Issue 编写指南](../../docs/issue-authoring-guide.md)。
+
+  - type: input
+    id: audit-id
+    attributes:
+      label: 审计编号 / 任务编号
+      placeholder: 例如 CALC-006.1（子任务）或 WATCH-002（独立任务）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - "P0 会产生错误或虚假决策"
+        - "P1 关键流程或功能缺口"
+        - "P2 体验、内容或维护优化"
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标（要交付什么结果 / 为什么）
+      description: 描述期望达到的结果和价值，不要在这里写验收条件。
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: 当前问题（证据：文件 / 行 / 接口）
+      description: 指向具体代码位置或复现路径，让人能核实问题真实存在。
+      placeholder: 例如 apps/web/src/components/calculator.tsx:120 硬编码 0.0041 月供系数。
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 实现范围（具体文件 / 函数 / 迁移 / OpenAPI 路径）
+      description: 禁止样板文字。逐条列出要改动的具体位置，评审据此判断是否越过单 PR 上限。
+      placeholder: |
+        - [ ] 后端 internal/calc/config.go 新增 AssumptionConfig（首付比例/系数/储备/压力线 + 规则版本）
+        - [ ] internal/calc/service.go 改为从配置读取，删除内联常量
+        - [ ] 更新 api/openapi.yaml calc 响应，补 ruleVersion 字段
+    validations:
+      required: true
+
+  - type: dropdown
+    id: path
+    attributes:
+      label: 交付路径（二选一，消除工作量漂移）
+      description: 一张卡只能走一条路径。若两条都要，拆成两张卡。
+      options:
+        - "完整实现该能力"
+        - "占位清理 / 移除假实现（不新增能力）"
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准（可观测断言，禁止复述目标）
+      description: 用 Given/When/Then 或勾选式，每条都能截图或跑测试验证。
+      placeholder: |
+        - [ ] 修改配置中首付比例后，三项测算结果按公式相应变化（可复现）。
+        - [ ] 测算响应带非空 ruleVersion 与生效日期。
+        - [ ] 代码中不再存在第二处硬编码的首付/系数常量（grep 断言）。
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: ac-library
+    attributes:
+      label: 复用验收片段（勾选适用项，并在验收标准中展开为具体断言）
+      options:
+        - label: "数据 provenance 五要素：来源 / 采集时间 / 统计窗口 / 样本数或覆盖 / 质量提示"
+        - label: "状态机六态：loading / empty / error / stale / insufficient / locked 各有独立 UI 与测试，禁止静默回退演示数据"
+        - label: "鉴权：无 / 错 token 返回结构化 401，公共数据匿名可读"
+
+  - type: textarea
+    id: deps
+    attributes:
+      label: 依赖关系
+      value: |
+        - Blocked by: 无
+        - Blocks: 无
+        - Parent Epic: 无
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: gates
+    attributes:
+      label: 原子性自检（全部勾选才可进入就绪态）
+      options:
+        - label: "单一关注点，可在单个 PR / 1-2 天内完成（否则改用 Epic 模板拆分）"
+          required: true
+        - label: "验收标准与目标内容不同，且每条可观测 / 可测试"
+          required: true
+        - label: "实现范围列出了具体文件 / 函数 / 路径，非样板文字"
+          required: true
+        - label: "与相邻 Issue 无范围重叠；如有共享能力已点名归口方并互设 Blocked by"
+          required: true
+
+  - type: checkboxes
+    id: verify
+    attributes:
+      label: 测试与验证
+      options:
+        - label: "运行 go test ./...（涉及后端时）"
+        - label: "运行 pnpm --dir apps/web verify（涉及前端时）"
+        - label: "验证成功 / 加载 / 空数据 / 失败 / 过期或不足（适用时）状态"
+        - label: "人工核对页面或 API，不再出现本 Issue 指定的假数据或占位行为"

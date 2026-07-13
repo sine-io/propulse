@@ -7,6 +7,8 @@
 - [页面线框](wireframes.md)
 - [PRD 第一版](prd-v1.md)
 - [假数据与占位功能审计问题清单（2026-07-13）](audits/2026-07-13-fake-data-and-placeholder-issues.md)
+- [Issue 原子性（INVEST）评审报告（2026-07-13）](audits/2026-07-13-issue-atomicity-invest-audit.md)
+- [Issue 编写指南（原子性标准 + 验收片段库）](issue-authoring-guide.md)
 
 ## 当前产品方向
 

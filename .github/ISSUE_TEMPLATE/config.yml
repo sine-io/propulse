@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Issue 编写指南 / 验收片段库
+    url: https://github.com/sine-io/propulse/blob/main/docs/issue-authoring-guide.md
+    about: 建卡前请先阅读：原子性标准、可复用验收片段、Epic 与任务分轨。

@@ -1,0 +1,100 @@
+name: Epic（多子任务聚合）
+description: 跨多个 PR / 关注点的能力，由若干可独立交付的子任务组成。单个 PR 能完成的请用「可执行任务」模板。
+title: "[MODULE-XXX] 一句话描述这个能力"
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Epic 与原子任务分轨（来自 2026-07-13 Issue 原子性评审）
+        - Epic 不套用原子量表，而按「拆分完备度」自检：子任务是否覆盖全部交付面、互斥、成链、且有 **Epic 级端到端验收**。
+        - **Epic 级验收必须是贯通验收**（多个子任务合并后可观测的整体行为），不得复述目标，也不得只是子任务验收的堆叠。
+        - 每个子任务用「可执行任务」模板单独建卡，并在此列出编号。
+
+  - type: input
+    id: audit-id
+    attributes:
+      label: 审计编号
+      placeholder: 例如 CALC-006
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - "P0 会产生错误或虚假决策"
+        - "P1 关键流程或功能缺口"
+        - "P2 体验、内容或维护优化"
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标
+      description: 这个能力整体要达到什么结果。
+    validations:
+      required: true
+
+  - type: textarea
+    id: value
+    attributes:
+      label: 用户价值
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: 当前问题
+      description: 为什么需要拆成多个子任务（关注点 / 层次 / 依赖）。
+    validations:
+      required: true
+
+  - type: textarea
+    id: subtasks
+    attributes:
+      label: 实现范围（子任务清单，含编号）
+      placeholder: |
+        - [ ] #66 CALC-006.1 抽取贷款假设为带版本的后端配置
+        - [ ] #67 CALC-006.2 前端提供可编辑贷款参数并提交
+        - [ ] #68 CALC-006.3 测算报告展示最终假设与来源
+    validations:
+      required: true
+
+  - type: textarea
+    id: epic-acceptance
+    attributes:
+      label: 验收标准（Epic 级端到端，贯通验收）
+      description: 多个子任务合并后可观测的整体行为，禁止复述目标。
+      placeholder: |
+        - [ ] 三个子任务合并后，修改利率/首付比例，三项测算结果按同一规则与配置变化（可复现）。
+        - [ ] 报告展示的假设与规则版本，与实际参与计算的值同源（同一测算记录），无第二处硬编码。
+    validations:
+      required: true
+
+  - type: textarea
+    id: deps
+    attributes:
+      label: 依赖关系
+      value: |
+        - Blocked by: 无
+        - Blocks: 无
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: decomposition
+    attributes:
+      label: 拆分完备度自检（全部勾选才算拆分到位）
+      options:
+        - label: "子任务合起来覆盖父目标的全部交付面，无遗漏"
+          required: true
+        - label: "子任务之间关注点互斥，无范围重叠"
+          required: true
+        - label: "子任务依赖成链（Blocked by / Blocks 已标注），可按序推进"
+          required: true
+        - label: "已给出 Epic 级端到端验收，且不是复述目标"
+          required: true
