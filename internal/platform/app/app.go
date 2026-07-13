@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+	webembed "github.com/sine-io/propulse/apps/web/embed"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
 	appmetric "github.com/sine-io/propulse/internal/application/metric"
@@ -21,7 +22,6 @@ import (
 	"github.com/sine-io/propulse/internal/infrastructure/postgres/sqlmetric"
 	infrastructurequeue "github.com/sine-io/propulse/internal/infrastructure/queue"
 	"github.com/sine-io/propulse/internal/interfaces/http/router"
-	"github.com/sine-io/propulse/web"
 )
 
 const Usage = "usage: propulse [serve|api|worker|scheduler|migrate up|migrate down]"
@@ -346,7 +346,7 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger) e
 
 	engine := router.New(router.Dependencies{
 		Log:                     log,
-		StaticFS:                web.Embedded(),
+		StaticFS:                webembed.Embedded(),
 		CapacityApplication:     capacityApp,
 		NeighborhoodApplication: neighborhoodApp,
 		CollectionApplication:   collectionApp,

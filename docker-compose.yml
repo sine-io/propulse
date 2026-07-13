@@ -12,7 +12,7 @@ services:
       PROPULSE_SEED_DEMO_DATA: "true"
       PROPULSE_ADMIN_API_TOKEN: local-admin-token
     ports:
-      - "18080:8080"
+      - "8317:8080"
     depends_on:
       postgres:
         condition: service_healthy

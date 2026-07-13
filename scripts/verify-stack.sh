@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 docker compose up --build -d
 
-curl -fsS http://127.0.0.1:18080/healthz >/dev/null
-curl -fsS http://127.0.0.1:18080/api/v1/watchlist >/dev/null
+curl -fsS http://127.0.0.1:8317/healthz >/dev/null
+curl -fsS http://127.0.0.1:8317/api/v1/watchlist >/dev/null
 
-PROPULSE_E2E_BASE_URL=http://127.0.0.1:18080 go test ./internal/platform/app -run TestE2ESmoke -v
+PROPULSE_E2E_BASE_URL=http://127.0.0.1:8317 go test ./internal/platform/app -run TestE2ESmoke -v

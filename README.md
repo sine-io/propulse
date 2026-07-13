@@ -63,14 +63,25 @@
 安装前端依赖并运行完整前端校验：
 
 ```bash
-pnpm install
+pnpm --dir apps/web install --frozen-lockfile
 pnpm --dir apps/web verify
 ```
 
-刷新 Go `embed` 使用的静态前端产物，并运行后端测试：
+修改前端后，刷新 Go `embed` 使用的静态产物：
 
 ```bash
 pnpm --dir apps/web build:web
+```
+
+仓库会跟踪 `apps/web/embed/static` 中的导出结果，因此干净检出无需安装 Node.js 依赖即可构建包含前端的 Go 二进制：
+
+```bash
+go build ./cmd/propulse
+```
+
+运行后端测试：
+
+```bash
 go test ./...
 ```
 
@@ -83,14 +94,14 @@ docker compose up --build
 服务启动后可检查健康状态和关注列表 API：
 
 ```bash
-curl http://127.0.0.1:18080/healthz
-curl http://127.0.0.1:18080/api/v1/watchlist
+curl http://127.0.0.1:8317/healthz
+curl http://127.0.0.1:8317/api/v1/watchlist
 ```
 
 Compose 会为本地管理接口设置 `PROPULSE_ADMIN_API_TOKEN=local-admin-token`。调用 `/admin/api/*` 时需要传入 bearer token：
 
 ```bash
-curl -X POST http://127.0.0.1:18080/admin/api/imports \
+curl -X POST http://127.0.0.1:8317/admin/api/imports \
   -H "Authorization: Bearer local-admin-token" \
   -H "Content-Type: application/json" \
   -d '{"sourceType":"manual_json","sourceRef":"demo","neighborhoodId":"<uuid>","records":[{"listingPrice":520,"daysOnMarket":30}]}'

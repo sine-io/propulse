@@ -7,13 +7,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
+	webembed "github.com/sine-io/propulse/apps/web/embed"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	httphandler "github.com/sine-io/propulse/internal/interfaces/http/handler"
 	httpmiddleware "github.com/sine-io/propulse/internal/interfaces/http/middleware"
-	"github.com/sine-io/propulse/web"
 )
 
 type Dependencies struct {
@@ -39,7 +39,7 @@ var frontendRoutes = map[string]string{
 func New(deps Dependencies) *gin.Engine {
 	staticFS := deps.StaticFS
 	if staticFS == nil {
-		staticFS = web.Embedded()
+		staticFS = webembed.Embedded()
 	}
 
 	gin.SetMode(gin.ReleaseMode)
