@@ -17,7 +17,7 @@ type Config struct {
 	HTTPAddr          string
 	DatabaseURL       string
 	RedisAddr         string
-	AdminAPIToken     string
+	AccessToken       string
 	Mode              string
 	SeedDemoData      bool
 	SchedulerInterval time.Duration
@@ -39,7 +39,7 @@ func Load() (Config, error) {
 		HTTPAddr:          getEnv("PROPULSE_HTTP_ADDR", defaultHTTPAddr),
 		DatabaseURL:       getEnv("PROPULSE_DATABASE_URL", defaultDatabaseURL),
 		RedisAddr:         getEnv("PROPULSE_REDIS_ADDR", defaultRedisAddr),
-		AdminAPIToken:     getEnv("PROPULSE_ADMIN_API_TOKEN", ""),
+		AccessToken:       getEnv("PROPULSE_ACCESS_TOKEN", ""),
 		SeedDemoData:      getEnv("PROPULSE_SEED_DEMO_DATA", "") == "true",
 		SchedulerInterval: schedulerInterval,
 		Log: LogConfig{

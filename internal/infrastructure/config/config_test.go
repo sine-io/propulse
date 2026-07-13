@@ -6,6 +6,7 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	t.Setenv("PROPULSE_HTTP_ADDR", "")
 	t.Setenv("PROPULSE_DATABASE_URL", "")
 	t.Setenv("PROPULSE_REDIS_ADDR", "")
+	t.Setenv("PROPULSE_ACCESS_TOKEN", "")
 	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "")
 	t.Setenv("PROPULSE_LOG_LEVEL", "")
 	t.Setenv("PROPULSE_LOG_PRETTY", "")
@@ -26,8 +27,8 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	if cfg.RedisAddr != "127.0.0.1:6379" {
 		t.Fatalf("RedisAddr = %q, want 127.0.0.1:6379", cfg.RedisAddr)
 	}
-	if cfg.AdminAPIToken != "" {
-		t.Fatalf("AdminAPIToken = %q, want empty default", cfg.AdminAPIToken)
+	if cfg.AccessToken != "" {
+		t.Fatalf("AccessToken = %q, want empty default", cfg.AccessToken)
 	}
 	if cfg.Log.Level != "info" {
 		t.Fatalf("Log.Level = %q, want info", cfg.Log.Level)
@@ -43,16 +44,29 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadReadsAdminAPIToken(t *testing.T) {
-	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "secret-token")
+func TestLoadReadsAccessToken(t *testing.T) {
+	t.Setenv("PROPULSE_ACCESS_TOKEN", "secret-token")
+	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "legacy-token")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
+	if cfg.AccessToken != "secret-token" {
+		t.Fatalf("AccessToken = %q, want secret-token", cfg.AccessToken)
+	}
+}
 
-	if cfg.AdminAPIToken != "secret-token" {
-		t.Fatalf("AdminAPIToken = %q, want secret-token", cfg.AdminAPIToken)
+func TestLoadDoesNotAcceptLegacyAdminToken(t *testing.T) {
+	t.Setenv("PROPULSE_ACCESS_TOKEN", "")
+	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "legacy-token")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AccessToken != "" {
+		t.Fatalf("AccessToken = %q, want empty", cfg.AccessToken)
 	}
 }
 

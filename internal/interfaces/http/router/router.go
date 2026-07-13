@@ -1,9 +1,11 @@
 package router
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -16,6 +18,10 @@ import (
 	httpmiddleware "github.com/sine-io/propulse/internal/interfaces/http/middleware"
 )
 
+type ReadinessChecker interface {
+	Check(context.Context) error
+}
+
 type Dependencies struct {
 	Log                     zerolog.Logger
 	StaticFS                fs.FS
@@ -23,7 +29,8 @@ type Dependencies struct {
 	NeighborhoodApplication httphandler.NeighborhoodApplication
 	CollectionApplication   httphandler.CollectionApplication
 	DecisionApplication     httphandler.DecisionApplication
-	AdminAPIToken           string
+	AccessToken             string
+	ReadinessChecker        ReadinessChecker
 }
 
 var frontendRoutes = map[string]string{
@@ -52,42 +59,61 @@ func New(deps Dependencies) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 	engine.GET("/readyz", func(c *gin.Context) {
+		if deps.ReadinessChecker == nil {
+			serviceUnavailable(c)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+		if err := deps.ReadinessChecker.Check(ctx); err != nil {
+			serviceUnavailable(c)
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 
 	api := engine.Group("/api/v1")
+	protected := api.Group("")
+	protected.Use(httpmiddleware.AccessAuth(deps.AccessToken))
+	marketState := newInMemoryMarketState()
 	capacityApp := deps.CapacityApplication
 	if capacityApp == nil {
 		capacityApp = appcapacity.NewService(newInMemoryCalculationRepository(), nil, nil)
 	}
 	capacityHandler := httphandler.NewCapacity(capacityApp)
-	api.POST("/capacity/calculations", capacityHandler.CreateCalculation)
-	api.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
+	protected.POST("/capacity/calculations", capacityHandler.CreateCalculation)
+	protected.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
 
 	neighborhoodApp := deps.NeighborhoodApplication
+	var fallbackNeighborhoodRepo *inMemoryNeighborhoodRepository
 	if neighborhoodApp == nil {
-		neighborhoodApp = appneighborhood.NewService(newInMemoryNeighborhoodRepository())
+		fallbackNeighborhoodRepo = newInMemoryNeighborhoodRepository(marketState)
+		neighborhoodApp = appneighborhood.NewService(fallbackNeighborhoodRepo)
 	}
 	neighborhoodHandler := httphandler.NewNeighborhood(neighborhoodApp)
 	watchlistHandler := httphandler.NewWatchlist(neighborhoodApp)
-	api.POST("/neighborhoods", neighborhoodHandler.CreateNeighborhood)
+	protected.POST("/neighborhoods", neighborhoodHandler.CreateNeighborhood)
 	api.GET("/neighborhoods/:id", neighborhoodHandler.GetNeighborhood)
 	api.GET("/neighborhoods/:id/metrics", neighborhoodHandler.GetMetrics)
-	api.POST("/watchlist/items", watchlistHandler.AddItem)
-	api.GET("/watchlist", watchlistHandler.List)
+	protected.POST("/watchlist/items", watchlistHandler.AddItem)
+	protected.GET("/watchlist", watchlistHandler.List)
 
 	decisionApp := deps.DecisionApplication
 	if decisionApp == nil {
 		decisionApp = appdecision.NewService(capacityApp, neighborhoodApp)
 	}
 	decisionHandler := httphandler.NewDecision(decisionApp)
-	api.GET("/decision/action-window", decisionHandler.GetActionWindow)
+	protected.GET("/decision/action-window", decisionHandler.GetActionWindow)
 
 	admin := engine.Group("/admin/api")
-	admin.Use(httpmiddleware.AdminAuth(deps.AdminAPIToken))
+	admin.Use(httpmiddleware.AccessAuth(deps.AccessToken))
 	collectionApp := deps.CollectionApplication
 	if collectionApp == nil {
-		collectionApp = appcollection.NewService(newInMemoryCollectionRepository(), nil, nil)
+		if fallbackNeighborhoodRepo == nil {
+			fallbackNeighborhoodRepo = newInMemoryNeighborhoodRepository(marketState)
+		}
+		collectionApp = appcollection.NewService(newInMemoryCollectionRepository(fallbackNeighborhoodRepo, marketState), nil, nil)
 	}
 	adminImportsHandler := httphandler.NewAdminImports(collectionApp)
 	admin.POST("/imports", adminImportsHandler.CreateImport)
@@ -110,6 +136,15 @@ func New(deps Dependencies) *gin.Engine {
 	})
 
 	return engine
+}
+
+func serviceUnavailable(c *gin.Context) {
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"error": gin.H{
+			"code":    "not_ready",
+			"message": "service dependencies are not ready",
+		},
+	})
 }
 
 func jsonNotFound(c *gin.Context) {

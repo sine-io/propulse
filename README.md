@@ -91,23 +91,21 @@ go test ./...
 docker compose up --build
 ```
 
-服务启动后可检查健康状态和关注列表 API：
+服务启动后可分别检查进程健康状态和依赖就绪状态：
 
 ```bash
 curl http://127.0.0.1:8317/healthz
-curl http://127.0.0.1:8317/api/v1/watchlist
+curl http://127.0.0.1:8317/readyz
 ```
 
-Compose 会为本地管理接口设置 `PROPULSE_ADMIN_API_TOKEN=local-admin-token`。调用 `/admin/api/*` 时需要传入 bearer token：
+Compose 会为个人与管理 API 设置 `PROPULSE_ACCESS_TOKEN=local-access-token`。调用受保护接口时需要传入 bearer token，例如读取个人关注列表：
 
 ```bash
-curl -X POST http://127.0.0.1:8317/admin/api/imports \
-  -H "Authorization: Bearer local-admin-token" \
-  -H "Content-Type: application/json" \
-  -d '{"sourceType":"manual_json","sourceRef":"demo","neighborhoodId":"<uuid>","records":[{"listingPrice":520,"daysOnMarket":30}]}'
+curl http://127.0.0.1:8317/api/v1/watchlist \
+  -H "Authorization: Bearer local-access-token"
 ```
 
-也可以运行本地集成冒烟脚本，完成 Compose 构建、健康检查、关注列表 API 和 E2E smoke test：
+也可以运行本地集成冒烟脚本，完成 Compose 构建、健康与就绪检查、认证关注列表 API 和 E2E smoke test：
 
 ```bash
 bash scripts/verify-stack.sh

@@ -45,6 +45,7 @@ export interface paths {
                         "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
+                401: components["responses"]["AccessRequired"];
                 /** @description Internal server error */
                 500: {
                     headers: {
@@ -90,6 +91,7 @@ export interface paths {
                         "application/json": components["schemas"]["CalculationResponse"];
                     };
                 };
+                401: components["responses"]["AccessRequired"];
                 /** @description Calculation not found */
                 404: {
                     headers: {
@@ -159,6 +161,7 @@ export interface paths {
                         "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
+                401: components["responses"]["AccessRequired"];
             };
         };
         delete?: never;
@@ -270,7 +273,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Add a neighborhood to the demo user's watchlist */
+        /** Add a neighborhood to the user's watchlist */
         post: {
             parameters: {
                 query?: never;
@@ -302,6 +305,7 @@ export interface paths {
                         "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
+                401: components["responses"]["AccessRequired"];
                 /** @description Neighborhood not found */
                 404: {
                     headers: {
@@ -326,7 +330,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the demo user's watchlist */
+        /** List the user's watchlist */
         get: {
             parameters: {
                 query?: never;
@@ -345,6 +349,7 @@ export interface paths {
                         "application/json": components["schemas"]["WatchlistResponse"];
                     };
                 };
+                401: components["responses"]["AccessRequired"];
             };
         };
         put?: never;
@@ -362,11 +367,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Recommend the current action window for the demo user */
+        /** Recommend the current action window */
         get: {
             parameters: {
                 query?: {
-                    /** @description Neighborhood to evaluate. Defaults to the first demo watchlist item. */
+                    /** @description Neighborhood to evaluate. Defaults to the first watchlist item. */
                     neighborhoodId?: string;
                 };
                 header?: never;
@@ -393,6 +398,7 @@ export interface paths {
                         "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
+                401: components["responses"]["AccessRequired"];
                 /** @description Neighborhood metric is not available */
                 404: {
                     headers: {
@@ -470,24 +476,7 @@ export interface paths {
                         "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
-                /** @description Admin bearer token required */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-                /** @description Admin bearer token invalid */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
+                401: components["responses"]["AccessRequired"];
                 /** @description Neighborhood not found */
                 404: {
                     headers: {
@@ -657,7 +646,7 @@ export interface components {
         ManualImportRequest: {
             /** @enum {string} */
             sourceType: "manual_json";
-            /** @example demo-weekly-import */
+            /** @example weekly-import */
             sourceRef: string;
             /** Format: uuid */
             neighborhoodId: string;
@@ -682,7 +671,30 @@ export interface components {
             };
         };
     };
-    responses: never;
+    responses: {
+        /** @description Valid bearer access token is required */
+        AccessRequired: {
+            headers: {
+                /**
+                 * @description Authentication scheme required to access this operation
+                 * @example Bearer
+                 */
+                "WWW-Authenticate"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": {
+                 *         "code": "access_required",
+                 *         "message": "valid bearer access token is required"
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;

@@ -1,4 +1,8 @@
 DROP TABLE IF EXISTS neighborhood_metrics;
+DROP TABLE IF EXISTS transaction_observations;
+DROP TABLE IF EXISTS listing_observations;
+DROP TABLE IF EXISTS collection_runs;
+DROP TABLE IF EXISTS data_sources;
 DROP TABLE IF EXISTS listing_snapshots;
 DROP TABLE IF EXISTS raw_collection_records;
 DROP TABLE IF EXISTS watchlist_items;

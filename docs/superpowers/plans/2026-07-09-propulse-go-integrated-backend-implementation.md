@@ -1,5 +1,9 @@
 # Propulse Go Integrated Backend Implementation Plan
 
+> Historical document: this records the original implementation path. Current
+> repository paths and security behavior are documented in
+> `2026-07-10-propulse-trusted-decision-system-design.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first production-shaped Propulse backend phase: one Go binary serves the exported Next frontend, REST APIs, PostgreSQL persistence, Redis/Asynq jobs, manual import, and one neighborhood metric calculation loop.

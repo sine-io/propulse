@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
+	"github.com/sine-io/propulse/internal/application/user"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
@@ -142,11 +143,11 @@ func TestGetNeighborhoodMetricsReturnsLatestSignal(t *testing.T) {
 				NeighborhoodID:      "neighborhood_1",
 				ListedHomes:         42,
 				PriceCutHomes:       11,
-				AvgDaysOnMarket:     78,
-				ListingPriceMin:     520,
-				ListingPriceMax:     620,
-				TransactionPriceMin: 495,
-				TransactionPriceMax: 545,
+				AvgDaysOnMarket:     handlerFloatPtr(78),
+				ListingPriceMin:     handlerFloatPtr(520),
+				ListingPriceMax:     handlerFloatPtr(620),
+				TransactionPriceMin: handlerFloatPtr(495),
+				TransactionPriceMax: handlerFloatPtr(545),
 				TransactionMomentum: domainneighborhood.TransactionMomentumWeak,
 				TargetLayoutSupply:  12,
 				CalculatedAt:        time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
@@ -181,12 +182,16 @@ func TestGetNeighborhoodMetricsReturnsLatestSignal(t *testing.T) {
 	}
 }
 
-func TestCreateWatchlistItemUsesDemoUser(t *testing.T) {
+func handlerFloatPtr(value float64) *float64 {
+	return &value
+}
+
+func TestCreateWatchlistItemUsesSingleUser(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubNeighborhoodApplication{
 		addWatchlistItem: appneighborhood.WatchlistItem{
 			ID:             "watch_1",
-			UserID:         "demo-user",
+			UserID:         user.SingleUserID,
 			NeighborhoodID: "neighborhood_1",
 			CreatedAt:      time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 		},
@@ -202,8 +207,8 @@ func TestCreateWatchlistItemUsesDemoUser(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201", rec.Code)
 	}
-	if service.addCommand.UserID != "demo-user" {
-		t.Fatalf("UserID = %q, want demo-user", service.addCommand.UserID)
+	if service.addCommand.UserID != user.SingleUserID {
+		t.Fatalf("UserID = %q, want %q", service.addCommand.UserID, user.SingleUserID)
 	}
 }
 

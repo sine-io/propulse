@@ -1,5 +1,9 @@
 # Propulse Go 一体化后端技术栈设计
 
+> Historical document: this records the original implementation path. Current
+> repository paths and security behavior are documented in
+> `2026-07-10-propulse-trusted-decision-system-design.md`.
+
 ## 背景
 
 Propulse 当前是 `Next.js + React + TypeScript + Tailwind` 前端原型，核心决策逻辑位于前端 `src/lib/decision.ts`，数据来自本地 sample data。下一阶段需要引入完整后端能力，包括账号、业务 API、房源与小区数据采集、清洗、指标计算、提醒、后台管理和持久化存储。

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
+	"github.com/sine-io/propulse/internal/application/user"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 )
 
@@ -59,6 +60,9 @@ func TestCreateCapacityCalculationReturnsSummary(t *testing.T) {
 	}
 	if response.Result.Strategy != "先卖后买或同步推进" {
 		t.Fatalf("response.Result.Strategy = %q", response.Result.Strategy)
+	}
+	if service.createCommand.UserID != user.SingleUserID {
+		t.Fatalf("CreateCalculation command userID = %q, want %q", service.createCommand.UserID, user.SingleUserID)
 	}
 }
 
@@ -192,15 +196,17 @@ func TestGetCapacityCalculationReturnsNotFound(t *testing.T) {
 }
 
 type stubCapacityApplication struct {
-	createRecord appcapacity.CalculationRecord
-	createErr    error
-	createCalled bool
-	getRecord    appcapacity.CalculationRecord
-	getErr       error
+	createRecord  appcapacity.CalculationRecord
+	createErr     error
+	createCalled  bool
+	createCommand appcapacity.CreateCalculationCommand
+	getRecord     appcapacity.CalculationRecord
+	getErr        error
 }
 
-func (s *stubCapacityApplication) CreateCalculation(_ context.Context, _ appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error) {
+func (s *stubCapacityApplication) CreateCalculation(_ context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error) {
 	s.createCalled = true
+	s.createCommand = command
 	return s.createRecord, s.createErr
 }
 

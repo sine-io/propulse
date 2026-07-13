@@ -53,7 +53,9 @@ func TestRepositoryLatestMetricMapsSqlcRow(t *testing.T) {
 	if got.ListedHomes != 42 || got.PriceCutHomes != 11 || got.TargetLayoutSupply != 12 {
 		t.Fatalf("metric counts = %#v", got)
 	}
-	if got.AvgDaysOnMarket != 78.5 || got.ListingPriceMin != 520.25 || got.TransactionPriceMax != 545.5 {
+	if got.AvgDaysOnMarket == nil || *got.AvgDaysOnMarket != 78.5 ||
+		got.ListingPriceMin == nil || *got.ListingPriceMin != 520.25 ||
+		got.TransactionPriceMax == nil || *got.TransactionPriceMax != 545.5 {
 		t.Fatalf("metric prices/days = %#v", got)
 	}
 	if got.TransactionMomentum != domainneighborhood.TransactionMomentumWeak {

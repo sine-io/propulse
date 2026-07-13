@@ -7,6 +7,7 @@ import (
 
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
+	"github.com/sine-io/propulse/internal/application/user"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
@@ -16,7 +17,7 @@ func TestGetActionWindowComposesLatestCapacityFirstWatchlistMetricAndAlternative
 	capacity := &stubCapacityReader{
 		record: appcapacity.CalculationRecord{
 			ID:     "calc_1",
-			UserID: "demo-user",
+			UserID: user.SingleUserID,
 			Result: domaincapacity.HousingCapacityResult{
 				PressureLevel:  domaincapacity.PressureStrained,
 				DownPaymentGap: 0,
@@ -41,11 +42,11 @@ func TestGetActionWindowComposesLatestCapacityFirstWatchlistMetricAndAlternative
 		t.Fatalf("GetActionWindow() error = %v", err)
 	}
 
-	if capacity.userID != "demo-user" {
-		t.Fatalf("capacity userID = %q, want demo-user", capacity.userID)
+	if capacity.userID != user.SingleUserID {
+		t.Fatalf("capacity userID = %q, want %q", capacity.userID, user.SingleUserID)
 	}
-	if neighborhood.watchlistUserID != "demo-user" {
-		t.Fatalf("watchlist userID = %q, want demo-user", neighborhood.watchlistUserID)
+	if neighborhood.watchlistUserID != user.SingleUserID {
+		t.Fatalf("watchlist userID = %q, want %q", neighborhood.watchlistUserID, user.SingleUserID)
 	}
 	if neighborhood.metricNeighborhoodID != "neighborhood_1" {
 		t.Fatalf("metric neighborhoodID = %q, want neighborhood_1", neighborhood.metricNeighborhoodID)

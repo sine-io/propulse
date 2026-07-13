@@ -10,9 +10,53 @@ import (
 
 type CapacityCalculation struct {
 	ID        pgtype.UUID
+	UserID    string
 	Input     []byte
 	Result    []byte
 	CreatedAt pgtype.Timestamptz
+}
+
+type CollectionRun struct {
+	ID                pgtype.UUID
+	DataSourceID      pgtype.UUID
+	NeighborhoodID    pgtype.UUID
+	SourceRef         string
+	CollectedAt       pgtype.Timestamptz
+	Coverage          string
+	ImportFormat      string
+	ContentChecksum   string
+	RawPayload        []byte
+	RawContentType    string
+	ValidationSummary []byte
+	Status            string
+	MetricStatus      string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+}
+
+type DataSource struct {
+	ID         pgtype.UUID
+	Name       string
+	SourceType string
+	City       string
+	Notes      string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+type ListingObservation struct {
+	ID              pgtype.UUID
+	CollectionRunID pgtype.UUID
+	NeighborhoodID  pgtype.UUID
+	SourceListingID string
+	SourceRow       int32
+	Layout          string
+	AreaSqm         pgtype.Numeric
+	ListingPrice    pgtype.Numeric
+	DaysOnMarket    int32
+	Status          string
+	CapturedAt      pgtype.Timestamptz
+	Attributes      []byte
 }
 
 type ListingSnapshot struct {
@@ -36,18 +80,30 @@ type Neighborhood struct {
 }
 
 type NeighborhoodMetric struct {
-	ID                  pgtype.UUID
-	NeighborhoodID      pgtype.UUID
-	ListedHomes         int32
-	PriceCutHomes       int32
-	AvgDaysOnMarket     pgtype.Numeric
-	ListingPriceMin     pgtype.Numeric
-	ListingPriceMax     pgtype.Numeric
-	TransactionPriceMin pgtype.Numeric
-	TransactionPriceMax pgtype.Numeric
-	TransactionMomentum string
-	TargetLayoutSupply  int32
-	CalculatedAt        pgtype.Timestamptz
+	ID                       pgtype.UUID
+	NeighborhoodID           pgtype.UUID
+	ListedHomes              int32
+	PriceCutHomes            int32
+	AvgDaysOnMarket          pgtype.Numeric
+	ListingPriceMin          pgtype.Numeric
+	ListingPriceMax          pgtype.Numeric
+	TransactionPriceMin      pgtype.Numeric
+	TransactionPriceMax      pgtype.Numeric
+	TransactionMomentum      string
+	TargetLayoutSupply       int32
+	CalculatedAt             pgtype.Timestamptz
+	CollectionRunID          pgtype.UUID
+	InventoryCollectionRunID pgtype.UUID
+	SourceIds                []byte
+	ListingSampleCount       int32
+	TransactionSampleCount   int32
+	ListedHomesChangePct     pgtype.Numeric
+	Coverage                 pgtype.Text
+	Freshness                pgtype.Text
+	QualityState             pgtype.Text
+	LatestObservedAt         pgtype.Timestamptz
+	InventoryCollectedAt     pgtype.Timestamptz
+	QualityWarnings          []byte
 }
 
 type RawCollectionRecord struct {
@@ -56,6 +112,20 @@ type RawCollectionRecord struct {
 	SourceRef   string
 	Payload     []byte
 	CollectedAt pgtype.Timestamptz
+}
+
+type TransactionObservation struct {
+	ID                 pgtype.UUID
+	CollectionRunID    pgtype.UUID
+	NeighborhoodID     pgtype.UUID
+	SourceRecordID     string
+	SourceRow          int32
+	Layout             string
+	AreaSqm            pgtype.Numeric
+	TransactionPrice   pgtype.Numeric
+	TransactionDate    pgtype.Date
+	OriginalListingRef pgtype.Text
+	CapturedAt         pgtype.Timestamptz
 }
 
 type WatchlistItem struct {

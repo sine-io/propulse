@@ -3,10 +3,12 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -39,12 +41,241 @@ func TestNormalizeModeAcceptsDocumentedModes(t *testing.T) {
 	}
 }
 
+func TestRunAPIModeOpensAndClosesOneRuntime(t *testing.T) {
+	originalOpenRuntime := openRuntimeFunc
+	originalRunHTTPServer := runHTTPServerFunc
+	defer func() {
+		openRuntimeFunc = originalOpenRuntime
+		runHTTPServerFunc = originalRunHTTPServer
+	}()
+
+	closer := &countingCloser{}
+	rt := &runtime{queueClient: closer}
+	openCount := 0
+	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
+		openCount++
+		return rt, nil
+	}
+
+	var received *runtime
+	runHTTPServerFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger, got *runtime) error {
+		received = got
+		return nil
+	}
+
+	if err := Run(context.Background(), "api", config.Config{}, zerolog.New(io.Discard)); err != nil {
+		t.Fatalf("Run(api) error = %v", err)
+	}
+	if openCount != 1 {
+		t.Fatalf("openRuntime call count = %d, want 1", openCount)
+	}
+	if received != rt {
+		t.Fatalf("HTTP runtime = %p, want %p", received, rt)
+	}
+	if closer.count != 1 {
+		t.Fatalf("runtime close count = %d, want 1", closer.count)
+	}
+}
+
+func TestRunServeModeSharesOneRuntimeAcrossHTTPWorkerScheduler(t *testing.T) {
+	originalOpenRuntime := openRuntimeFunc
+	originalRunHTTPServer := runHTTPServerFunc
+	originalStartQueueWorker := startQueueWorker
+	originalStartScheduler := startScheduler
+	defer func() {
+		openRuntimeFunc = originalOpenRuntime
+		runHTTPServerFunc = originalRunHTTPServer
+		startQueueWorker = originalStartQueueWorker
+		startScheduler = originalStartScheduler
+	}()
+
+	rt := &runtime{queueClient: noopCloser{}}
+	openCount := 0
+	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
+		openCount++
+		return rt, nil
+	}
+
+	var (
+		mu         sync.Mutex
+		httpRT     *runtime
+		workerRT   *runtime
+		scheduleRT *runtime
+	)
+	runHTTPServerFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger, got *runtime) error {
+		mu.Lock()
+		httpRT = got
+		mu.Unlock()
+		return nil
+	}
+	startQueueWorker = func(_ context.Context, _ config.Config, _ zerolog.Logger, got *runtime) error {
+		mu.Lock()
+		workerRT = got
+		mu.Unlock()
+		return nil
+	}
+	startScheduler = func(_ context.Context, _ config.Config, _ zerolog.Logger, got *runtime) error {
+		mu.Lock()
+		scheduleRT = got
+		mu.Unlock()
+		return nil
+	}
+
+	if err := Run(context.Background(), "serve", config.Config{}, zerolog.New(io.Discard)); err != nil {
+		t.Fatalf("Run(serve) error = %v", err)
+	}
+	if openCount != 1 {
+		t.Fatalf("openRuntime call count = %d, want 1", openCount)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if httpRT != rt || workerRT != rt || scheduleRT != rt {
+		t.Fatalf("runtime pointers = HTTP %p worker %p scheduler %p, want all %p", httpRT, workerRT, scheduleRT, rt)
+	}
+}
+
+func TestRunMigrateModeDoesNotOpenRuntime(t *testing.T) {
+	originalOpenRuntime := openRuntimeFunc
+	originalRunMigrations := runMigrations
+	defer func() {
+		openRuntimeFunc = originalOpenRuntime
+		runMigrations = originalRunMigrations
+	}()
+
+	openCount := 0
+	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
+		openCount++
+		return nil, errors.New("runtime must not be opened for migrations")
+	}
+	runMigrations = func(_ context.Context, _ string, direction string) error {
+		if direction != "up" {
+			t.Fatalf("migration direction = %q, want up", direction)
+		}
+		return nil
+	}
+
+	if err := Run(context.Background(), "migrate up", config.Config{}, zerolog.New(io.Discard)); err != nil {
+		t.Fatalf("Run(migrate up) error = %v", err)
+	}
+	if openCount != 0 {
+		t.Fatalf("openRuntime call count = %d, want 0", openCount)
+	}
+}
+
 func TestRunStartsHTTPServerForAPIMode(t *testing.T) {
 	testRunStartsHTTPServer(t, "api")
 }
 
 func TestRunStartsHTTPServerForServeMode(t *testing.T) {
 	testRunStartsHTTPServer(t, "serve")
+}
+
+func TestRunWaitsForInFlightHTTPHandlerBeforeClosingRuntime(t *testing.T) {
+	originalOpenRuntime := openRuntimeFunc
+	defer func() { openRuntimeFunc = originalOpenRuntime }()
+
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseHandler) })
+	}
+	defer release()
+
+	capacity := &stubAppCapacityApplication{
+		createRecord: appcapacity.CalculationRecord{
+			ID: "calc_1",
+			Result: domaincapacity.HousingCapacityResult{
+				PressureLevel: domaincapacity.PressureSafe,
+				Strategy:      "hold",
+			},
+		},
+		createStarted: handlerStarted,
+		releaseCreate: releaseHandler,
+	}
+	runtimeClosed := make(chan struct{})
+	rt := &runtime{
+		capacity:     capacity,
+		neighborhood: &stubAppNeighborhoodApplication{},
+		collection:   &stubAppCollectionApplication{},
+		queueClient:  closeSignalCloser{closed: runtimeClosed},
+	}
+	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
+		return rt, nil
+	}
+
+	addr := freeLocalAddr(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- Run(ctx, "api", config.Config{
+			HTTPAddr:    addr,
+			AccessToken: "test-access-token",
+		}, zerolog.New(io.Discard))
+	}()
+
+	waitForHTTP(t, "http://"+addr+"/healthz")
+	requestErr := make(chan error, 1)
+	go func() {
+		body := `{"cashOnHand":150,"oldHomeValue":320,"oldLoanBalance":80,"monthlyIncome":3.5,"currentMonthlyMortgage":0,"acceptableMonthlyMortgage":1.5,"targetTotalPrice":550,"renovationBudget":40,"transactionCosts":18,"transitionRentCost":5}`
+		req, err := http.NewRequest(http.MethodPost, "http://"+addr+"/api/v1/capacity/calculations", bytes.NewBufferString(body))
+		if err != nil {
+			requestErr <- err
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer test-access-token")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			requestErr <- err
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			requestErr <- fmt.Errorf("response status = %d, want %d", resp.StatusCode, http.StatusCreated)
+			return
+		}
+		requestErr <- nil
+	}()
+
+	select {
+	case <-handlerStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("capacity handler did not start")
+	}
+
+	cancel()
+	select {
+	case <-runtimeClosed:
+		t.Fatal("runtime closed while an HTTP handler was still running")
+	case err := <-runErr:
+		t.Fatalf("Run(api) returned before the in-flight handler completed: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	release()
+	select {
+	case err := <-requestErr:
+		if err != nil {
+			t.Fatalf("in-flight request error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("in-flight request did not complete after release")
+	}
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run(api) error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run(api) did not return after the in-flight handler completed")
+	}
+	select {
+	case <-runtimeClosed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("runtime was not closed after Run(api) returned")
+	}
 }
 
 func TestRunAPIModeDoesNotStartWorkerOrScheduler(t *testing.T) {
@@ -80,28 +311,16 @@ func TestRunSchedulerModeStartsOnlyScheduler(t *testing.T) {
 }
 
 func TestRunSchedulerEnqueuesMetricJobsForWatchlist(t *testing.T) {
-	originalOpenNeighborhoodApplication := openNeighborhoodApplication
-	originalOpenMetricQueueClient := openMetricQueueClient
-	defer func() {
-		openNeighborhoodApplication = originalOpenNeighborhoodApplication
-		openMetricQueueClient = originalOpenMetricQueueClient
-	}()
-
 	neighborhoodApp := &stubAppNeighborhoodApplication{
 		watchlistNeighborhoodIDs: []string{"neighborhood_1", "neighborhood_2"},
 	}
 	enqueuer := &stubMetricTaskEnqueuer{}
-	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
-		return neighborhoodApp, noopCloser{}, nil
-	}
-	openMetricQueueClient = func(_ config.Config) (MetricTaskEnqueuer, io.Closer, error) {
-		return enqueuer, noopCloser{}, nil
-	}
+	rt := &runtime{neighborhood: neighborhoodApp, enqueuer: enqueuer}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- runScheduler(ctx, config.Config{SchedulerInterval: time.Hour}, zerolog.New(io.Discard))
+		errCh <- runScheduler(ctx, config.Config{SchedulerInterval: time.Hour}, zerolog.New(io.Discard), rt)
 	}()
 
 	deadline := time.After(2 * time.Second)
@@ -183,14 +402,10 @@ func TestRunMigrateUpRunsMigrations(t *testing.T) {
 }
 
 func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
-	originalOpenCapacityApplication := openCapacityApplication
-	originalOpenNeighborhoodApplication := openNeighborhoodApplication
-	originalOpenCollectionApplication := openCollectionApplication
+	originalOpenRuntime := openRuntimeFunc
 	originalListenAndServe := listenAndServe
 	defer func() {
-		openCapacityApplication = originalOpenCapacityApplication
-		openNeighborhoodApplication = originalOpenNeighborhoodApplication
-		openCollectionApplication = originalOpenCollectionApplication
+		openRuntimeFunc = originalOpenRuntime
 		listenAndServe = originalListenAndServe
 	}()
 
@@ -205,18 +420,17 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 	}
 
 	opened := false
-	openCapacityApplication = func(_ context.Context, cfg config.Config, _ zerolog.Logger) (CapacityApplication, io.Closer, error) {
+	openRuntimeFunc = func(_ context.Context, cfg config.Config, _ zerolog.Logger) (*runtime, error) {
 		opened = true
 		if cfg.DatabaseURL != "postgres://test" {
 			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
 		}
-		return service, noopCloser{}, nil
-	}
-	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
-		return &stubAppNeighborhoodApplication{}, noopCloser{}, nil
-	}
-	openCollectionApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CollectionApplication, io.Closer, error) {
-		return &stubAppCollectionApplication{}, noopCloser{}, nil
+		return &runtime{
+			capacity:     service,
+			neighborhood: &stubAppNeighborhoodApplication{},
+			collection:   &stubAppCollectionApplication{},
+			queueClient:  noopCloser{},
+		}, nil
 	}
 
 	listenAndServe = func(server *http.Server) error {
@@ -226,6 +440,7 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 			t.Fatalf("http.NewRequest() error = %v", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer test-access-token")
 		rec := newInMemoryHTTPResponseWriter()
 
 		server.Handler.ServeHTTP(rec, req)
@@ -243,24 +458,21 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 	err := Run(context.Background(), "api", config.Config{
 		HTTPAddr:    "127.0.0.1:0",
 		DatabaseURL: "postgres://test",
+		AccessToken: "test-access-token",
 	}, zerolog.New(io.Discard))
 	if err != nil {
 		t.Fatalf("Run(api) error = %v", err)
 	}
 	if !opened {
-		t.Fatal("expected postgres capacity application to be opened")
+		t.Fatal("expected shared runtime to be opened")
 	}
 }
 
 func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
-	originalOpenCapacityApplication := openCapacityApplication
-	originalOpenNeighborhoodApplication := openNeighborhoodApplication
-	originalOpenCollectionApplication := openCollectionApplication
+	originalOpenRuntime := openRuntimeFunc
 	originalListenAndServe := listenAndServe
 	defer func() {
-		openCapacityApplication = originalOpenCapacityApplication
-		openNeighborhoodApplication = originalOpenNeighborhoodApplication
-		openCollectionApplication = originalOpenCollectionApplication
+		openRuntimeFunc = originalOpenRuntime
 		listenAndServe = originalListenAndServe
 	}()
 
@@ -281,17 +493,16 @@ func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 		},
 	}
 
-	openCapacityApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CapacityApplication, io.Closer, error) {
-		return &stubAppCapacityApplication{}, noopCloser{}, nil
-	}
-	openNeighborhoodApplication = func(_ context.Context, cfg config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
+	openRuntimeFunc = func(_ context.Context, cfg config.Config, _ zerolog.Logger) (*runtime, error) {
 		if cfg.DatabaseURL != "postgres://test" {
 			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
 		}
-		return service, noopCloser{}, nil
-	}
-	openCollectionApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CollectionApplication, io.Closer, error) {
-		return &stubAppCollectionApplication{}, noopCloser{}, nil
+		return &runtime{
+			capacity:     &stubAppCapacityApplication{},
+			neighborhood: service,
+			collection:   &stubAppCollectionApplication{},
+			queueClient:  noopCloser{},
+		}, nil
 	}
 
 	listenAndServe = func(server *http.Server) error {
@@ -299,6 +510,7 @@ func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 		if err != nil {
 			t.Fatalf("http.NewRequest() error = %v", err)
 		}
+		req.Header.Set("Authorization", "Bearer test-access-token")
 		rec := newInMemoryHTTPResponseWriter()
 
 		server.Handler.ServeHTTP(rec, req)
@@ -316,6 +528,7 @@ func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 	err := Run(context.Background(), "api", config.Config{
 		HTTPAddr:    "127.0.0.1:0",
 		DatabaseURL: "postgres://test",
+		AccessToken: "test-access-token",
 	}, zerolog.New(io.Discard))
 	if err != nil {
 		t.Fatalf("Run(api) error = %v", err)
@@ -323,14 +536,10 @@ func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 }
 
 func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
-	originalOpenCapacityApplication := openCapacityApplication
-	originalOpenNeighborhoodApplication := openNeighborhoodApplication
-	originalOpenCollectionApplication := openCollectionApplication
+	originalOpenRuntime := openRuntimeFunc
 	originalListenAndServe := listenAndServe
 	defer func() {
-		openCapacityApplication = originalOpenCapacityApplication
-		openNeighborhoodApplication = originalOpenNeighborhoodApplication
-		openCollectionApplication = originalOpenCollectionApplication
+		openRuntimeFunc = originalOpenRuntime
 		listenAndServe = originalListenAndServe
 	}()
 
@@ -341,17 +550,16 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 		},
 	}
 
-	openCapacityApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CapacityApplication, io.Closer, error) {
-		return &stubAppCapacityApplication{}, noopCloser{}, nil
-	}
-	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
-		return &stubAppNeighborhoodApplication{}, noopCloser{}, nil
-	}
-	openCollectionApplication = func(_ context.Context, cfg config.Config, _ zerolog.Logger) (CollectionApplication, io.Closer, error) {
+	openRuntimeFunc = func(_ context.Context, cfg config.Config, _ zerolog.Logger) (*runtime, error) {
 		if cfg.DatabaseURL != "postgres://test" {
 			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
 		}
-		return service, noopCloser{}, nil
+		return &runtime{
+			capacity:     &stubAppCapacityApplication{},
+			neighborhood: &stubAppNeighborhoodApplication{},
+			collection:   service,
+			queueClient:  noopCloser{},
+		}, nil
 	}
 
 	listenAndServe = func(server *http.Server) error {
@@ -361,7 +569,7 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 			t.Fatalf("http.NewRequest() error = %v", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer test-admin-token")
+		req.Header.Set("Authorization", "Bearer test-access-token")
 		rec := newInMemoryHTTPResponseWriter()
 
 		server.Handler.ServeHTTP(rec, req)
@@ -377,44 +585,64 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 	}
 
 	err := Run(context.Background(), "api", config.Config{
-		HTTPAddr:      "127.0.0.1:0",
-		DatabaseURL:   "postgres://test",
-		AdminAPIToken: "test-admin-token",
+		HTTPAddr:    "127.0.0.1:0",
+		DatabaseURL: "postgres://test",
+		AccessToken: "test-access-token",
 	}, zerolog.New(io.Discard))
 	if err != nil {
 		t.Fatalf("Run(api) error = %v", err)
 	}
 }
 
+func TestRunHTTPServerPassesRuntimeReadinessCheckerToRouter(t *testing.T) {
+	originalListenAndServe := listenAndServe
+	defer func() { listenAndServe = originalListenAndServe }()
+
+	checker := &appReadinessStub{}
+	rt := &runtime{readiness: checker}
+	listenAndServe = func(server *http.Server) error {
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		rec := httptest.NewRecorder()
+		server.Handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			return fmt.Errorf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+		if checker.calls != 1 {
+			return fmt.Errorf("runtime readiness check calls = %d, want 1", checker.calls)
+		}
+		return http.ErrServerClosed
+	}
+
+	if err := runHTTPServer(context.Background(), config.Config{}, zerolog.New(io.Discard), rt); err != nil {
+		t.Fatalf("runHTTPServer() error = %v", err)
+	}
+}
+
 func testRunStartsHTTPServer(t *testing.T, mode string) {
 	t.Helper()
 
-	originalOpenCapacityApplication := openCapacityApplication
-	originalOpenNeighborhoodApplication := openNeighborhoodApplication
-	originalOpenCollectionApplication := openCollectionApplication
+	originalOpenRuntime := openRuntimeFunc
 	originalStartQueueWorker := startQueueWorker
 	originalStartScheduler := startScheduler
 	defer func() {
-		openCapacityApplication = originalOpenCapacityApplication
-		openNeighborhoodApplication = originalOpenNeighborhoodApplication
-		openCollectionApplication = originalOpenCollectionApplication
+		openRuntimeFunc = originalOpenRuntime
 		startQueueWorker = originalStartQueueWorker
 		startScheduler = originalStartScheduler
 	}()
-	openCapacityApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CapacityApplication, io.Closer, error) {
-		return &stubAppCapacityApplication{}, noopCloser{}, nil
+	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
+		return &runtime{
+			capacity:     &stubAppCapacityApplication{},
+			neighborhood: &stubAppNeighborhoodApplication{},
+			collection:   &stubAppCollectionApplication{},
+			queueClient:  noopCloser{},
+		}, nil
 	}
-	openNeighborhoodApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (NeighborhoodApplication, io.Closer, error) {
-		return &stubAppNeighborhoodApplication{}, noopCloser{}, nil
-	}
-	openCollectionApplication = func(_ context.Context, _ config.Config, _ zerolog.Logger) (CollectionApplication, io.Closer, error) {
-		return &stubAppCollectionApplication{}, noopCloser{}, nil
-	}
-	startQueueWorker = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
+	startQueueWorker = func(ctx context.Context, _ config.Config, _ zerolog.Logger, _ *runtime) error {
 		<-ctx.Done()
 		return nil
 	}
-	startScheduler = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
+	startScheduler = func(ctx context.Context, _ config.Config, _ zerolog.Logger, _ *runtime) error {
 		<-ctx.Done()
 		return nil
 	}
@@ -454,31 +682,60 @@ type runModeCalls struct {
 	scheduler int
 }
 
+type runModeCallRecorder struct {
+	mu    sync.Mutex
+	calls runModeCalls
+}
+
+func (r *runModeCallRecorder) increment(component string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	switch component {
+	case "http":
+		r.calls.http++
+	case "worker":
+		r.calls.worker++
+	case "scheduler":
+		r.calls.scheduler++
+	}
+}
+
+func (r *runModeCallRecorder) snapshot() runModeCalls {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.calls
+}
+
 func testRunModeComposition(t *testing.T, mode string) runModeCalls {
 	t.Helper()
 
+	originalOpenRuntime := openRuntimeFunc
 	originalRunHTTPServer := runHTTPServerFunc
 	originalStartQueueWorker := startQueueWorker
 	originalStartScheduler := startScheduler
 	defer func() {
+		openRuntimeFunc = originalOpenRuntime
 		runHTTPServerFunc = originalRunHTTPServer
 		startQueueWorker = originalStartQueueWorker
 		startScheduler = originalStartScheduler
 	}()
 
-	calls := runModeCalls{}
-	runHTTPServerFunc = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
-		calls.http++
+	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
+		return &runtime{queueClient: noopCloser{}}, nil
+	}
+	calls := &runModeCallRecorder{}
+	runHTTPServerFunc = func(ctx context.Context, _ config.Config, _ zerolog.Logger, _ *runtime) error {
+		calls.increment("http")
 		<-ctx.Done()
 		return nil
 	}
-	startQueueWorker = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
-		calls.worker++
+	startQueueWorker = func(ctx context.Context, _ config.Config, _ zerolog.Logger, _ *runtime) error {
+		calls.increment("worker")
 		<-ctx.Done()
 		return nil
 	}
-	startScheduler = func(ctx context.Context, _ config.Config, _ zerolog.Logger) error {
-		calls.scheduler++
+	startScheduler = func(ctx context.Context, _ config.Config, _ zerolog.Logger, _ *runtime) error {
+		calls.increment("scheduler")
 		<-ctx.Done()
 		return nil
 	}
@@ -491,12 +748,12 @@ func testRunModeComposition(t *testing.T, mode string) runModeCalls {
 
 	deadline := time.After(2 * time.Second)
 	for {
-		if modeStarted(mode, calls) {
+		if modeStarted(mode, calls.snapshot()) {
 			break
 		}
 		select {
 		case <-deadline:
-			t.Fatalf("Run(%q) did not start expected components; calls = %+v", mode, calls)
+			t.Fatalf("Run(%q) did not start expected components; calls = %+v", mode, calls.snapshot())
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -506,7 +763,7 @@ func testRunModeComposition(t *testing.T, mode string) runModeCalls {
 		t.Fatalf("Run(%q) error = %v", mode, err)
 	}
 
-	return calls
+	return calls.snapshot()
 }
 
 func modeStarted(mode string, calls runModeCalls) bool {
@@ -579,11 +836,19 @@ func ExampleNormalizeMode() {
 }
 
 type stubAppCapacityApplication struct {
-	createCalled bool
-	createRecord appcapacity.CalculationRecord
+	createCalled  bool
+	createRecord  appcapacity.CalculationRecord
+	createStarted chan<- struct{}
+	releaseCreate <-chan struct{}
 }
 
 func (s *stubAppCapacityApplication) CreateCalculation(_ context.Context, _ appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error) {
+	if s.createStarted != nil {
+		s.createStarted <- struct{}{}
+	}
+	if s.releaseCreate != nil {
+		<-s.releaseCreate
+	}
 	s.createCalled = true
 	return s.createRecord, nil
 }
@@ -668,6 +933,33 @@ func (s *stubAppCollectionApplication) ImportManualListings(_ context.Context, _
 type noopCloser struct{}
 
 func (noopCloser) Close() error { return nil }
+
+type appReadinessStub struct {
+	calls int
+}
+
+func (s *appReadinessStub) Check(context.Context) error {
+	s.calls++
+	return nil
+}
+
+type countingCloser struct {
+	count int
+}
+
+func (c *countingCloser) Close() error {
+	c.count++
+	return nil
+}
+
+type closeSignalCloser struct {
+	closed chan<- struct{}
+}
+
+func (c closeSignalCloser) Close() error {
+	close(c.closed)
+	return nil
+}
 
 type inMemoryHTTPResponseWriter struct {
 	header     http.Header

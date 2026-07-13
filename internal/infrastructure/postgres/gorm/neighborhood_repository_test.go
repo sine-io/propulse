@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
+	"github.com/sine-io/propulse/internal/application/user"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 	migraterunner "github.com/sine-io/propulse/internal/infrastructure/migrate"
 )
@@ -39,7 +40,7 @@ func TestNeighborhoodRepositoryPersistsWatchlistAndLatestMetric(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateNeighborhood() error = %v", err)
 	}
-	if _, err := repo.AddWatchlistItem(ctx, "demo-user", neighborhood.ID); err != nil {
+	if _, err := repo.AddWatchlistItem(ctx, user.SingleUserID, neighborhood.ID); err != nil {
 		t.Fatalf("AddWatchlistItem() error = %v", err)
 	}
 
@@ -60,7 +61,7 @@ func TestNeighborhoodRepositoryPersistsWatchlistAndLatestMetric(t *testing.T) {
 		t.Fatalf("Create(metric) error = %v", err)
 	}
 
-	watchlist, err := repo.ListWatchlist(ctx, "demo-user")
+	watchlist, err := repo.ListWatchlist(ctx, user.SingleUserID)
 	if err != nil {
 		t.Fatalf("ListWatchlist() error = %v", err)
 	}

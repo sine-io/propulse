@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
+	"github.com/sine-io/propulse/internal/application/user"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 )
 
@@ -61,7 +62,7 @@ func (h Capacity) CreateCalculation(c *gin.Context) {
 		return
 	}
 
-	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{UserID: demoUserID, Input: input})
+	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{UserID: user.SingleUserID, Input: input})
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return

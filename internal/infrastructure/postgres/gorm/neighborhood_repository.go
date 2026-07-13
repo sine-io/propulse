@@ -6,12 +6,11 @@ import (
 
 	"github.com/google/uuid"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
+	"github.com/sine-io/propulse/internal/application/user"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-const demoUserID = "demo-user"
 
 type NeighborhoodRepository struct {
 	db           *gorm.DB
@@ -220,7 +219,7 @@ func (r *NeighborhoodRepository) SeedDemoData(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if _, err := r.AddWatchlistItem(ctx, demoUserID, neighborhood.ID); err != nil {
+		if _, err := r.AddWatchlistItem(ctx, user.SingleUserID, neighborhood.ID); err != nil {
 			return err
 		}
 
@@ -270,13 +269,17 @@ func metricFromModel(model NeighborhoodMetricModel) appneighborhood.MetricSnapsh
 		NeighborhoodID:      model.NeighborhoodID,
 		ListedHomes:         model.ListedHomes,
 		PriceCutHomes:       model.PriceCutHomes,
-		AvgDaysOnMarket:     model.AvgDaysOnMarket,
-		ListingPriceMin:     model.ListingPriceMin,
-		ListingPriceMax:     model.ListingPriceMax,
-		TransactionPriceMin: model.TransactionPriceMin,
-		TransactionPriceMax: model.TransactionPriceMax,
+		AvgDaysOnMarket:     gormFloatPtr(model.AvgDaysOnMarket),
+		ListingPriceMin:     gormFloatPtr(model.ListingPriceMin),
+		ListingPriceMax:     gormFloatPtr(model.ListingPriceMax),
+		TransactionPriceMin: gormFloatPtr(model.TransactionPriceMin),
+		TransactionPriceMax: gormFloatPtr(model.TransactionPriceMax),
 		TransactionMomentum: domainneighborhood.TransactionMomentum(model.TransactionMomentum),
 		TargetLayoutSupply:  model.TargetLayoutSupply,
 		CalculatedAt:        model.CalculatedAt,
 	}
+}
+
+func gormFloatPtr(value float64) *float64 {
+	return &value
 }

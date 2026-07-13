@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sine-io/propulse/internal/application/user"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
@@ -62,21 +63,21 @@ func TestGetNeighborhoodReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestAddWatchlistItemUsesDemoUser(t *testing.T) {
+func TestAddWatchlistItemUsesSingleUser(t *testing.T) {
 	repo := newMemoryRepository()
 	repo.neighborhoods["neighborhood_1"] = Neighborhood{ID: "neighborhood_1"}
 	service := NewService(repo)
 
 	item, err := service.AddWatchlistItem(context.Background(), AddWatchlistItemCommand{
-		UserID:         "demo-user",
+		UserID:         user.SingleUserID,
 		NeighborhoodID: "neighborhood_1",
 	})
 	if err != nil {
 		t.Fatalf("AddWatchlistItem() error = %v", err)
 	}
 
-	if item.UserID != "demo-user" {
-		t.Fatalf("UserID = %q, want demo-user", item.UserID)
+	if item.UserID != user.SingleUserID {
+		t.Fatalf("UserID = %q, want %q", item.UserID, user.SingleUserID)
 	}
 	if item.NeighborhoodID != "neighborhood_1" {
 		t.Fatalf("NeighborhoodID = %q, want neighborhood_1", item.NeighborhoodID)
@@ -95,22 +96,25 @@ func TestListWatchlistEvaluatesLatestMetric(t *testing.T) {
 			HasMetric:      true,
 			Metric: MetricSnapshot{
 				ListedHomes:          42,
-				ListedHomesChangePct: 18,
+				ListedHomesChangePct: testFloatPtr(18),
 				PriceCutHomes:        11,
-				AvgDaysOnMarket:      78,
-				ListingPriceMin:      520,
-				ListingPriceMax:      620,
-				TransactionPriceMin:  495,
-				TransactionPriceMax:  545,
+				AvgDaysOnMarket:      testFloatPtr(78),
+				ListingPriceMin:      testFloatPtr(520),
+				ListingPriceMax:      testFloatPtr(620),
+				TransactionPriceMin:  testFloatPtr(495),
+				TransactionPriceMax:  testFloatPtr(545),
 				TransactionMomentum:  domainneighborhood.TransactionMomentumWeak,
 				TargetLayoutSupply:   12,
+				Coverage:             domainneighborhood.CoverageFull,
+				Freshness:            domainneighborhood.FreshnessCurrent,
+				QualityState:         domainneighborhood.MarketQualitySufficient,
 				CalculatedAt:         time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 			},
 		},
 	}
 	service := NewService(repo)
 
-	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: "demo-user"})
+	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: user.SingleUserID})
 	if err != nil {
 		t.Fatalf("ListWatchlist() error = %v", err)
 	}
@@ -140,7 +144,7 @@ func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
 	}
 	service := NewService(repo)
 
-	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: "demo-user"})
+	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: user.SingleUserID})
 	if err != nil {
 		t.Fatalf("ListWatchlist() error = %v", err)
 	}
@@ -184,15 +188,18 @@ func TestLatestMetricEvaluatesSignal(t *testing.T) {
 	repo := newMemoryRepository()
 	repo.metrics["neighborhood_1"] = MetricSnapshot{
 		ListedHomes:          14,
-		ListedHomesChangePct: -6,
+		ListedHomesChangePct: testFloatPtr(-6),
 		PriceCutHomes:        1,
-		AvgDaysOnMarket:      35,
-		ListingPriceMin:      700,
-		ListingPriceMax:      760,
-		TransactionPriceMin:  690,
-		TransactionPriceMax:  745,
+		AvgDaysOnMarket:      testFloatPtr(35),
+		ListingPriceMin:      testFloatPtr(700),
+		ListingPriceMax:      testFloatPtr(760),
+		TransactionPriceMin:  testFloatPtr(690),
+		TransactionPriceMax:  testFloatPtr(745),
 		TransactionMomentum:  domainneighborhood.TransactionMomentumStrong,
 		TargetLayoutSupply:   3,
+		Coverage:             domainneighborhood.CoverageFull,
+		Freshness:            domainneighborhood.FreshnessCurrent,
+		QualityState:         domainneighborhood.MarketQualitySufficient,
 		CalculatedAt:         time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 	}
 	service := NewService(repo)
@@ -260,7 +267,7 @@ func (m *memoryRepository) AddWatchlistItem(_ context.Context, userID string, ne
 }
 
 func (m *memoryRepository) ListWatchlist(_ context.Context, userID string) ([]WatchlistSummary, error) {
-	if userID != "demo-user" {
+	if userID != user.SingleUserID {
 		return nil, nil
 	}
 	return m.watchlist, nil
@@ -276,4 +283,8 @@ func (m *memoryRepository) LatestMetric(_ context.Context, neighborhoodID string
 		return MetricSnapshot{}, ErrMetricNotFound
 	}
 	return metric, nil
+}
+
+func testFloatPtr(value float64) *float64 {
+	return &value
 }

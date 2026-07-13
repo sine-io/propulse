@@ -138,11 +138,11 @@ func newMetricResponse(metric appneighborhood.MetricWithSignal) metricResponse {
 		NeighborhoodID:       metric.Metric.NeighborhoodID,
 		ListedHomes:          metric.Metric.ListedHomes,
 		PriceCutHomes:        metric.Metric.PriceCutHomes,
-		AvgDaysOnMarket:      metric.Metric.AvgDaysOnMarket,
-		ListingPriceMin:      metric.Metric.ListingPriceMin,
-		ListingPriceMax:      metric.Metric.ListingPriceMax,
-		TransactionPriceMin:  metric.Metric.TransactionPriceMin,
-		TransactionPriceMax:  metric.Metric.TransactionPriceMax,
+		AvgDaysOnMarket:      floatPtrValue(metric.Metric.AvgDaysOnMarket),
+		ListingPriceMin:      floatPtrValue(metric.Metric.ListingPriceMin),
+		ListingPriceMax:      floatPtrValue(metric.Metric.ListingPriceMax),
+		TransactionPriceMin:  floatPtrValue(metric.Metric.TransactionPriceMin),
+		TransactionPriceMax:  floatPtrValue(metric.Metric.TransactionPriceMax),
 		TransactionMomentum:  metric.Metric.TransactionMomentum,
 		TargetLayoutSupply:   metric.Metric.TargetLayoutSupply,
 		Status:               metric.Signal.Status,
@@ -154,4 +154,11 @@ func newMetricResponse(metric appneighborhood.MetricWithSignal) metricResponse {
 		Reasons:              metric.Signal.Reasons,
 		CalculatedAt:         metric.Metric.CalculatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func floatPtrValue(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
