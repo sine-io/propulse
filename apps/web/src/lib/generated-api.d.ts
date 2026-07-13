@@ -764,6 +764,8 @@ export interface components {
             /** @enum {string} */
             strategy: "先卖后买或同步推进" | "可以同步推进" | "暂缓改善";
             reasons: string[];
+            ruleVersion: string;
+            effectiveDate: string;
         };
         CreateCalculationResponse: {
             id: string;
@@ -772,6 +774,8 @@ export interface components {
                 pressureLevel: "safe" | "strained" | "danger";
                 /** @enum {string} */
                 strategy: "先卖后买或同步推进" | "可以同步推进" | "暂缓改善";
+                ruleVersion: string;
+                effectiveDate: string;
             };
         };
         CalculationResponse: {

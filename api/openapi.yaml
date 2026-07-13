@@ -487,6 +487,8 @@ components:
         - minimumSafeOldHomeSalePrice
         - strategy
         - reasons
+        - ruleVersion
+        - effectiveDate
       properties:
         netOldHomeProceeds:
           type: number
@@ -516,6 +518,10 @@ components:
           type: array
           items:
             type: string
+        ruleVersion:
+          type: string
+        effectiveDate:
+          type: string
     CreateCalculationResponse:
       type: object
       required: [id, result]
@@ -524,7 +530,7 @@ components:
           type: string
         result:
           type: object
-          required: [pressureLevel, strategy]
+          required: [pressureLevel, strategy, ruleVersion, effectiveDate]
           properties:
             pressureLevel:
               type: string
@@ -532,6 +538,10 @@ components:
             strategy:
               type: string
               enum: ["先卖后买或同步推进", "可以同步推进", "暂缓改善"]
+            ruleVersion:
+              type: string
+            effectiveDate:
+              type: string
     CalculationResponse:
       type: object
       required: [id, input, result, createdAt]

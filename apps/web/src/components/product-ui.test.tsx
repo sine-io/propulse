@@ -218,6 +218,8 @@ describe("CalculatorPanel", () => {
       result: {
         pressureLevel: "safe",
         strategy: "可以同步推进",
+        ruleVersion: "2026.07",
+        effectiveDate: "2026-07-01",
       },
     });
     render(createElement(CalculatorPanel));

@@ -34,6 +34,8 @@ type createCalculationResponse struct {
 type createCalculationResult struct {
 	PressureLevel domaincapacity.PressureLevel `json:"pressureLevel"`
 	Strategy      string                       `json:"strategy"`
+	RuleVersion   string                       `json:"ruleVersion"`
+	EffectiveDate string                       `json:"effectiveDate"`
 }
 
 type calculationResponse struct {
@@ -69,6 +71,8 @@ type housingCapacityResultResponse struct {
 	MinimumSafeOldHomeSalePrice float64                      `json:"minimumSafeOldHomeSalePrice"`
 	Strategy                    string                       `json:"strategy"`
 	Reasons                     []string                     `json:"reasons"`
+	RuleVersion                 string                       `json:"ruleVersion"`
+	EffectiveDate               string                       `json:"effectiveDate"`
 }
 
 func (h Capacity) CreateCalculation(c *gin.Context) {
@@ -98,6 +102,8 @@ func (h Capacity) CreateCalculation(c *gin.Context) {
 		Result: createCalculationResult{
 			PressureLevel: record.Result.PressureLevel,
 			Strategy:      record.Result.Strategy,
+			RuleVersion:   record.Result.RuleVersion,
+			EffectiveDate: record.Result.EffectiveDate,
 		},
 	})
 }
@@ -149,5 +155,6 @@ func newHousingCapacityResultResponse(result domaincapacity.HousingCapacityResul
 		MonthlyPayment: result.MonthlyPayment, MonthlyPaymentRatio: result.MonthlyPaymentRatio,
 		PressureLevel: result.PressureLevel, MinimumSafeOldHomeSalePrice: result.MinimumSafeOldHomeSalePrice,
 		Strategy: result.Strategy, Reasons: result.Reasons,
+		RuleVersion: result.RuleVersion, EffectiveDate: result.EffectiveDate,
 	}
 }

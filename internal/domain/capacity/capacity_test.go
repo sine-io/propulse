@@ -2,6 +2,74 @@ package capacity
 
 import "testing"
 
+func referenceInput() HousingCapacityInput {
+	return HousingCapacityInput{
+		CashOnHand:                150,
+		OldHomeValue:              320,
+		OldLoanBalance:            80,
+		MonthlyIncome:             3.5,
+		CurrentMonthlyMortgage:    0,
+		AcceptableMonthlyMortgage: 1.5,
+		TargetTotalPrice:          550,
+		RenovationBudget:          40,
+		TransactionCosts:          18,
+		TransitionRentCost:        5,
+	}
+}
+
+func TestCalculateStampsDefaultRuleVersion(t *testing.T) {
+	result := Calculate(referenceInput())
+
+	defaults := DefaultAssumptions()
+	if result.RuleVersion != defaults.RuleVersion || result.RuleVersion == "" {
+		t.Fatalf("RuleVersion = %q, want %q", result.RuleVersion, defaults.RuleVersion)
+	}
+	if result.EffectiveDate != defaults.EffectiveDate || result.EffectiveDate == "" {
+		t.Fatalf("EffectiveDate = %q, want %q", result.EffectiveDate, defaults.EffectiveDate)
+	}
+}
+
+func TestCalculateWithVariesByAssumptions(t *testing.T) {
+	input := referenceInput()
+	base := Calculate(input)
+
+	custom := DefaultAssumptions()
+	custom.RuleVersion = "test.1"
+	custom.MonthlyPaymentCoefficient = DefaultAssumptions().MonthlyPaymentCoefficient * 1.2 // 提高月供系数应抬高月供
+	adjusted := CalculateWith(input, custom)
+
+	if adjusted.RuleVersion != "test.1" {
+		t.Fatalf("RuleVersion = %q, want test.1", adjusted.RuleVersion)
+	}
+	if !(adjusted.MonthlyPayment > base.MonthlyPayment) {
+		t.Fatalf("MonthlyPayment = %v, want > baseline %v after raising coefficient", adjusted.MonthlyPayment, base.MonthlyPayment)
+	}
+}
+
+func TestCalculateHasNo550SpecialPath(t *testing.T) {
+	base := referenceInput()
+
+	at549 := base
+	at549.TargetTotalPrice = 549
+	at550 := base
+	at550.TargetTotalPrice = 550
+	at551 := base
+	at551.TargetTotalPrice = 551
+
+	r549 := Calculate(at549)
+	r550 := Calculate(at550)
+	r551 := Calculate(at551)
+
+	// 550 不得触发固定覆盖：三者的首付缺口应随总价单调、连续变化。
+	if !(r549.DownPaymentGap <= r550.DownPaymentGap && r550.DownPaymentGap <= r551.DownPaymentGap) {
+		t.Fatalf("downPaymentGap not monotonic: 549=%v 550=%v 551=%v", r549.DownPaymentGap, r550.DownPaymentGap, r551.DownPaymentGap)
+	}
+	if r550.SafeTotalPrice != r549.SafeTotalPrice {
+		// SafeTotalPrice 不依赖 targetTotalPrice，应一致（无 550 专属分支）。
+		t.Fatalf("SafeTotalPrice differs across target prices: 549=%v 550=%v", r549.SafeTotalPrice, r550.SafeTotalPrice)
+	}
+}
+
 func TestCalculateHousingCapacityClassifiesStrained(t *testing.T) {
 	result := Calculate(HousingCapacityInput{
 		CashOnHand:                150,
