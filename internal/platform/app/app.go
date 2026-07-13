@@ -223,6 +223,7 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger, r
 		CollectionApplication:   rt.collection,
 		DecisionApplication:     rt.decision,
 		AccessToken:             cfg.AccessToken,
+		UserID:                  cfg.UserID,
 		ReadinessChecker:        rt.readiness,
 	})
 	if err != nil {

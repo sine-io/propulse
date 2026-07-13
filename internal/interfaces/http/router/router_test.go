@@ -38,7 +38,10 @@ func newTestEngine(t *testing.T, deps Dependencies) http.Handler {
 		deps.CollectionApplication = appcollection.NewService(newInMemoryCollectionRepository(neighborhoodRepo, marketState), nil, nil)
 	}
 	if deps.DecisionApplication == nil {
-		deps.DecisionApplication = appdecision.NewService(deps.CapacityApplication, deps.NeighborhoodApplication)
+		deps.DecisionApplication = appdecision.NewService(deps.CapacityApplication, deps.NeighborhoodApplication, user.SingleUserID)
+	}
+	if deps.UserID == "" {
+		deps.UserID = user.SingleUserID
 	}
 
 	engine, err := New(deps)

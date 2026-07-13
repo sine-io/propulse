@@ -60,7 +60,7 @@
 
 ## 本地开发与验证
 
-复制 `.env.example` 中需要的配置到本地环境，并至少替换 `PROPULSE_ACCESS_TOKEN`。
+复制 `.env.example` 中需要的配置到本地环境，并至少替换 `PROPULSE_ACCESS_TOKEN`。`PROPULSE_USER_ID` 为必填项，未设置时服务会启动失败（fail-fast），不会静默回退到默认账号。
 
 安装前端依赖并运行完整前端校验：
 

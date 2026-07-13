@@ -196,7 +196,7 @@ func TestCreateWatchlistItemUsesSingleUser(t *testing.T) {
 		},
 	}
 	engine := gin.New()
-	engine.POST("/api/v1/watchlist/items", NewWatchlist(service).AddItem)
+	engine.POST("/api/v1/watchlist/items", NewWatchlist(service, user.SingleUserID).AddItem)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/watchlist/items", bytes.NewBufferString(`{"neighborhoodId":"neighborhood_1"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -215,7 +215,7 @@ func TestCreateWatchlistItemRejectsMissingNeighborhoodID(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubNeighborhoodApplication{}
 	engine := gin.New()
-	engine.POST("/api/v1/watchlist/items", NewWatchlist(service).AddItem)
+	engine.POST("/api/v1/watchlist/items", NewWatchlist(service, user.SingleUserID).AddItem)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/watchlist/items", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -260,7 +260,7 @@ func TestListWatchlistReturnsBriefShape(t *testing.T) {
 		},
 	}
 	engine := gin.New()
-	engine.GET("/api/v1/watchlist", NewWatchlist(service).List)
+	engine.GET("/api/v1/watchlist", NewWatchlist(service, user.SingleUserID).List)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/watchlist", nil)
 	rec := httptest.NewRecorder()
@@ -310,7 +310,7 @@ func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
 		},
 	}
 	engine := gin.New()
-	engine.GET("/api/v1/watchlist", NewWatchlist(service).List)
+	engine.GET("/api/v1/watchlist", NewWatchlist(service, user.SingleUserID).List)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/watchlist", nil)
 	rec := httptest.NewRecorder()

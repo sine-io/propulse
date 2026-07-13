@@ -29,7 +29,7 @@ func TestCreateCapacityCalculationReturnsSummary(t *testing.T) {
 	}
 
 	engine := gin.New()
-	engine.POST("/api/v1/capacity/calculations", NewCapacity(service).CreateCalculation)
+	engine.POST("/api/v1/capacity/calculations", NewCapacity(service, user.SingleUserID).CreateCalculation)
 
 	body := `{"cashOnHand":150,"oldHomeValue":320,"oldLoanBalance":80,"monthlyIncome":3.5,"currentMonthlyMortgage":0,"acceptableMonthlyMortgage":1.5,"targetTotalPrice":550,"renovationBudget":40,"transactionCosts":18,"transitionRentCost":5}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/capacity/calculations", bytes.NewBufferString(body))
@@ -69,7 +69,7 @@ func TestCreateCapacityCalculationReturnsSummary(t *testing.T) {
 func TestCreateCapacityCalculationRejectsInvalidJSON(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
-	engine.POST("/api/v1/capacity/calculations", NewCapacity(&stubCapacityApplication{}).CreateCalculation)
+	engine.POST("/api/v1/capacity/calculations", NewCapacity(&stubCapacityApplication{}, user.SingleUserID).CreateCalculation)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/capacity/calculations", bytes.NewBufferString(`{"cashOnHand":`))
 	req.Header.Set("Content-Type", "application/json")
@@ -102,7 +102,7 @@ func TestCreateCapacityCalculationRejectsInvalidNumbers(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubCapacityApplication{}
 	engine := gin.New()
-	engine.POST("/api/v1/capacity/calculations", NewCapacity(service).CreateCalculation)
+	engine.POST("/api/v1/capacity/calculations", NewCapacity(service, user.SingleUserID).CreateCalculation)
 
 	body := `{"cashOnHand":150,"oldHomeValue":320,"oldLoanBalance":80,"monthlyIncome":0,"currentMonthlyMortgage":0,"acceptableMonthlyMortgage":1.5,"targetTotalPrice":550,"renovationBudget":40,"transactionCosts":18,"transitionRentCost":5}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/capacity/calculations", bytes.NewBufferString(body))
@@ -148,7 +148,7 @@ func TestGetCapacityCalculationReturnsStoredRecord(t *testing.T) {
 	}
 
 	engine := gin.New()
-	engine.GET("/api/v1/capacity/calculations/:id", NewCapacity(service).GetCalculation)
+	engine.GET("/api/v1/capacity/calculations/:id", NewCapacity(service, user.SingleUserID).GetCalculation)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/capacity/calculations/calc_123", nil)
 	rec := httptest.NewRecorder()
@@ -184,7 +184,7 @@ func TestGetCapacityCalculationReturnsNotFound(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubCapacityApplication{getErr: appcapacity.ErrCalculationNotFound}
 	engine := gin.New()
-	engine.GET("/api/v1/capacity/calculations/:id", NewCapacity(service).GetCalculation)
+	engine.GET("/api/v1/capacity/calculations/:id", NewCapacity(service, user.SingleUserID).GetCalculation)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/capacity/calculations/missing", nil)
 	rec := httptest.NewRecorder()
@@ -228,7 +228,7 @@ func TestGetCapacityCalculationReturnsServerError(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubCapacityApplication{getErr: errors.New("boom")}
 	engine := gin.New()
-	engine.GET("/api/v1/capacity/calculations/:id", NewCapacity(service).GetCalculation)
+	engine.GET("/api/v1/capacity/calculations/:id", NewCapacity(service, user.SingleUserID).GetCalculation)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/capacity/calculations/calc_123", nil)
 	rec := httptest.NewRecorder()

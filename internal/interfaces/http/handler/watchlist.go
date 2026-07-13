@@ -8,16 +8,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
-	"github.com/sine-io/propulse/internal/application/user"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
 type Watchlist struct {
-	app NeighborhoodApplication
+	app    NeighborhoodApplication
+	userID string
 }
 
-func NewWatchlist(app NeighborhoodApplication) Watchlist {
-	return Watchlist{app: app}
+func NewWatchlist(app NeighborhoodApplication, userID string) Watchlist {
+	return Watchlist{app: app, userID: userID}
 }
 
 type addWatchlistItemRequest struct {
@@ -61,7 +61,7 @@ func (h Watchlist) AddItem(c *gin.Context) {
 	}
 
 	item, err := h.app.AddWatchlistItem(c.Request.Context(), appneighborhood.AddWatchlistItemCommand{
-		UserID:         user.SingleUserID,
+		UserID:         h.userID,
 		NeighborhoodID: request.NeighborhoodID,
 	})
 	if err != nil {
@@ -82,7 +82,7 @@ func (h Watchlist) AddItem(c *gin.Context) {
 }
 
 func (h Watchlist) List(c *gin.Context) {
-	items, err := h.app.ListWatchlist(c.Request.Context(), appneighborhood.ListWatchlistQuery{UserID: user.SingleUserID})
+	items, err := h.app.ListWatchlist(c.Request.Context(), appneighborhood.ListWatchlistQuery{UserID: h.userID})
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return

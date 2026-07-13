@@ -10,6 +10,7 @@ services:
       PROPULSE_REDIS_ADDR: redis:6379
       PROPULSE_HTTP_ADDR: :8080
       PROPULSE_ACCESS_TOKEN: local-access-token
+      PROPULSE_USER_ID: propulse-user
     ports:
       - "8317:8080"
     depends_on:
@@ -27,6 +28,7 @@ services:
       PROPULSE_REDIS_ADDR: redis:6379
       PROPULSE_HTTP_ADDR: :8080
       PROPULSE_ACCESS_TOKEN: local-access-token
+      PROPULSE_USER_ID: propulse-user
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,6 +46,7 @@ services:
       PROPULSE_REDIS_ADDR: redis:6379
       PROPULSE_HTTP_ADDR: :8080
       PROPULSE_ACCESS_TOKEN: local-access-token
+      PROPULSE_USER_ID: propulse-user
     depends_on:
       postgres:
         condition: service_healthy

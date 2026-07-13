@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
-	"github.com/sine-io/propulse/internal/application/user"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 )
 
@@ -19,11 +18,12 @@ type CapacityApplication interface {
 }
 
 type Capacity struct {
-	app CapacityApplication
+	app    CapacityApplication
+	userID string
 }
 
-func NewCapacity(app CapacityApplication) Capacity {
-	return Capacity{app: app}
+func NewCapacity(app CapacityApplication, userID string) Capacity {
+	return Capacity{app: app, userID: userID}
 }
 
 type createCalculationResponse struct {
@@ -87,7 +87,7 @@ func (h Capacity) CreateCalculation(c *gin.Context) {
 		return
 	}
 
-	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{UserID: user.SingleUserID, Input: input})
+	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{UserID: h.userID, Input: input})
 	if err != nil {
 		if errors.Is(err, domaincapacity.ErrInvalidInput) {
 			writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")

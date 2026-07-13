@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	t.Setenv("PROPULSE_HTTP_ADDR", "")
@@ -11,12 +14,16 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	t.Setenv("PROPULSE_LOG_LEVEL", "")
 	t.Setenv("PROPULSE_LOG_PRETTY", "")
 	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "")
+	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
+	if cfg.UserID != "propulse-user" {
+		t.Fatalf("UserID = %q, want propulse-user", cfg.UserID)
+	}
 	if cfg.HTTPAddr != ":8080" {
 		t.Fatalf("HTTPAddr = %q, want :8080", cfg.HTTPAddr)
 	}
@@ -41,6 +48,7 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 }
 
 func TestLoadReadsAccessToken(t *testing.T) {
+	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_ACCESS_TOKEN", "secret-token")
 	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "legacy-token")
 
@@ -54,6 +62,7 @@ func TestLoadReadsAccessToken(t *testing.T) {
 }
 
 func TestLoadDoesNotAcceptLegacyAdminToken(t *testing.T) {
+	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_ACCESS_TOKEN", "")
 	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "legacy-token")
 
@@ -67,6 +76,7 @@ func TestLoadDoesNotAcceptLegacyAdminToken(t *testing.T) {
 }
 
 func TestLoadParsesSchedulerInterval(t *testing.T) {
+	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "10s")
 
 	cfg, err := Load()
@@ -80,10 +90,21 @@ func TestLoadParsesSchedulerInterval(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidSchedulerInterval(t *testing.T) {
+	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "sometimes")
 
 	_, err := Load()
 	if err == nil {
 		t.Fatal("Load() error = nil, want invalid interval error")
+	}
+}
+
+func TestLoadRequiresUserID(t *testing.T) {
+	// 缺失稳定用户身份时必须启动失败（fail-fast），不得静默回退（#36 / SYS-001.1 AC3）。
+	t.Setenv("PROPULSE_USER_ID", "")
+
+	_, err := Load()
+	if !errors.Is(err, ErrMissingUserID) {
+		t.Fatalf("Load() error = %v, want ErrMissingUserID", err)
 	}
 }

@@ -37,7 +37,7 @@ func TestGetActionWindowComposesLatestCapacityFirstWatchlistMetricAndAlternative
 		},
 	}
 
-	result, err := NewService(capacity, neighborhood).GetActionWindow(context.Background(), GetActionWindowQuery{})
+	result, err := NewService(capacity, neighborhood, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{})
 	if err != nil {
 		t.Fatalf("GetActionWindow() error = %v", err)
 	}
@@ -75,7 +75,7 @@ func TestGetActionWindowUsesRequestedNeighborhoodID(t *testing.T) {
 		record: appcapacity.CalculationRecord{
 			Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
 		},
-	}, neighborhood).GetActionWindow(context.Background(), GetActionWindowQuery{NeighborhoodID: requestedNeighborhoodID})
+	}, neighborhood, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{NeighborhoodID: requestedNeighborhoodID})
 	if err != nil {
 		t.Fatalf("GetActionWindow() error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestGetActionWindowUsesRequestedNeighborhoodID(t *testing.T) {
 }
 
 func TestGetActionWindowReturnsCapacityRequiredWhenMissingLatestCalculation(t *testing.T) {
-	_, err := NewService(&stubCapacityReader{err: appcapacity.ErrCalculationNotFound}, &stubNeighborhoodReader{}).
+	_, err := NewService(&stubCapacityReader{err: appcapacity.ErrCalculationNotFound}, &stubNeighborhoodReader{}, user.SingleUserID).
 		GetActionWindow(context.Background(), GetActionWindowQuery{})
 
 	if !errors.Is(err, ErrCapacityRequired) {
@@ -104,7 +104,7 @@ func TestGetActionWindowReturnsWatchlistRequiredWhenDefaultNeighborhoodIsUnavail
 		record: appcapacity.CalculationRecord{
 			Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
 		},
-	}, neighborhood).GetActionWindow(context.Background(), GetActionWindowQuery{})
+	}, neighborhood, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{})
 
 	if !errors.Is(err, ErrWatchlistRequired) {
 		t.Fatalf("error = %v, want ErrWatchlistRequired", err)
@@ -125,7 +125,7 @@ func TestGetActionWindowReturnsInvalidNeighborhoodIDForMalformedExplicitID(t *te
 		record: appcapacity.CalculationRecord{
 			Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
 		},
-	}, neighborhood).GetActionWindow(context.Background(), GetActionWindowQuery{NeighborhoodID: "not-a-uuid"})
+	}, neighborhood, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{NeighborhoodID: "not-a-uuid"})
 
 	if !errors.Is(err, ErrInvalidNeighborhoodID) {
 		t.Fatalf("error = %v, want ErrInvalidNeighborhoodID", err)
@@ -145,7 +145,7 @@ func TestGetActionWindowReturnsMetricRequiredWhenLatestMetricIsMissing(t *testin
 			{NeighborhoodID: "neighborhood_1"},
 		},
 		metricErr: appneighborhood.ErrMetricNotFound,
-	}).GetActionWindow(context.Background(), GetActionWindowQuery{})
+	}, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{})
 
 	if !errors.Is(err, ErrMetricRequired) {
 		t.Fatalf("error = %v, want ErrMetricRequired", err)
@@ -165,7 +165,7 @@ func TestGetActionWindowWaitsWhenMarketQualityCannotSupportRecommendation(t *tes
 				metric: appneighborhood.MetricWithSignal{Signal: domainneighborhood.SignalResult{
 					Status: domainneighborhood.NeighborhoodStatusBargain, QualityState: state,
 				}},
-			}).GetActionWindow(context.Background(), GetActionWindowQuery{})
+			}, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{})
 			if err != nil {
 				t.Fatalf("GetActionWindow() error = %v", err)
 			}

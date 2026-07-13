@@ -32,6 +32,7 @@ type Dependencies struct {
 	CollectionApplication   CollectionApplication
 	DecisionApplication     httphandler.DecisionApplication
 	AccessToken             string
+	UserID                  string
 	ReadinessChecker        ReadinessChecker
 }
 
@@ -86,12 +87,12 @@ func New(deps Dependencies) (*gin.Engine, error) {
 		c.JSON(http.StatusOK, gin.H{"status": "unlocked"})
 	})
 
-	capacityHandler := httphandler.NewCapacity(deps.CapacityApplication)
+	capacityHandler := httphandler.NewCapacity(deps.CapacityApplication, deps.UserID)
 	protected.POST("/capacity/calculations", capacityHandler.CreateCalculation)
 	protected.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
 
 	neighborhoodHandler := httphandler.NewNeighborhood(deps.NeighborhoodApplication)
-	watchlistHandler := httphandler.NewWatchlist(deps.NeighborhoodApplication)
+	watchlistHandler := httphandler.NewWatchlist(deps.NeighborhoodApplication, deps.UserID)
 	protected.POST("/neighborhoods", neighborhoodHandler.CreateNeighborhood)
 	api.GET("/neighborhoods/:id", neighborhoodHandler.GetNeighborhood)
 	api.GET("/neighborhoods/:id/metrics", neighborhoodHandler.GetMetrics)
