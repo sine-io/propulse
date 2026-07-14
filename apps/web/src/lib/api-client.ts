@@ -146,6 +146,26 @@ export async function searchNeighborhoods(
   );
 }
 
+export async function getNeighborhood(
+  neighborhoodId: string,
+  signal?: AbortSignal,
+): Promise<Neighborhood> {
+  return request<Neighborhood>(
+    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function getNeighborhoodMetrics(
+  neighborhoodId: string,
+  signal?: AbortSignal,
+): Promise<NeighborhoodMetricResponse> {
+  return request<NeighborhoodMetricResponse>(
+    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/metrics`,
+    signal ? { signal } : undefined,
+  );
+}
+
 export async function createNeighborhood(
   input: CreateNeighborhoodRequest,
   signal?: AbortSignal,
