@@ -13,7 +13,7 @@ const historyTestAlgorithmVersion = "market-metrics/test.1"
 
 func TestMetricHistorySelectsLatestFullWeeklyAndMonthlyBaselines(t *testing.T) {
 	currentAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	repo := historyRepository(currentAt,
+	repo := historyRepository(
 		historyRecord("month-start", currentAt.Add(-45*24*time.Hour), domainneighborhood.CoverageFull, 4, 1, 1),
 		historyRecord("month-end", currentAt.Add(-30*24*time.Hour), domainneighborhood.CoverageFull, 5, 2, 2),
 		historyRecord("week-start", currentAt.Add(-14*24*time.Hour), domainneighborhood.CoverageFull, 8, 2, 2),
@@ -44,7 +44,7 @@ func TestMetricHistorySelectsLatestFullWeeklyAndMonthlyBaselines(t *testing.T) {
 
 func TestMetricHistoryReturnsUnavailableForPartialCurrentRun(t *testing.T) {
 	currentAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	repo := historyRepository(currentAt,
+	repo := historyRepository(
 		historyRecord("baseline", currentAt.Add(-7*24*time.Hour), domainneighborhood.CoverageFull, 10, 2, 2),
 		historyRecord("current", currentAt, domainneighborhood.CoveragePartial, 15, 3, 3),
 	)
@@ -61,7 +61,7 @@ func TestMetricHistoryReturnsUnavailableForPartialCurrentRun(t *testing.T) {
 
 func TestMetricHistoryReturnsUnavailableWithoutFullBaseline(t *testing.T) {
 	currentAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	repo := historyRepository(currentAt,
+	repo := historyRepository(
 		historyRecord("partial-baseline", currentAt.Add(-7*24*time.Hour), domainneighborhood.CoveragePartial, 10, 2, 2),
 		historyRecord("current", currentAt, domainneighborhood.CoverageFull, 15, 3, 3),
 	)
@@ -78,7 +78,7 @@ func TestMetricHistoryReturnsUnavailableWithoutFullBaseline(t *testing.T) {
 
 func TestMetricHistoryMarksPercentageAsZeroBaseline(t *testing.T) {
 	currentAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	repo := historyRepository(currentAt,
+	repo := historyRepository(
 		historyRecord("baseline", currentAt.Add(-7*24*time.Hour), domainneighborhood.CoverageFull, 0, 0, 0),
 		historyRecord("current", currentAt, domainneighborhood.CoverageFull, 3, 2, 1),
 	)
@@ -97,7 +97,7 @@ func TestMetricHistoryReturnsUnavailableWhenTransactionEvidenceIsMissing(t *test
 	currentAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	baseline := historyRecord("baseline", currentAt.Add(-7*24*time.Hour), domainneighborhood.CoverageFull, 10, 2, 2)
 	baseline.Metric.TransactionEvidence = nil
-	repo := historyRepository(currentAt,
+	repo := historyRepository(
 		baseline,
 		historyRecord("current", currentAt, domainneighborhood.CoverageFull, 15, 3, 3),
 	)
@@ -115,7 +115,7 @@ func TestMetricHistoryReturnsUnavailableWhenTransactionEvidenceIsMissing(t *test
 
 func TestMetricHistoryReturnsExplicitEmptyDefaultWindow(t *testing.T) {
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	repo := historyRepository(now)
+	repo := historyRepository()
 	result, err := NewServiceWithMetricConfig(repo, historyTestAlgorithmVersion, func() time.Time { return now }).
 		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1"})
 	if err != nil {
@@ -128,7 +128,7 @@ func TestMetricHistoryReturnsExplicitEmptyDefaultWindow(t *testing.T) {
 
 func TestMetricHistoryRejectsInvalidAndOversizedWindows(t *testing.T) {
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	service := NewServiceWithMetricConfig(historyRepository(now), historyTestAlgorithmVersion, func() time.Time { return now })
+	service := NewServiceWithMetricConfig(historyRepository(), historyTestAlgorithmVersion, func() time.Time { return now })
 	for name, query := range map[string]MetricHistoryQuery{
 		"reversed": {NeighborhoodID: "neighborhood_1", From: now, To: now.Add(-time.Hour)},
 		"too long": {NeighborhoodID: "neighborhood_1", From: now.Add(-52*7*24*time.Hour - time.Second), To: now},
@@ -142,7 +142,7 @@ func TestMetricHistoryRejectsInvalidAndOversizedWindows(t *testing.T) {
 	}
 }
 
-func historyRepository(now time.Time, records ...MetricHistoryRecord) *memoryRepository {
+func historyRepository(records ...MetricHistoryRecord) *memoryRepository {
 	repo := newMemoryRepository()
 	repo.neighborhoods["neighborhood_1"] = Neighborhood{ID: "neighborhood_1"}
 	repo.history = records
