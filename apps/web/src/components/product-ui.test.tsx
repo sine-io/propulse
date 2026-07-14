@@ -218,8 +218,8 @@ describe("CalculatorPanel", () => {
 
   it("pre-fills editable loan params from assumptions and submits them (CALC-006.2)", async () => {
     vi.mocked(getCapacityAssumptions).mockResolvedValueOnce({
-      ruleVersion: "2026.08",
-      effectiveDate: "2026-08-01",
+      ruleVersion: "2026.07.14",
+      effectiveDate: "2026-07-14",
       downPaymentRate: 0.35,
       loan: {
         annualInterestRate: 0.039,
@@ -232,8 +232,8 @@ describe("CalculatorPanel", () => {
       result: {
         pressureLevel: "safe",
         strategy: "可以同步推进",
-        ruleVersion: "2026.08",
-        effectiveDate: "2026-08-01",
+        ruleVersion: "2026.07.14",
+        effectiveDate: "2026-07-14",
       },
     });
     render(createElement(CalculatorPanel));
@@ -241,7 +241,7 @@ describe("CalculatorPanel", () => {
     // 默认值来自 assumptions，且标注来源。
     const rate = await screen.findByLabelText("年利率（%）");
     expect(rate).toHaveValue("3.9");
-    expect(screen.getByText(/默认取自规则版本 2026.08/)).toBeInTheDocument();
+    expect(screen.getByText(/默认取自规则版本 2026.07.14/)).toBeInTheDocument();
 
     // 用户调整利率并提交，payload 携带 loanOverride。
     fireEvent.change(rate, { target: { value: "4.9" } });
@@ -268,8 +268,8 @@ describe("CalculatorPanel", () => {
       result: {
         pressureLevel: "safe",
         strategy: "可以同步推进",
-        ruleVersion: "2026.08",
-        effectiveDate: "2026-08-01",
+        ruleVersion: "2026.07.14",
+        effectiveDate: "2026-07-14",
       },
     });
     render(createElement(CalculatorPanel));
@@ -396,7 +396,7 @@ describe("MethodsPage", () => {
     expect(screen.queryByText(/砍 3%-5%/)).not.toBeInTheDocument();
     // 来源/适用范围与版本可见。
     expect(screen.getByText("方法适用范围与来源")).toBeInTheDocument();
-    expect(screen.getByText(/规则版本 2026.08/)).toBeInTheDocument();
+    expect(screen.getByText(/规则版本 2026.07.14/)).toBeInTheDocument();
     expect(screen.getByText("适用范围")).toBeInTheDocument();
     expect(screen.getByText("来源")).toBeInTheDocument();
   });

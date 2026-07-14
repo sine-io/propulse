@@ -28,12 +28,11 @@ func run(args []string) int {
 		return 1
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(mode)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	cfg.Mode = mode
 
 	log := applogger.New(cfg.Log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -11,7 +11,13 @@ import {
 } from "@/lib/access-token";
 import { ApiError, verifyAccessToken } from "@/lib/api-client";
 
-export function AccessControl() {
+interface AccessControlProps {
+  reloadPage?: () => void;
+}
+
+export function AccessControl({
+  reloadPage = () => window.location.reload(),
+}: AccessControlProps = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [token, setToken] = useState("");
@@ -40,7 +46,7 @@ export function AccessControl() {
       setAccessToken(candidate);
       setToken("");
       setIsOpen(false);
-      window.location.reload();
+      reloadPage();
     } catch (caught) {
       setError(
         caught instanceof ApiError && caught.status === 401
@@ -55,7 +61,7 @@ export function AccessControl() {
   const lock = () => {
     clearAccessToken();
     setIsOpen(false);
-    window.location.reload();
+    reloadPage();
   };
 
   return (

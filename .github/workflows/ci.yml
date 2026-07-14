@@ -19,6 +19,8 @@ jobs:
     env:
       PROPULSE_DATABASE_URL: postgres://propulse:propulse@127.0.0.1:5432/propulse?sslmode=disable
       PROPULSE_TEST_DATABASE_URL: postgres://propulse:propulse@127.0.0.1:5432/propulse?sslmode=disable
+      PROPULSE_USER_ID: propulse-ci-user
+      PROPULSE_ACCESS_TOKEN: propulse-ci-access-token
 
     services:
       postgres:

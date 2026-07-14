@@ -30,6 +30,8 @@ func TestEmbeddedMigrationSetIsCompleteAndOrdered(t *testing.T) {
 		"000003_trusted_market_data.up.sql",
 		"000004_review_notes.down.sql",
 		"000004_review_notes.up.sql",
+		"000005_remove_legacy_demo_neighborhoods.down.sql",
+		"000005_remove_legacy_demo_neighborhoods.up.sql",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("embedded migrations = %#v, want %#v", names, want)
@@ -74,6 +76,30 @@ func TestEmbeddedMigrationSetIsCompleteAndOrdered(t *testing.T) {
 	const stableUserDefault = "user_id TEXT NOT NULL DEFAULT 'propulse-user'"
 	if count := strings.Count(string(body), stableUserDefault); count != 2 {
 		t.Fatalf("initial schema has %d %q defaults, want 2", count, stableUserDefault)
+	}
+}
+
+func TestLegacyDemoCleanupMigrationUsesStrictIdentificationAndSafetyGuards(t *testing.T) {
+	body, err := fs.ReadFile(FS, "000005_remove_legacy_demo_neighborhoods.up.sql")
+	if err != nil {
+		t.Fatalf("ReadFile(version 5) error = %v", err)
+	}
+
+	for _, required := range []string{
+		"n.name = '青枫花园'",
+		"n.area = '滨江核心'",
+		"n.target_layout = '三房'",
+		"n.name = '云澜府'",
+		"n.area = '城东新区'",
+		"n.target_layout = '四房'",
+		"w.user_id = 'propulse-user'",
+		"w.user_id = 'demo-user'",
+		"NOT EXISTS",
+		"collection_runs",
+	} {
+		if !strings.Contains(string(body), required) {
+			t.Fatalf("legacy demo cleanup migration is missing %q", required)
+		}
 	}
 }
 

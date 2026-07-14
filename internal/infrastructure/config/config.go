@@ -33,30 +33,40 @@ type LogConfig struct {
 // ErrMissingUserID 表示未配置稳定用户身份。
 var ErrMissingUserID = errors.New("PROPULSE_USER_ID is required")
 
-func Load() (Config, error) {
-	schedulerInterval, err := parseDurationEnv("PROPULSE_SCHEDULER_INTERVAL", defaultSchedulerInterval)
-	if err != nil {
-		return Config{}, err
-	}
-
-	// 稳定用户身份必须显式配置：缺失时启动即失败，杜绝静默回退到某个默认账号（#36 / SYS-001.1）。
-	userID := getEnv("PROPULSE_USER_ID", "")
-	if userID == "" {
-		return Config{}, ErrMissingUserID
-	}
-
-	return Config{
+func Load(mode string) (Config, error) {
+	cfg := Config{
 		HTTPAddr:          getEnv("PROPULSE_HTTP_ADDR", defaultHTTPAddr),
 		DatabaseURL:       getEnv("PROPULSE_DATABASE_URL", defaultDatabaseURL),
 		RedisAddr:         getEnv("PROPULSE_REDIS_ADDR", defaultRedisAddr),
 		AccessToken:       getEnv("PROPULSE_ACCESS_TOKEN", ""),
-		UserID:            userID,
-		SchedulerInterval: schedulerInterval,
+		Mode:              mode,
+		SchedulerInterval: defaultSchedulerInterval,
 		Log: LogConfig{
 			Level:  getEnv("PROPULSE_LOG_LEVEL", defaultLogLevel),
 			Pretty: getEnv("PROPULSE_LOG_PRETTY", "") == "true",
 		},
-	}, nil
+	}
+
+	// Migration commands only need the database connection. Runtime-only
+	// configuration must not prevent schema administration or CI setup.
+	if mode == "migrate up" || mode == "migrate down" {
+		return cfg, nil
+	}
+
+	schedulerInterval, err := parseDurationEnv("PROPULSE_SCHEDULER_INTERVAL", defaultSchedulerInterval)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.SchedulerInterval = schedulerInterval
+
+	// Runtime modes require an explicit stable identity and never fall back to a
+	// shared account (#36 / SYS-001.1).
+	cfg.UserID = getEnv("PROPULSE_USER_ID", "")
+	if cfg.UserID == "" {
+		return Config{}, ErrMissingUserID
+	}
+
+	return cfg, nil
 }
 
 func parseDurationEnv(key string, fallback time.Duration) (time.Duration, error) {
