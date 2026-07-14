@@ -724,7 +724,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ValidationErrorResponse"];
+                        "application/json": components["schemas"]["ImportValidationErrorResponse"];
                     };
                 };
                 /** @description Import failed */
@@ -738,6 +738,151 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/imports/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import a traceable CSV collection run through the shared import pipeline */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: uuid */
+                        dataSourceId: string;
+                        /** Format: uuid */
+                        neighborhoodId: string;
+                        sourceRef: string;
+                        /** Format: date-time */
+                        collectedAt: string;
+                        /** @enum {string} */
+                        coverage: "full" | "partial";
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Idempotent replay of an existing collection run */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportCollectionRunResponse"];
+                    };
+                };
+                /** @description Collection run imported */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportCollectionRunResponse"];
+                    };
+                };
+                /** @description Invalid multipart request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Selected source or neighborhood not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description CSV file or multipart request exceeds its size limit */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description CSV parsing or import semantic validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportValidationErrorResponse"];
+                    };
+                };
+                /** @description Import failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/imports/csv/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the canonical UTF-8 CSV import template */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description CSV header template */
+                200: {
+                    headers: {
+                        "Content-Disposition"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/csv": string;
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1125,6 +1270,10 @@ export interface components {
             message: string;
         };
         ImportCollectionRunResponse: {
+            /** Format: uuid */
+            collectionRunId: string;
+            acceptedRecordCount: number;
+            rejectedRecordCount: number;
             collectionRun: components["schemas"]["CollectionRun"];
             listingObservationCount: number;
             transactionObservationCount: number;
@@ -1188,6 +1337,17 @@ export interface components {
                 message: string;
                 details: components["schemas"]["ValidationIssue"][];
             };
+        };
+        ImportValidationErrorResponse: {
+            error: {
+                /** @enum {string} */
+                code: "validation_failed";
+                message: string;
+                details: components["schemas"]["ValidationIssue"][];
+            };
+            /** @enum {integer} */
+            acceptedRecordCount: 0;
+            rejectedRecordCount: number;
         };
         ErrorResponse: {
             error: {

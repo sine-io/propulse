@@ -51,6 +51,8 @@ func TestAccessProtectionContract(t *testing.T) {
 		{path: "/admin/api/data-sources", method: "post", protected: true},
 		{path: "/admin/api/data-sources", method: "get", protected: true},
 		{path: "/admin/api/imports/json", method: "post", protected: true},
+		{path: "/admin/api/imports/csv", method: "post", protected: true},
+		{path: "/admin/api/imports/csv/template", method: "get", protected: true},
 		{path: "/admin/api/imports/{id}", method: "get", protected: true},
 	}
 
@@ -145,6 +147,41 @@ func TestCapacityCalculationContract(t *testing.T) {
 		"ruleVersion", "effectiveDate", "ruleSource", "loan", "loanSource", "loanOrigin", "cityPolicy",
 		"reserveMonths", "pressureThresholds", "oldHomeShareThreshold",
 	})
+}
+
+func TestTrustedImportContract(t *testing.T) {
+	spec := loadOpenAPI(t)
+	components := requiredMap(t, spec, "components")
+	schemas := requiredMap(t, components, "schemas")
+	paths := requiredMap(t, spec, "paths")
+
+	response := requiredMap(t, schemas, "ImportCollectionRunResponse")
+	assertRequiredFields(t, response, []string{
+		"collectionRunId", "acceptedRecordCount", "rejectedRecordCount", "collectionRun",
+		"listingObservationCount", "transactionObservationCount", "idempotentReplay", "metricRefreshStatus",
+	})
+	validation := requiredMap(t, schemas, "ImportValidationErrorResponse")
+	assertRequiredFields(t, validation, []string{"error", "acceptedRecordCount", "rejectedRecordCount"})
+
+	csvOperation := requiredMap(t, requiredMap(t, paths, "/admin/api/imports/csv"), "post")
+	requestBody := requiredMap(t, csvOperation, "requestBody")
+	multipartContent := requiredMap(t, requiredMap(t, requestBody, "content"), "multipart/form-data")
+	multipartSchema := requiredMap(t, multipartContent, "schema")
+	assertRequiredFields(t, multipartSchema, []string{
+		"dataSourceId", "neighborhoodId", "sourceRef", "collectedAt", "coverage", "file",
+	})
+	if got := requiredString(t, requiredMap(t, requiredMap(t, multipartSchema, "properties"), "file"), "format"); got != "binary" {
+		t.Fatalf("CSV file format = %q, want binary", got)
+	}
+	for _, status := range []string{"200", "201"} {
+		schema := responseJSONSchema(t, csvOperation, status)
+		if got := requiredString(t, schema, "$ref"); got != "#/components/schemas/ImportCollectionRunResponse" {
+			t.Fatalf("CSV %s response schema = %q", status, got)
+		}
+	}
+	if got := requiredString(t, responseJSONSchema(t, csvOperation, "422"), "$ref"); got != "#/components/schemas/ImportValidationErrorResponse" {
+		t.Fatalf("CSV 422 schema = %q", got)
+	}
 }
 
 func loadOpenAPI(t *testing.T) map[string]interface{} {
