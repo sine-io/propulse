@@ -10,6 +10,8 @@ func TestEmbeddedWebContainsAllStaticRoutes(t *testing.T) {
 	for _, name := range []string{
 		"index.html",
 		"calculator.html",
+		"data.html",
+		"data/imports/_.html",
 		"neighborhoods.html",
 		"action-window.html",
 		"methods.html",

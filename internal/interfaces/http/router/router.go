@@ -39,6 +39,7 @@ type Dependencies struct {
 var frontendRoutes = map[string]string{
 	"/":              "index.html",
 	"/calculator":    "calculator.html",
+	"/data":          "data.html",
 	"/watchlist":     "watchlist.html",
 	"/action-window": "action-window.html",
 	"/neighborhoods": "neighborhoods.html",
@@ -123,6 +124,7 @@ func New(deps Dependencies) (*gin.Engine, error) {
 	for route, name := range frontendRoutes {
 		engine.GET(route, serveFrontendFile(staticFS, name))
 	}
+	engine.GET("/data/imports/:id", serveFrontendFile(staticFS, "data/imports/_.html"))
 
 	engine.NoRoute(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/api/v1") || strings.HasPrefix(c.Request.URL.Path, "/admin/api") {

@@ -4,6 +4,10 @@ import { clearAccessToken, getAccessToken, setAccessToken } from "./access-token
 
 import {
   ApiError,
+  getCSVImportTemplate,
+  importCSVCollectionRun,
+  importJSONCollectionRun,
+  listDataSources,
   createCapacityCalculation,
   getActionWindow,
   getWatchlist,
@@ -142,5 +146,130 @@ describe("api-client", () => {
       message: "create a capacity calculation before requesting an action window",
     });
     await expect(getActionWindow()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it("reads protected data sources with the session token", async () => {
+    setAccessToken("data-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ items: [{ id: "source-1", name: "Source" }] }),
+    );
+
+    await expect(listDataSources()).resolves.toEqual([
+      { id: "source-1", name: "Source" },
+    ]);
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(new Headers(init?.headers).get("Authorization")).toBe(
+      "Bearer data-token",
+    );
+  });
+
+  it("submits JSON records with collection metadata", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ collectionRunId: "run-1" }, { status: 201 }),
+    );
+    const input = {
+      dataSourceId: "source-1",
+      neighborhoodId: "neighborhood-1",
+      sourceRef: "weekly-1",
+      collectedAt: "2026-07-14T06:00:00.000Z",
+      coverage: "full" as const,
+      records: [
+        {
+          recordType: "listing" as const,
+          sourceRecordId: "listing-1",
+          layout: "three-bedroom",
+          areaSqm: 89,
+          listingPrice: 520,
+          daysOnMarket: 12,
+          status: "active" as const,
+        },
+      ],
+    };
+
+    await importJSONCollectionRun(input);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/admin/api/imports/json",
+      expect.objectContaining({
+        body: JSON.stringify(input),
+        method: "POST",
+      }),
+    );
+  });
+
+  it("submits CSV imports as multipart without overriding its content type", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ collectionRunId: "run-1" }, { status: 201 }),
+    );
+    const file = new File(["recordType\n"], "records.csv", {
+      type: "text/csv",
+    });
+
+    await importCSVCollectionRun(
+      {
+        dataSourceId: "source-1",
+        neighborhoodId: "neighborhood-1",
+        sourceRef: "weekly-1",
+        collectedAt: "2026-07-14T06:00:00.000Z",
+        coverage: "partial",
+      },
+      file,
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect((init?.body as FormData).get("file")).toBe(file);
+    expect(new Headers(init?.headers).has("content-type")).toBe(false);
+  });
+
+  it("preserves import validation details and counts on ApiError", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: "validation_failed",
+            message: "one or more fields are invalid",
+            details: [
+              {
+                row: 3,
+                field: "listingPrice",
+                code: "required",
+                message: "listingPrice is required",
+              },
+            ],
+          },
+          acceptedRecordCount: 0,
+          rejectedRecordCount: 2,
+        },
+        { status: 422 },
+      ),
+    );
+
+    await expect(
+      importJSONCollectionRun({
+        dataSourceId: "source-1",
+        neighborhoodId: "neighborhood-1",
+        sourceRef: "weekly-1",
+        collectedAt: "2026-07-14T06:00:00.000Z",
+        coverage: "full",
+        records: [],
+      }),
+    ).rejects.toMatchObject({
+      code: "validation_failed",
+      rejectedRecordCount: 2,
+      details: [expect.objectContaining({ row: 3, field: "listingPrice" })],
+    });
+  });
+
+  it("downloads the protected CSV template as a blob", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("recordType,sourceRecordId\r\n", {
+        headers: { "content-type": "text/csv" },
+      }),
+    );
+
+    const blob = await getCSVImportTemplate();
+
+    expect(await blob.text()).toContain("recordType,sourceRecordId");
   });
 });

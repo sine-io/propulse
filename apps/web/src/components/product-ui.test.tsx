@@ -56,6 +56,7 @@ describe("AppHeader", () => {
     for (const label of [
       "换房测算",
       "目标小区",
+      "数据管理",
       "出手窗口",
       "判断方法",
       "我的观察池",
@@ -72,6 +73,7 @@ describe("AppHeader", () => {
     for (const [label, href] of [
       ["测算", "/calculator"],
       ["小区", "/neighborhoods"],
+      ["数据", "/data"],
       ["窗口", "/action-window"],
       ["方法", "/methods"],
       ["观察池", "/watchlist"],
@@ -92,7 +94,8 @@ describe("RootLayout", () => {
     const misspelledProductName = "prop" + "pulse";
 
     expect(metadata.title).toBe("房脉 propulse - 房产决策工具");
-    expect(markup).toContain("© 2026 房脉 propulse Prototype");
+    expect(markup).toContain("© 2026 房脉 propulse");
+    expect(markup).toContain("来源、采集时间和质量状态");
     expect(markup).not.toContain(misspelledProductName);
   });
 
