@@ -19,7 +19,6 @@ import (
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
-	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 )
@@ -985,8 +984,8 @@ func (s *stubAppCollectionApplication) ListMetricRefreshCandidates(_ context.Con
 
 type stubAppDecisionApplication struct{}
 
-func (*stubAppDecisionApplication) GetActionWindow(context.Context, appdecision.GetActionWindowQuery) (domaindecision.ActionWindowResult, error) {
-	return domaindecision.ActionWindowResult{}, nil
+func (*stubAppDecisionApplication) GetActionWindow(context.Context, appdecision.GetActionWindowQuery) (appdecision.ActionWindowResult, error) {
+	return appdecision.ActionWindowResult{}, nil
 }
 
 type noopCloser struct{}

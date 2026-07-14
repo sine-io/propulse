@@ -13,14 +13,16 @@ func TestRecommendActionWindowBargainsWhenBudgetServiceableAndBuyerWindowOpen(t 
 		HasDownPaymentGap:    false,
 		NeighborhoodStatus:   domainneighborhood.NeighborhoodStatusBargain,
 		TargetLayoutScarcity: domainneighborhood.ScarcityMedium,
-		AlternativesBetter:   true,
 	})
 
 	if result.Action != ActionBargain {
 		t.Fatalf("Action = %q, want %q", result.Action, ActionBargain)
 	}
-	if result.Confidence != ConfidenceHigh {
-		t.Fatalf("Confidence = %q, want %q", result.Confidence, ConfidenceHigh)
+	if result.Confidence != ConfidenceMedium {
+		t.Fatalf("Confidence = %q, want %q", result.Confidence, ConfidenceMedium)
+	}
+	if len(result.ConfidenceReasons) != 1 || result.ConfidenceReasons[0] != "预算与目标小区信号支持议价，但尚无可比备选证据用于提高置信度。" {
+		t.Fatalf("ConfidenceReasons = %#v", result.ConfidenceReasons)
 	}
 	if len(result.Checklist) == 0 || result.Checklist[0] != "约看 3 套成交区间附近、挂牌超过 60 天的目标户型。" {
 		t.Fatalf("Checklist = %#v", result.Checklist)
@@ -36,7 +38,6 @@ func TestRecommendActionWindowWaitsWhenBudgetDangerousAndGapExists(t *testing.T)
 		HasDownPaymentGap:    true,
 		NeighborhoodStatus:   domainneighborhood.NeighborhoodStatusBargain,
 		TargetLayoutScarcity: domainneighborhood.ScarcityLow,
-		AlternativesBetter:   false,
 	})
 
 	if result.Action != ActionWait {
@@ -56,7 +57,6 @@ func TestRecommendActionWindowActsWhenBudgetSafeFocusAndLayoutScarce(t *testing.
 		HasDownPaymentGap:    false,
 		NeighborhoodStatus:   domainneighborhood.NeighborhoodStatusFocus,
 		TargetLayoutScarcity: domainneighborhood.ScarcityHigh,
-		AlternativesBetter:   false,
 	})
 
 	if result.Action != ActionAct {
@@ -67,5 +67,26 @@ func TestRecommendActionWindowActsWhenBudgetSafeFocusAndLayoutScarce(t *testing.
 	}
 	if result.Summary != "预算安全、目标户型稀缺且价格进入可接受区间，可以进入出价准备。" {
 		t.Fatalf("Summary = %q", result.Summary)
+	}
+}
+
+func TestRecommendActionWindowAlwaysExplainsConfidence(t *testing.T) {
+	tests := []ActionWindowInput{
+		{
+			BudgetPressure:       domaincapacity.PressureSafe,
+			NeighborhoodStatus:   domainneighborhood.NeighborhoodStatusPriceHard,
+			TargetLayoutScarcity: domainneighborhood.ScarcityLow,
+		},
+		{
+			BudgetPressure:       domaincapacity.PressureSafe,
+			NeighborhoodStatus:   domainneighborhood.NeighborhoodStatusObserve,
+			TargetLayoutScarcity: domainneighborhood.ScarcityMedium,
+		},
+	}
+	for _, input := range tests {
+		result := RecommendActionWindow(input)
+		if len(result.ConfidenceReasons) == 0 || result.ConfidenceReasons[0] == "" {
+			t.Fatalf("input/result = %#v/%#v, want confidence reason", input, result)
+		}
 	}
 }

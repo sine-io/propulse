@@ -1378,7 +1378,17 @@ components:
             - $ref: '#/components/schemas/MetricComparison'
     ActionWindowResponse:
       type: object
-      required: [action, confidence, summary, checklist, risks]
+      required:
+        - action
+        - confidence
+        - confidenceReasons
+        - summary
+        - target
+        - capacityCalculation
+        - metric
+        - factors
+        - checklist
+        - risks
       properties:
         action:
           type: string
@@ -1388,9 +1398,26 @@ components:
           type: string
           enum: ["低", "中", "高"]
           example: "高"
+        confidenceReasons:
+          type: array
+          minItems: 1
+          items:
+            type: string
         summary:
           type: string
           example: "预算仍可服务，且目标小区供应与降价信号支持买方试探底价。"
+        target:
+          $ref: '#/components/schemas/ActionWindowTarget'
+        capacityCalculation:
+          $ref: '#/components/schemas/CapacityCalculationReference'
+        metric:
+          $ref: '#/components/schemas/DecisionMetricReference'
+        factors:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            $ref: '#/components/schemas/DecisionFactor'
         checklist:
           type: array
           items:
@@ -1403,6 +1430,148 @@ components:
             type: string
           example:
             - "预算不是完全宽松，砍价失败时不要上调总价硬追。"
+    ActionWindowTarget:
+      type: object
+      required: [neighborhoodId, name, area, targetLayout]
+      properties:
+        neighborhoodId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        area:
+          type: string
+        targetLayout:
+          type: string
+    CapacityCalculationReference:
+      type: object
+      required: [id, createdAt, ruleVersion, traceabilityStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        ruleVersion:
+          type: string
+        traceabilityStatus:
+          type: string
+          enum: [complete, legacy_unversioned]
+    DecisionMetricReference:
+      type: object
+      required:
+        - id
+        - collectionRunId
+        - algorithmVersion
+        - collectedAt
+        - calculatedAt
+        - sourceIds
+        - listingSampleCount
+        - transactionSampleCount
+        - coverage
+        - freshness
+        - qualityState
+        - qualityWarnings
+      properties:
+        id:
+          type: string
+          format: uuid
+        collectionRunId:
+          type: string
+          format: uuid
+        algorithmVersion:
+          type: string
+        collectedAt:
+          type: string
+          format: date-time
+        calculatedAt:
+          type: string
+          format: date-time
+        sourceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        listingSampleCount:
+          type: integer
+          minimum: 0
+        transactionSampleCount:
+          type: integer
+          minimum: 0
+        coverage:
+          type: string
+          enum: [full, partial]
+        freshness:
+          type: string
+          enum: [current, stale, expired]
+        qualityState:
+          type: string
+          enum: [sufficient, low_confidence, insufficient_data]
+        qualityWarnings:
+          type: array
+          items:
+            type: string
+    DecisionFactor:
+      type: object
+      required: [key, status, summary, source, evidence]
+      properties:
+        key:
+          type: string
+          enum:
+            - budget_pressure
+            - down_payment_gap
+            - market_signal
+            - transaction_momentum
+            - target_layout_supply
+            - alternatives
+        status:
+          type: string
+          enum: [positive, neutral, caution, negative, unknown]
+        summary:
+          type: string
+        source:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/DecisionFactorSource'
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionFactorEvidence'
+    DecisionFactorSource:
+      type: object
+      required: [type, id, observedAt]
+      properties:
+        type:
+          type: string
+          enum: [capacity_calculation, neighborhood_metric, alternative_comparison]
+        id:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+    DecisionFactorEvidence:
+      type: object
+      required: [key, label, valueType]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        valueType:
+          type: string
+          enum: [text, number, boolean]
+        textValue:
+          type: string
+          nullable: true
+        numberValue:
+          type: number
+          nullable: true
+        booleanValue:
+          type: boolean
+          nullable: true
+        unit:
+          type: string
     AccessStatusResponse:
       type: object
       required: [status]

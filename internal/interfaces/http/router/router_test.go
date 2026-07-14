@@ -851,9 +851,9 @@ type stubDecisionApplication struct {
 	calls int
 }
 
-func (s *stubDecisionApplication) GetActionWindow(_ context.Context, _ appdecision.GetActionWindowQuery) (domaindecision.ActionWindowResult, error) {
+func (s *stubDecisionApplication) GetActionWindow(_ context.Context, _ appdecision.GetActionWindowQuery) (appdecision.ActionWindowResult, error) {
 	s.calls++
-	return domaindecision.ActionWindowResult{
+	return appdecision.ActionWindowResult{
 		Action:     domaindecision.ActionBargain,
 		Confidence: domaindecision.ConfidenceHigh,
 		Summary:    "预算仍可服务，且目标小区供应与降价信号支持买方试探底价。",

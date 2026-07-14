@@ -16,7 +16,6 @@ import (
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	appqueue "github.com/sine-io/propulse/internal/application/queue"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
-	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 	migraterunner "github.com/sine-io/propulse/internal/infrastructure/migrate"
 	infrastructurequeue "github.com/sine-io/propulse/internal/infrastructure/queue"
@@ -54,7 +53,7 @@ type CollectionApplication interface {
 }
 
 type DecisionApplication interface {
-	GetActionWindow(ctx context.Context, query appdecision.GetActionWindowQuery) (domaindecision.ActionWindowResult, error)
+	GetActionWindow(ctx context.Context, query appdecision.GetActionWindowQuery) (appdecision.ActionWindowResult, error)
 }
 
 type MetricApplication interface {

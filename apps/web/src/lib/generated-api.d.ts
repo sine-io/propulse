@@ -1341,8 +1341,13 @@ export interface components {
              * @enum {string}
              */
             confidence: "低" | "中" | "高";
+            confidenceReasons: string[];
             /** @example 预算仍可服务，且目标小区供应与降价信号支持买方试探底价。 */
             summary: string;
+            target: components["schemas"]["ActionWindowTarget"];
+            capacityCalculation: components["schemas"]["CapacityCalculationReference"];
+            metric: components["schemas"]["DecisionMetricReference"];
+            factors: components["schemas"]["DecisionFactor"][];
             /**
              * @example [
              *       "约看 3 套成交区间附近、挂牌超过 60 天的目标户型。"
@@ -1355,6 +1360,69 @@ export interface components {
              *     ]
              */
             risks: string[];
+        };
+        ActionWindowTarget: {
+            /** Format: uuid */
+            neighborhoodId: string;
+            name: string;
+            area: string;
+            targetLayout: string;
+        };
+        CapacityCalculationReference: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+            ruleVersion: string;
+            /** @enum {string} */
+            traceabilityStatus: "complete" | "legacy_unversioned";
+        };
+        DecisionMetricReference: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            collectionRunId: string;
+            algorithmVersion: string;
+            /** Format: date-time */
+            collectedAt: string;
+            /** Format: date-time */
+            calculatedAt: string;
+            sourceIds: string[];
+            listingSampleCount: number;
+            transactionSampleCount: number;
+            /** @enum {string} */
+            coverage: "full" | "partial";
+            /** @enum {string} */
+            freshness: "current" | "stale" | "expired";
+            /** @enum {string} */
+            qualityState: "sufficient" | "low_confidence" | "insufficient_data";
+            qualityWarnings: string[];
+        };
+        DecisionFactor: {
+            /** @enum {string} */
+            key: "budget_pressure" | "down_payment_gap" | "market_signal" | "transaction_momentum" | "target_layout_supply" | "alternatives";
+            /** @enum {string} */
+            status: "positive" | "neutral" | "caution" | "negative" | "unknown";
+            summary: string;
+            source: components["schemas"]["DecisionFactorSource"] | null;
+            evidence: components["schemas"]["DecisionFactorEvidence"][];
+        };
+        DecisionFactorSource: {
+            /** @enum {string} */
+            type: "capacity_calculation" | "neighborhood_metric" | "alternative_comparison";
+            id: string;
+            /** Format: date-time */
+            observedAt: string;
+        };
+        DecisionFactorEvidence: {
+            key: string;
+            label: string;
+            /** @enum {string} */
+            valueType: "text" | "number" | "boolean";
+            textValue?: string | null;
+            numberValue?: number | null;
+            booleanValue?: boolean | null;
+            unit?: string;
         };
         AccessStatusResponse: {
             /** @enum {string} */
