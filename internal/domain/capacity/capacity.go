@@ -15,36 +15,84 @@ const (
 	PressureDanger   PressureLevel = "danger"
 )
 
+// RepaymentMethod 是还款方式。
+type RepaymentMethod string
+
+const (
+	// RepaymentEqualInstallment 等额本息：每月还款额固定。
+	RepaymentEqualInstallment RepaymentMethod = "equal_installment"
+	// RepaymentEqualPrincipal 等额本金：本金均摊、利息递减，首月月供最高。
+	RepaymentEqualPrincipal RepaymentMethod = "equal_principal"
+)
+
+// LoanParams 是可由用户在测算时调整的贷款参数（CALC-006.2 / #67）。
+type LoanParams struct {
+	AnnualInterestRate float64         // 年利率，如 0.039
+	LoanTermMonths     int             // 贷款期限（月），如 360
+	RepaymentMethod    RepaymentMethod // 还款方式
+}
+
 // Assumptions 收纳换房测算使用的全部规则参数，并带版本与生效日期，
-// 使结果可追溯到一组明确、有出处的假设（CALC-006.1 / #66）。
+// 使结果可追溯到一组明确、有出处的假设（CALC-006.1 / #66、CALC-006.2 / #67）。
 type Assumptions struct {
-	RuleVersion               string
-	EffectiveDate             string // ISO 日期，如 2026-07-01
-	DownPaymentRate           float64
-	MonthlyPaymentCoefficient float64 // 每万总价对应月供（万）
-	ReserveMonths             float64
-	SafeRatio                 float64 // 安全月供收入比上限
-	StrainedRatio             float64 // 偏高月供收入比上限
-	DangerRatio               float64 // 危险线月供收入比
-	DangerMultiplier          float64 // 危险总价对可接受月供的放大系数
-	OldHomeShareThreshold     float64 // 旧房回款占首付能力的高占比阈值
+	RuleVersion           string
+	EffectiveDate         string // ISO 日期，如 2026-07-01
+	DownPaymentRate       float64
+	Loan                  LoanParams // 默认贷款参数，可被单次测算覆盖
+	ReserveMonths         float64
+	SafeRatio             float64 // 安全月供收入比上限
+	StrainedRatio         float64 // 偏高月供收入比上限
+	DangerRatio           float64 // 危险线月供收入比
+	DangerMultiplier      float64 // 危险总价对可接受月供的放大系数
+	OldHomeShareThreshold float64 // 旧房回款占首付能力的高占比阈值
 }
 
 // DefaultAssumptions 返回当前生效的规则参数。
 // 调整参数或阈值时应递增 RuleVersion 并更新 EffectiveDate。
 func DefaultAssumptions() Assumptions {
 	return Assumptions{
-		RuleVersion:               "2026.07",
-		EffectiveDate:             "2026-07-01",
-		DownPaymentRate:           0.35,
-		MonthlyPaymentCoefficient: 0.65 * 0.0041,
-		ReserveMonths:             6,
-		SafeRatio:                 0.35,
-		StrainedRatio:             0.45,
-		DangerRatio:               0.55,
-		DangerMultiplier:          1.15,
-		OldHomeShareThreshold:     0.5,
+		RuleVersion:     "2026.08",
+		EffectiveDate:   "2026-08-01",
+		DownPaymentRate: 0.35,
+		Loan: LoanParams{
+			AnnualInterestRate: 0.039,
+			LoanTermMonths:     360,
+			RepaymentMethod:    RepaymentEqualInstallment,
+		},
+		ReserveMonths:         6,
+		SafeRatio:             0.35,
+		StrainedRatio:         0.45,
+		DangerRatio:           0.55,
+		DangerMultiplier:      1.15,
+		OldHomeShareThreshold: 0.5,
 	}
+}
+
+// monthlyPaymentCoefficient 返回「每万总价对应月供（万）」。
+// = 贷款成数(1-首付比例) × 每万本金月供因子（按还款方式与利率/期限推导）。
+func (a Assumptions) monthlyPaymentCoefficient() float64 {
+	ltv := 1 - a.DownPaymentRate
+	return ltv * a.Loan.perPrincipalMonthlyFactor()
+}
+
+// perPrincipalMonthlyFactor 返回每单位本金的月供峰值因子。
+// 等额本息取固定月供；等额本金取首月（最高）月供，作为月供压力的保守口径。
+func (l LoanParams) perPrincipalMonthlyFactor() float64 {
+	n := l.LoanTermMonths
+	if n <= 0 {
+		return 0
+	}
+	r := l.AnnualInterestRate / 12
+	if r <= 0 {
+		return 1 / float64(n)
+	}
+	if l.RepaymentMethod == RepaymentEqualPrincipal {
+		// 首月月供 = 本金/期数 + 全额本金利息。
+		return 1/float64(n) + r
+	}
+	// 等额本息：r(1+r)^n / ((1+r)^n - 1)。
+	pow := math.Pow(1+r, float64(n))
+	return r * pow / (pow - 1)
 }
 
 type HousingCapacityInput struct {
@@ -58,6 +106,8 @@ type HousingCapacityInput struct {
 	RenovationBudget          float64
 	TransactionCosts          float64
 	TransitionRentCost        float64
+	// LoanOverride 可选：用户在本次测算中调整的贷款参数；nil 时用默认假设（#67）。
+	LoanOverride *LoanParams
 }
 
 type HousingCapacityResult struct {
@@ -107,7 +157,13 @@ func Calculate(input HousingCapacityInput) HousingCapacityResult {
 }
 
 // CalculateWith 使用给定规则参数计算，结果回带规则版本与生效日期。
+// 若 input.LoanOverride 非空，则以用户调整的贷款参数覆盖默认假设。
 func CalculateWith(input HousingCapacityInput, a Assumptions) HousingCapacityResult {
+	if input.LoanOverride != nil {
+		a.Loan = *input.LoanOverride
+	}
+	coefficient := a.monthlyPaymentCoefficient()
+
 	netOldHomeProceeds := math.Max(input.OldHomeValue-input.OldLoanBalance, 0)
 	reserve := input.MonthlyIncome * a.ReserveMonths
 	requiredCosts := input.RenovationBudget + input.TransactionCosts + input.TransitionRentCost
@@ -119,7 +175,7 @@ func CalculateWith(input HousingCapacityInput, a Assumptions) HousingCapacityRes
 			input.MonthlyIncome*ratio-input.CurrentMonthlyMortgage,
 		), 0)
 
-		return deployableCash + availableMonthlyPayment/a.MonthlyPaymentCoefficient
+		return deployableCash + availableMonthlyPayment/coefficient
 	}
 
 	safeTotalPrice := round(monthlyCapacityToTotalPrice(a.SafeRatio), 1)
@@ -128,13 +184,13 @@ func CalculateWith(input HousingCapacityInput, a Assumptions) HousingCapacityRes
 		deployableCash+math.Max(
 			input.MonthlyIncome*a.DangerRatio-input.CurrentMonthlyMortgage,
 			input.AcceptableMonthlyMortgage*a.DangerMultiplier,
-		)/a.MonthlyPaymentCoefficient,
+		)/coefficient,
 		1,
 	)
 
 	requiredUpfront := input.TargetTotalPrice*a.DownPaymentRate + requiredCosts + reserve
 	downPaymentGap := round(math.Max(requiredUpfront-input.CashOnHand-netOldHomeProceeds, 0), 1)
-	monthlyPayment := round(input.TargetTotalPrice*a.MonthlyPaymentCoefficient, 2)
+	monthlyPayment := round(input.TargetTotalPrice*coefficient, 2)
 	monthlyPaymentRatio := round((monthlyPayment+input.CurrentMonthlyMortgage)/input.MonthlyIncome, 3)
 
 	pressureLevel := PressureSafe

@@ -14,9 +14,9 @@ export interface MethodRuleMeta {
 }
 
 export const methodRuleMeta: MethodRuleMeta = {
-  version: "2026.07",
-  effectiveDate: "2026-07-01",
-  updatedAt: "2026-07-01",
+  version: "2026.08",
+  effectiveDate: "2026-08-01",
+  updatedAt: "2026-08-01",
   applicableScope: "适用于二手房挂牌/成交较活跃的城市与板块；一手主导或成交样本过少的板块需谨慎套用。",
   sampleRequirement: "需要该板块连续多周、样本量足够的挂牌与成交观察，样本不足时结论仅供参考。",
   source: "基于房脉对目标板块挂牌、成交、降价与带看数据的持续观察，非普适定律。",

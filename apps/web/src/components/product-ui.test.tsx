@@ -218,8 +218,8 @@ describe("CalculatorPanel", () => {
       result: {
         pressureLevel: "safe",
         strategy: "可以同步推进",
-        ruleVersion: "2026.07",
-        effectiveDate: "2026-07-01",
+        ruleVersion: "2026.08",
+        effectiveDate: "2026-08-01",
       },
     });
     render(createElement(CalculatorPanel));
@@ -346,7 +346,7 @@ describe("MethodsPage", () => {
     expect(screen.queryByText(/砍 3%-5%/)).not.toBeInTheDocument();
     // 来源/适用范围与版本可见。
     expect(screen.getByText("方法适用范围与来源")).toBeInTheDocument();
-    expect(screen.getByText(/规则版本 2026.07/)).toBeInTheDocument();
+    expect(screen.getByText(/规则版本 2026.08/)).toBeInTheDocument();
     expect(screen.getByText("适用范围")).toBeInTheDocument();
     expect(screen.getByText("来源")).toBeInTheDocument();
   });

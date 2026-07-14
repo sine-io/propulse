@@ -25,7 +25,7 @@ func TestCreateCalculationPersistsComputedResult(t *testing.T) {
 			MonthlyIncome:             3.5,
 			CurrentMonthlyMortgage:    0,
 			AcceptableMonthlyMortgage: 1.5,
-			TargetTotalPrice:          550,
+			TargetTotalPrice:          500,
 			RenovationBudget:          40,
 			TransactionCosts:          18,
 			TransitionRentCost:        5,

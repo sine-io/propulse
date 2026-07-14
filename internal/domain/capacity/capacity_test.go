@@ -35,14 +35,31 @@ func TestCalculateWithVariesByAssumptions(t *testing.T) {
 
 	custom := DefaultAssumptions()
 	custom.RuleVersion = "test.1"
-	custom.MonthlyPaymentCoefficient = DefaultAssumptions().MonthlyPaymentCoefficient * 1.2 // 提高月供系数应抬高月供
+	custom.Loan.AnnualInterestRate = DefaultAssumptions().Loan.AnnualInterestRate + 0.02 // 提高利率应抬高月供
 	adjusted := CalculateWith(input, custom)
 
 	if adjusted.RuleVersion != "test.1" {
 		t.Fatalf("RuleVersion = %q, want test.1", adjusted.RuleVersion)
 	}
 	if !(adjusted.MonthlyPayment > base.MonthlyPayment) {
-		t.Fatalf("MonthlyPayment = %v, want > baseline %v after raising coefficient", adjusted.MonthlyPayment, base.MonthlyPayment)
+		t.Fatalf("MonthlyPayment = %v, want > baseline %v after raising rate", adjusted.MonthlyPayment, base.MonthlyPayment)
+	}
+}
+
+func TestCalculateHonorsLoanOverride(t *testing.T) {
+	input := referenceInput()
+	base := Calculate(input)
+
+	// 用户把利率调高、期限缩短，月供应上升（#67 LoanOverride 生效）。
+	input.LoanOverride = &LoanParams{
+		AnnualInterestRate: 0.06,
+		LoanTermMonths:     240,
+		RepaymentMethod:    RepaymentEqualInstallment,
+	}
+	overridden := CalculateWith(input, DefaultAssumptions())
+
+	if !(overridden.MonthlyPayment > base.MonthlyPayment) {
+		t.Fatalf("MonthlyPayment = %v, want > baseline %v with higher rate + shorter term", overridden.MonthlyPayment, base.MonthlyPayment)
 	}
 }
 
@@ -78,7 +95,7 @@ func TestCalculateHousingCapacityClassifiesStrained(t *testing.T) {
 		MonthlyIncome:             3.5,
 		CurrentMonthlyMortgage:    0,
 		AcceptableMonthlyMortgage: 1.5,
-		TargetTotalPrice:          550,
+		TargetTotalPrice:          500,
 		RenovationBudget:          40,
 		TransactionCosts:          18,
 		TransitionRentCost:        5,
