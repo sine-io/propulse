@@ -9,10 +9,11 @@ import (
 
 func TestRecommendActionWindowBargainsWhenBudgetServiceableAndBuyerWindowOpen(t *testing.T) {
 	result := RecommendActionWindow(ActionWindowInput{
-		BudgetPressure:       domaincapacity.PressureStrained,
-		HasDownPaymentGap:    false,
-		NeighborhoodStatus:   domainneighborhood.NeighborhoodStatusBargain,
-		TargetLayoutScarcity: domainneighborhood.ScarcityMedium,
+		BudgetPressure:        domaincapacity.PressureStrained,
+		HasDownPaymentGap:     false,
+		NeighborhoodStatus:    domainneighborhood.NeighborhoodStatusBargain,
+		TargetLayoutScarcity:  domainneighborhood.ScarcityMedium,
+		AlternativeComparison: AlternativeComparisonUnknown,
 	})
 
 	if result.Action != ActionBargain {
@@ -21,7 +22,7 @@ func TestRecommendActionWindowBargainsWhenBudgetServiceableAndBuyerWindowOpen(t 
 	if result.Confidence != ConfidenceMedium {
 		t.Fatalf("Confidence = %q, want %q", result.Confidence, ConfidenceMedium)
 	}
-	if len(result.ConfidenceReasons) != 1 || result.ConfidenceReasons[0] != "预算与目标小区信号支持议价，但尚无可比备选证据用于提高置信度。" {
+	if len(result.ConfidenceReasons) != 1 || result.ConfidenceReasons[0] != "目标小区支持议价，但备选数据不足，不能据此提高置信度。" {
 		t.Fatalf("ConfidenceReasons = %#v", result.ConfidenceReasons)
 	}
 	if len(result.Checklist) == 0 || result.Checklist[0] != "约看 3 套成交区间附近、挂牌超过 60 天的目标户型。" {
@@ -29,6 +30,28 @@ func TestRecommendActionWindowBargainsWhenBudgetServiceableAndBuyerWindowOpen(t 
 	}
 	if len(result.Risks) != 1 || result.Risks[0] != "预算不是完全宽松，砍价失败时不要上调总价硬追。" {
 		t.Fatalf("Risks = %#v", result.Risks)
+	}
+}
+
+func TestRecommendActionWindowOnlyRaisesBargainConfidenceForBetterAlternative(t *testing.T) {
+	tests := []struct {
+		status     AlternativeComparisonStatus
+		confidence Confidence
+	}{
+		{status: AlternativeComparisonBetterFound, confidence: ConfidenceHigh},
+		{status: AlternativeComparisonNone, confidence: ConfidenceMedium},
+		{status: AlternativeComparisonUnknown, confidence: ConfidenceMedium},
+	}
+	for _, tt := range tests {
+		result := RecommendActionWindow(ActionWindowInput{
+			BudgetPressure:        domaincapacity.PressureSafe,
+			NeighborhoodStatus:    domainneighborhood.NeighborhoodStatusBargain,
+			TargetLayoutScarcity:  domainneighborhood.ScarcityMedium,
+			AlternativeComparison: tt.status,
+		})
+		if result.Confidence != tt.confidence {
+			t.Fatalf("status/confidence = %q/%q, want %q", tt.status, result.Confidence, tt.confidence)
+		}
 	}
 }
 

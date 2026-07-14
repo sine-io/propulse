@@ -58,6 +58,9 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	if cfg.MetricAlgorithmVersion != "market-metrics/2026.07.14.1" {
 		t.Fatalf("MetricAlgorithmVersion = %q", cfg.MetricAlgorithmVersion)
 	}
+	if cfg.AlternativeComparisonRuleVersion != "alternative-comparison/2026.07.14.1" {
+		t.Fatalf("AlternativeComparisonRuleVersion = %q", cfg.AlternativeComparisonRuleVersion)
+	}
 }
 
 func TestLoadReadsAccessToken(t *testing.T) {

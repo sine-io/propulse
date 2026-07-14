@@ -67,7 +67,13 @@ func newTestEngine(t *testing.T, deps Dependencies) http.Handler {
 		deps.CollectionApplication = appcollection.NewService(newInMemoryCollectionRepository(neighborhoodRepo, marketState), nil, nil, "market-metrics/test.1")
 	}
 	if deps.DecisionApplication == nil {
-		deps.DecisionApplication = appdecision.NewService(deps.CapacityApplication, deps.NeighborhoodApplication, user.SingleUserID)
+		deps.DecisionApplication = appdecision.NewService(
+			deps.CapacityApplication,
+			deps.NeighborhoodApplication,
+			user.SingleUserID,
+			"alternative-comparison/test.1",
+			"market-metrics/test.1",
+		)
 	}
 	if deps.UserID == "" {
 		deps.UserID = user.SingleUserID

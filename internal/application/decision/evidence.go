@@ -16,6 +16,7 @@ func newActionWindowResult(
 	calculation appcapacity.CalculationRecord,
 	target appneighborhood.Neighborhood,
 	metric appneighborhood.MetricWithSignal,
+	alternativeComparison AlternativeComparisonResult,
 	recommendation domaindecision.ActionWindowResult,
 ) ActionWindowResult {
 	return ActionWindowResult{
@@ -35,27 +36,19 @@ func newActionWindowResult(
 			RuleVersion:        calculation.Result.RuleVersion,
 			TraceabilityStatus: calculation.Result.TraceabilityStatus,
 		},
-		Metric: DecisionMetricReference{
-			ID:                     metric.Metric.ID,
-			CollectionRunID:        metric.Metric.CollectionRunID,
-			AlgorithmVersion:       metric.Metric.AlgorithmVersion,
-			CollectedAt:            metric.Metric.CollectedAt,
-			CalculatedAt:           metric.Metric.CalculatedAt,
-			SourceIDs:              append([]string(nil), metric.Metric.SourceIDs...),
-			ListingSampleCount:     metric.Metric.ListingSampleCount,
-			TransactionSampleCount: metric.Metric.TransactionSampleCount,
-			Coverage:               metric.Metric.Coverage,
-			Freshness:              metric.Metric.Freshness,
-			QualityState:           metric.Metric.QualityState,
-			QualityWarnings:        append([]domainneighborhood.QualityWarning(nil), metric.Metric.QualityWarnings...),
-		},
-		Factors:   buildDecisionFactors(calculation, metric),
-		Checklist: append([]string(nil), recommendation.Checklist...),
-		Risks:     append([]string(nil), recommendation.Risks...),
+		Metric:                newDecisionMetricReference(metric.Metric),
+		AlternativeComparison: alternativeComparison,
+		Factors:               buildDecisionFactors(calculation, metric, alternativeComparison),
+		Checklist:             append([]string(nil), recommendation.Checklist...),
+		Risks:                 append([]string(nil), recommendation.Risks...),
 	}
 }
 
-func buildDecisionFactors(calculation appcapacity.CalculationRecord, metric appneighborhood.MetricWithSignal) []DecisionFactor {
+func buildDecisionFactors(
+	calculation appcapacity.CalculationRecord,
+	metric appneighborhood.MetricWithSignal,
+	alternativeComparison AlternativeComparisonResult,
+) []DecisionFactor {
 	capacitySource := &DecisionFactorSource{
 		Type:       FactorSourceCapacityCalculation,
 		ID:         calculation.ID,
@@ -140,14 +133,69 @@ func buildDecisionFactors(calculation appcapacity.CalculationRecord, metric appn
 				numberEvidence("listing_sample_count", "挂牌样本", float64(metric.Metric.ListingSampleCount), "套"),
 			},
 		},
-		{
-			Key:      FactorAlternatives,
-			Status:   FactorStatusUnknown,
-			Summary:  "尚未执行可比备选评估，本次置信度不使用备选加分。",
-			Source:   nil,
-			Evidence: []DecisionFactorEvidence{},
+		alternativeDecisionFactor(alternativeComparison),
+	}
+}
+
+func newDecisionMetricReference(metric appneighborhood.MetricSnapshot) DecisionMetricReference {
+	return DecisionMetricReference{
+		ID:                     metric.ID,
+		CollectionRunID:        metric.CollectionRunID,
+		AlgorithmVersion:       metric.AlgorithmVersion,
+		CollectedAt:            metric.CollectedAt,
+		CalculatedAt:           metric.CalculatedAt,
+		SourceIDs:              append([]string(nil), metric.SourceIDs...),
+		ListingSampleCount:     metric.ListingSampleCount,
+		TransactionSampleCount: metric.TransactionSampleCount,
+		Coverage:               metric.Coverage,
+		Freshness:              metric.Freshness,
+		QualityState:           metric.QualityState,
+		QualityWarnings:        append([]domainneighborhood.QualityWarning(nil), metric.QualityWarnings...),
+	}
+}
+
+func alternativeDecisionFactor(comparison AlternativeComparisonResult) DecisionFactor {
+	status := FactorStatusNeutral
+	summary := "观察池中没有其他可比较小区。"
+	if len(comparison.Candidates) > 0 {
+		switch comparison.Status {
+		case domaindecision.AlternativeComparisonBetterFound:
+			status = FactorStatusPositive
+			summary = fmt.Sprintf("发现 %d 个满足版本化规则的更优备选。", alternativeCandidateCount(comparison, domaindecision.AlternativeCandidateBetter))
+		case domaindecision.AlternativeComparisonUnknown:
+			status = FactorStatusUnknown
+			summary = "观察池备选存在，但可比窗口或数据质量不足，无法判断是否更优。"
+		default:
+			summary = "已评估观察池备选，没有候选同时满足预算、两项改善且无劣化。"
+		}
+	}
+	return DecisionFactor{
+		Key:     FactorAlternatives,
+		Status:  status,
+		Summary: summary,
+		Source: &DecisionFactorSource{
+			Type:       FactorSourceAlternativeComparison,
+			ID:         comparison.RuleVersion,
+			ObservedAt: comparison.ReferenceCollectedAt,
+		},
+		Evidence: []DecisionFactorEvidence{
+			textEvidence("comparison_status", "比较结果", string(comparison.Status)),
+			textEvidence("rule_version", "规则版本", comparison.RuleVersion),
+			numberEvidence("candidate_count", "候选数量", float64(len(comparison.Candidates)), "个"),
+			numberEvidence("better_candidate_count", "更优候选", float64(alternativeCandidateCount(comparison, domaindecision.AlternativeCandidateBetter)), "个"),
+			numberEvidence("unknown_candidate_count", "数据不足候选", float64(alternativeCandidateCount(comparison, domaindecision.AlternativeCandidateUnknown)), "个"),
 		},
 	}
+}
+
+func alternativeCandidateCount(comparison AlternativeComparisonResult, status domaindecision.AlternativeCandidateStatus) int {
+	count := 0
+	for _, candidate := range comparison.Candidates {
+		if candidate.Status == status {
+			count++
+		}
+	}
+	return count
 }
 
 func budgetPressureStatus(pressure domaincapacity.PressureLevel) FactorStatus {

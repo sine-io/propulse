@@ -22,16 +22,17 @@ type Decision struct {
 }
 
 type actionWindowResponse struct {
-	Action              domaindecision.ActionWindow          `json:"action"`
-	Confidence          domaindecision.Confidence            `json:"confidence"`
-	ConfidenceReasons   []string                             `json:"confidenceReasons"`
-	Summary             string                               `json:"summary"`
-	Target              actionWindowTargetResponse           `json:"target"`
-	CapacityCalculation capacityCalculationReferenceResponse `json:"capacityCalculation"`
-	Metric              decisionMetricReferenceResponse      `json:"metric"`
-	Factors             []decisionFactorResponse             `json:"factors"`
-	Checklist           []string                             `json:"checklist"`
-	Risks               []string                             `json:"risks"`
+	Action                domaindecision.ActionWindow          `json:"action"`
+	Confidence            domaindecision.Confidence            `json:"confidence"`
+	ConfidenceReasons     []string                             `json:"confidenceReasons"`
+	Summary               string                               `json:"summary"`
+	Target                actionWindowTargetResponse           `json:"target"`
+	CapacityCalculation   capacityCalculationReferenceResponse `json:"capacityCalculation"`
+	Metric                decisionMetricReferenceResponse      `json:"metric"`
+	AlternativeComparison alternativeComparisonResponse        `json:"alternativeComparison"`
+	Factors               []decisionFactorResponse             `json:"factors"`
+	Checklist             []string                             `json:"checklist"`
+	Risks                 []string                             `json:"risks"`
 }
 
 type actionWindowTargetResponse struct {
@@ -61,6 +62,38 @@ type decisionMetricReferenceResponse struct {
 	Freshness              domainneighborhood.Freshness          `json:"freshness"`
 	QualityState           domainneighborhood.MarketQualityState `json:"qualityState"`
 	QualityWarnings        []domainneighborhood.QualityWarning   `json:"qualityWarnings"`
+}
+
+type alternativeComparisonResponse struct {
+	Status               domaindecision.AlternativeComparisonStatus `json:"status"`
+	RuleVersion          string                                     `json:"ruleVersion"`
+	ReferenceCollectedAt string                                     `json:"referenceCollectedAt"`
+	SafeTotalPrice       float64                                    `json:"safeTotalPrice"`
+	Candidates           []alternativeCandidateComparisonResponse   `json:"candidates"`
+}
+
+type alternativeCandidateComparisonResponse struct {
+	NeighborhoodID                    string                                          `json:"neighborhoodId"`
+	Name                              string                                          `json:"name"`
+	Area                              string                                          `json:"area"`
+	TargetLayout                      string                                          `json:"targetLayout"`
+	Status                            domaindecision.AlternativeCandidateStatus       `json:"status"`
+	Reasons                           []domaindecision.AlternativeComparisonReason    `json:"reasons"`
+	Improvements                      []domaindecision.AlternativeComparisonDimension `json:"improvements"`
+	Deteriorations                    []domaindecision.AlternativeComparisonDimension `json:"deteriorations"`
+	WithinBudget                      *bool                                           `json:"withinBudget"`
+	TargetTransactionPriceMidpoint    *float64                                        `json:"targetTransactionPriceMidpoint"`
+	CandidateTransactionPriceMidpoint *float64                                        `json:"candidateTransactionPriceMidpoint"`
+	PriceDifference                   *float64                                        `json:"priceDifference"`
+	PriceDifferencePct                *float64                                        `json:"priceDifferencePct"`
+	TargetSignal                      *domainneighborhood.NeighborhoodStatus          `json:"targetSignal"`
+	CandidateSignal                   *domainneighborhood.NeighborhoodStatus          `json:"candidateSignal"`
+	SignalRankDifference              *int                                            `json:"signalRankDifference"`
+	TargetLayoutSupply                int                                             `json:"targetLayoutSupply"`
+	CandidateTargetLayoutSupply       *int                                            `json:"candidateTargetLayoutSupply"`
+	SupplyDifference                  *int                                            `json:"supplyDifference"`
+	SupplyDifferencePct               *float64                                        `json:"supplyDifferencePct"`
+	Metric                            *decisionMetricReferenceResponse                `json:"metric"`
 }
 
 type decisionFactorResponse struct {
@@ -173,23 +206,69 @@ func newActionWindowResponse(result appdecision.ActionWindowResult) actionWindow
 			RuleVersion:        result.CapacityCalculation.RuleVersion,
 			TraceabilityStatus: result.CapacityCalculation.TraceabilityStatus,
 		},
-		Metric: decisionMetricReferenceResponse{
-			ID:                     result.Metric.ID,
-			CollectionRunID:        result.Metric.CollectionRunID,
-			AlgorithmVersion:       result.Metric.AlgorithmVersion,
-			CollectedAt:            formatDecisionTime(result.Metric.CollectedAt),
-			CalculatedAt:           formatDecisionTime(result.Metric.CalculatedAt),
-			SourceIDs:              append([]string{}, result.Metric.SourceIDs...),
-			ListingSampleCount:     result.Metric.ListingSampleCount,
-			TransactionSampleCount: result.Metric.TransactionSampleCount,
-			Coverage:               result.Metric.Coverage,
-			Freshness:              result.Metric.Freshness,
-			QualityState:           result.Metric.QualityState,
-			QualityWarnings:        append([]domainneighborhood.QualityWarning{}, result.Metric.QualityWarnings...),
-		},
-		Factors:   factors,
-		Checklist: append([]string{}, result.Checklist...),
-		Risks:     append([]string{}, result.Risks...),
+		Metric:                newDecisionMetricReferenceResponse(result.Metric),
+		AlternativeComparison: newAlternativeComparisonResponse(result.AlternativeComparison),
+		Factors:               factors,
+		Checklist:             append([]string{}, result.Checklist...),
+		Risks:                 append([]string{}, result.Risks...),
+	}
+}
+
+func newDecisionMetricReferenceResponse(metric appdecision.DecisionMetricReference) decisionMetricReferenceResponse {
+	return decisionMetricReferenceResponse{
+		ID:                     metric.ID,
+		CollectionRunID:        metric.CollectionRunID,
+		AlgorithmVersion:       metric.AlgorithmVersion,
+		CollectedAt:            formatDecisionTime(metric.CollectedAt),
+		CalculatedAt:           formatDecisionTime(metric.CalculatedAt),
+		SourceIDs:              append([]string{}, metric.SourceIDs...),
+		ListingSampleCount:     metric.ListingSampleCount,
+		TransactionSampleCount: metric.TransactionSampleCount,
+		Coverage:               metric.Coverage,
+		Freshness:              metric.Freshness,
+		QualityState:           metric.QualityState,
+		QualityWarnings:        append([]domainneighborhood.QualityWarning{}, metric.QualityWarnings...),
+	}
+}
+
+func newAlternativeComparisonResponse(comparison appdecision.AlternativeComparisonResult) alternativeComparisonResponse {
+	candidates := make([]alternativeCandidateComparisonResponse, 0, len(comparison.Candidates))
+	for _, candidate := range comparison.Candidates {
+		var metric *decisionMetricReferenceResponse
+		if candidate.Metric != nil {
+			mapped := newDecisionMetricReferenceResponse(*candidate.Metric)
+			metric = &mapped
+		}
+		candidates = append(candidates, alternativeCandidateComparisonResponse{
+			NeighborhoodID:                    candidate.NeighborhoodID,
+			Name:                              candidate.Name,
+			Area:                              candidate.Area,
+			TargetLayout:                      candidate.TargetLayout,
+			Status:                            candidate.Status,
+			Reasons:                           append([]domaindecision.AlternativeComparisonReason{}, candidate.Reasons...),
+			Improvements:                      append([]domaindecision.AlternativeComparisonDimension{}, candidate.Improvements...),
+			Deteriorations:                    append([]domaindecision.AlternativeComparisonDimension{}, candidate.Deteriorations...),
+			WithinBudget:                      candidate.WithinBudget,
+			TargetTransactionPriceMidpoint:    candidate.TargetTransactionPriceMidpoint,
+			CandidateTransactionPriceMidpoint: candidate.CandidateTransactionPriceMidpoint,
+			PriceDifference:                   candidate.PriceDifference,
+			PriceDifferencePct:                candidate.PriceDifferencePct,
+			TargetSignal:                      candidate.TargetSignal,
+			CandidateSignal:                   candidate.CandidateSignal,
+			SignalRankDifference:              candidate.SignalRankDifference,
+			TargetLayoutSupply:                candidate.TargetLayoutSupply,
+			CandidateTargetLayoutSupply:       candidate.CandidateTargetLayoutSupply,
+			SupplyDifference:                  candidate.SupplyDifference,
+			SupplyDifferencePct:               candidate.SupplyDifferencePct,
+			Metric:                            metric,
+		})
+	}
+	return alternativeComparisonResponse{
+		Status:               comparison.Status,
+		RuleVersion:          comparison.RuleVersion,
+		ReferenceCollectedAt: formatDecisionTime(comparison.ReferenceCollectedAt),
+		SafeTotalPrice:       comparison.SafeTotalPrice,
+		Candidates:           candidates,
 	}
 }
 

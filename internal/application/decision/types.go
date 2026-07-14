@@ -46,16 +46,17 @@ const (
 )
 
 type ActionWindowResult struct {
-	Action              domaindecision.ActionWindow
-	Confidence          domaindecision.Confidence
-	ConfidenceReasons   []string
-	Summary             string
-	Target              ActionWindowTarget
-	CapacityCalculation CapacityCalculationReference
-	Metric              DecisionMetricReference
-	Factors             []DecisionFactor
-	Checklist           []string
-	Risks               []string
+	Action                domaindecision.ActionWindow
+	Confidence            domaindecision.Confidence
+	ConfidenceReasons     []string
+	Summary               string
+	Target                ActionWindowTarget
+	CapacityCalculation   CapacityCalculationReference
+	Metric                DecisionMetricReference
+	AlternativeComparison AlternativeComparisonResult
+	Factors               []DecisionFactor
+	Checklist             []string
+	Risks                 []string
 }
 
 type ActionWindowTarget struct {
@@ -85,6 +86,38 @@ type DecisionMetricReference struct {
 	Freshness              domainneighborhood.Freshness
 	QualityState           domainneighborhood.MarketQualityState
 	QualityWarnings        []domainneighborhood.QualityWarning
+}
+
+type AlternativeComparisonResult struct {
+	Status               domaindecision.AlternativeComparisonStatus
+	RuleVersion          string
+	ReferenceCollectedAt time.Time
+	SafeTotalPrice       float64
+	Candidates           []AlternativeCandidateComparison
+}
+
+type AlternativeCandidateComparison struct {
+	NeighborhoodID                    string
+	Name                              string
+	Area                              string
+	TargetLayout                      string
+	Status                            domaindecision.AlternativeCandidateStatus
+	Reasons                           []domaindecision.AlternativeComparisonReason
+	Improvements                      []domaindecision.AlternativeComparisonDimension
+	Deteriorations                    []domaindecision.AlternativeComparisonDimension
+	WithinBudget                      *bool
+	TargetTransactionPriceMidpoint    *float64
+	CandidateTransactionPriceMidpoint *float64
+	PriceDifference                   *float64
+	PriceDifferencePct                *float64
+	TargetSignal                      *domainneighborhood.NeighborhoodStatus
+	CandidateSignal                   *domainneighborhood.NeighborhoodStatus
+	SignalRankDifference              *int
+	TargetLayoutSupply                int
+	CandidateTargetLayoutSupply       *int
+	SupplyDifference                  *int
+	SupplyDifferencePct               *float64
+	Metric                            *DecisionMetricReference
 }
 
 type DecisionFactor struct {
