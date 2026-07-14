@@ -163,7 +163,7 @@ func TestActionWindowEvidenceContract(t *testing.T) {
 	response := requiredMap(t, schemas, "ActionWindowResponse")
 	assertRequiredFields(t, response, []string{
 		"action", "confidence", "confidenceReasons", "summary", "target",
-		"capacityCalculation", "metric", "factors", "checklist", "risks",
+		"capacityCalculation", "metric", "alternativeComparison", "factors", "checklist", "risks",
 	})
 	assertRequiredFields(t, requiredMap(t, schemas, "ActionWindowTarget"), []string{"neighborhoodId", "name", "area", "targetLayout"})
 	assertRequiredFields(t, requiredMap(t, schemas, "CapacityCalculationReference"), []string{"id", "createdAt", "ruleVersion", "traceabilityStatus"})
@@ -196,6 +196,33 @@ func TestActionWindowEvidenceContract(t *testing.T) {
 	assertRequiredFields(t, evidence, []string{"key", "label", "valueType"})
 	for _, valueType := range []string{"text", "number", "boolean"} {
 		assertStringEnumContains(t, requiredMap(t, requiredMap(t, evidence, "properties"), "valueType"), valueType)
+	}
+
+	alternative := requiredMap(t, schemas, "AlternativeComparison")
+	assertRequiredFields(t, alternative, []string{"status", "ruleVersion", "referenceCollectedAt", "safeTotalPrice", "candidates"})
+	for _, status := range []string{"better_found", "none", "unknown"} {
+		assertStringEnumContains(t, requiredMap(t, requiredMap(t, alternative, "properties"), "status"), status)
+	}
+	candidate := requiredMap(t, schemas, "AlternativeCandidateComparison")
+	assertRequiredFields(t, candidate, []string{
+		"neighborhoodId", "name", "area", "targetLayout", "status", "reasons", "improvements", "deteriorations",
+		"withinBudget", "targetTransactionPriceMidpoint", "candidateTransactionPriceMidpoint", "priceDifference",
+		"priceDifferencePct", "targetSignal", "candidateSignal", "signalRankDifference", "targetLayoutSupply",
+		"candidateTargetLayoutSupply", "supplyDifference", "supplyDifferencePct", "metric",
+	})
+	candidateProperties := requiredMap(t, candidate, "properties")
+	for _, status := range []string{"better", "not_better", "unknown"} {
+		assertStringEnumContains(t, requiredMap(t, candidateProperties, "status"), status)
+	}
+	for _, field := range []string{
+		"withinBudget", "targetTransactionPriceMidpoint", "candidateTransactionPriceMidpoint", "priceDifference",
+		"priceDifferencePct", "targetSignal", "candidateSignal", "signalRankDifference", "candidateTargetLayoutSupply",
+		"supplyDifference", "supplyDifferencePct", "metric",
+	} {
+		property := requiredMap(t, candidateProperties, field)
+		if nullable, ok := property["nullable"].(bool); !ok || !nullable {
+			t.Fatalf("AlternativeCandidateComparison.%s nullable = %#v, want true", field, property["nullable"])
+		}
 	}
 }
 

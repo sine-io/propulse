@@ -478,12 +478,23 @@ describe("ActionWindowPage", () => {
     vi.mocked(getActionWindow).mockResolvedValueOnce(actionWindowFixture({
       action: "出手",
       confidence: "高",
+      confidenceReasons: ["目标小区支持议价，且版本化比较发现至少一个预算内更优备选。"],
       summary: "预算安全且目标户型稀缺，可以准备出手。",
       checklist: ["确认贷款批复。", "准备谈价底线。"],
       risks: ["不要因为稀缺而突破预算。"],
+      alternativeComparison: betterAlternativeComparisonFixture(),
       factors: actionWindowFixture().factors.map((factor) =>
         factor.key === "market_signal"
           ? { ...factor, summary: "API 指标显示目标小区进入可谈区间。" }
+          : factor.key === "alternatives"
+            ? {
+                ...factor,
+                status: "positive",
+                summary: "发现 1 个满足版本化规则的更优备选。",
+                evidence: [
+                  { key: "better_candidate_count", label: "更优候选", valueType: "number", numberValue: 1, unit: "个" },
+                ],
+              }
           : factor,
       ),
     }));
@@ -494,9 +505,11 @@ describe("ActionWindowPage", () => {
     expect(screen.getByText("接口花园")).toBeInTheDocument();
     expect(screen.getByText("API 指标显示目标小区进入可谈区间。")).toBeInTheDocument();
     expect(screen.getByText("510 万元")).toBeInTheDocument();
-    expect(screen.getByText("尚未执行可比备选评估，本次置信度不使用备选加分。")).toBeInTheDocument();
-    expect(screen.getByText("暂无可核验值")).toBeInTheDocument();
-    expect(screen.getByText("无可用来源")).toBeInTheDocument();
+    expect(screen.getByText("发现 1 个满足版本化规则的更优备选。")).toBeInTheDocument();
+    expect(screen.getByText("真实备选花园")).toBeInTheDocument();
+    expect(screen.getByText("500 → 450 万元（-50 / -10%）")).toBeInTheDocument();
+    expect(screen.getByText("8 → 10 套（+2 / +25%）")).toBeInTheDocument();
+    expect(screen.getByText("预算内、至少两项改善且无劣化")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /接口花园/ })).toHaveAttribute(
       "href",
       "/neighborhoods?id=11111111-1111-1111-1111-111111111111",
@@ -509,10 +522,64 @@ describe("ActionWindowPage", () => {
       "href",
       "/data/imports/44444444-4444-4444-4444-444444444444",
     );
+    expect(screen.getByRole("link", { name: /候选批次/ })).toHaveAttribute(
+      "href",
+      "/data/imports/88888888-8888-4888-8888-888888888888",
+    );
     expect(screen.queryByText(/同户型约 12 套/)).not.toBeInTheDocument();
     expect(screen.queryByText(/已添加 2 个/)).not.toBeInTheDocument();
     expect(screen.getByText("确认贷款批复。")).toBeInTheDocument();
     expect(screen.getByText("不要因为稀缺而突破预算。")).toBeInTheDocument();
+  });
+
+  it("renders an unknown alternative without inventing comparison values", async () => {
+    setAccessToken("secret-token");
+    const unknownComparison: ActionWindowResponse["alternativeComparison"] = {
+      status: "unknown",
+      ruleVersion: "alternative-comparison/2026.07.14.1",
+      referenceCollectedAt: "2026-07-14T08:00:00Z",
+      safeTotalPrice: 510,
+      candidates: [
+        {
+          neighborhoodId: "99999999-9999-4999-8999-999999999999",
+          name: "缺指标候选",
+          area: "西城",
+          targetLayout: "三房",
+          status: "unknown",
+          reasons: ["metric_missing"],
+          improvements: [],
+          deteriorations: [],
+          withinBudget: null,
+          targetTransactionPriceMidpoint: null,
+          candidateTransactionPriceMidpoint: null,
+          priceDifference: null,
+          priceDifferencePct: null,
+          targetSignal: null,
+          candidateSignal: null,
+          signalRankDifference: null,
+          targetLayoutSupply: 8,
+          candidateTargetLayoutSupply: null,
+          supplyDifference: null,
+          supplyDifferencePct: null,
+          metric: null,
+        },
+      ],
+    };
+    vi.mocked(getActionWindow).mockResolvedValueOnce(actionWindowFixture({
+      alternativeComparison: unknownComparison,
+      factors: actionWindowFixture().factors.map((factor) =>
+        factor.key === "alternatives"
+          ? { ...factor, status: "unknown", summary: "备选数据不足，无法判断是否更优。" }
+          : factor,
+      ),
+    }));
+    render(createElement(ActionWindowPage));
+
+    expect(await screen.findByText("缺指标候选")).toBeInTheDocument();
+    expect(screen.getByText("缺少当前算法指标")).toBeInTheDocument();
+    expect(screen.getAllByText("不可比").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText("无合格指标来源")).toBeInTheDocument();
+    expect(screen.queryByText("0 万元")).not.toBeInTheDocument();
   });
 
   it("lets the user tick off checklist items (ACTION-005)", async () => {
@@ -544,10 +611,15 @@ function actionWindowFixture(overrides: Partial<ActionWindowResponse> = {}): Act
     id: "33333333-3333-3333-3333-333333333333",
     observedAt: "2026-07-14T08:00:00Z",
   };
+  const alternativeSource = {
+    type: "alternative_comparison" as const,
+    id: "alternative-comparison/2026.07.14.1",
+    observedAt: "2026-07-14T08:00:00Z",
+  };
   return {
     action: "砍价",
     confidence: "中",
-    confidenceReasons: ["预算与目标小区信号支持议价，但尚无可比备选证据用于提高置信度。"],
+    confidenceReasons: ["目标小区支持议价，但备选比较没有发现满足规则的更优候选。"],
     summary: "预算与当前市场证据支持试探底价。",
     target: {
       neighborhoodId: "11111111-1111-1111-1111-111111111111",
@@ -574,6 +646,13 @@ function actionWindowFixture(overrides: Partial<ActionWindowResponse> = {}): Act
       freshness: "current",
       qualityState: "sufficient",
       qualityWarnings: [],
+    },
+    alternativeComparison: {
+      status: "none",
+      ruleVersion: alternativeSource.id,
+      referenceCollectedAt: alternativeSource.observedAt,
+      safeTotalPrice: 510,
+      candidates: [],
     },
     factors: [
       {
@@ -623,15 +702,64 @@ function actionWindowFixture(overrides: Partial<ActionWindowResponse> = {}): Act
       },
       {
         key: "alternatives",
-        status: "unknown",
-        summary: "尚未执行可比备选评估，本次置信度不使用备选加分。",
-        source: null,
-        evidence: [],
+        status: "neutral",
+        summary: "观察池中没有其他可比较小区。",
+        source: alternativeSource,
+        evidence: [
+          { key: "comparison_status", label: "比较结果", valueType: "text", textValue: "none" },
+        ],
       },
     ],
     checklist: ["核验目标房源。"],
     risks: ["不要突破安全总价。"],
     ...overrides,
+  };
+}
+
+function betterAlternativeComparisonFixture(): ActionWindowResponse["alternativeComparison"] {
+  return {
+    status: "better_found",
+    ruleVersion: "alternative-comparison/2026.07.14.1",
+    referenceCollectedAt: "2026-07-14T08:00:00Z",
+    safeTotalPrice: 510,
+    candidates: [
+      {
+        neighborhoodId: "66666666-6666-4666-8666-666666666666",
+        name: "真实备选花园",
+        area: "南城",
+        targetLayout: "三房",
+        status: "better",
+        reasons: ["better_threshold_met"],
+        improvements: ["transaction_price", "target_layout_supply"],
+        deteriorations: [],
+        withinBudget: true,
+        targetTransactionPriceMidpoint: 500,
+        candidateTransactionPriceMidpoint: 450,
+        priceDifference: -50,
+        priceDifferencePct: -10,
+        targetSignal: "适合砍价",
+        candidateSignal: "适合砍价",
+        signalRankDifference: 0,
+        targetLayoutSupply: 8,
+        candidateTargetLayoutSupply: 10,
+        supplyDifference: 2,
+        supplyDifferencePct: 25,
+        metric: {
+          id: "77777777-7777-4777-8777-777777777777",
+          collectionRunId: "88888888-8888-4888-8888-888888888888",
+          algorithmVersion: "market-metrics/2026.07.14.1",
+          collectedAt: "2026-07-13T08:00:00Z",
+          calculatedAt: "2026-07-13T08:05:00Z",
+          sourceIds: [],
+          listingSampleCount: 20,
+          transactionSampleCount: 3,
+          coverage: "full",
+          freshness: "current",
+          qualityState: "sufficient",
+          qualityWarnings: [],
+        },
+      },
+    ],
   };
 }
 

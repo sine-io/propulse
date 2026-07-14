@@ -18,6 +18,8 @@ import { StatusBadge } from "./status-badge";
 
 type DecisionFactor = ActionWindowResponse["factors"][number];
 type DecisionFactorEvidence = DecisionFactor["evidence"][number];
+type AlternativeComparison = ActionWindowResponse["alternativeComparison"];
+type AlternativeCandidate = AlternativeComparison["candidates"][number];
 
 type AccessState = "checking" | "locked" | "unlocked";
 type PageState = "checking" | "locked" | "loading" | "ready" | "blocked";
@@ -194,6 +196,8 @@ export function ActionWindowPage() {
             </div>
           </section>
 
+          <AlternativeComparisonSection comparison={recommendation.alternativeComparison} />
+
           <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="bg-slate-900 p-6 text-white shadow-sm">
               <h3 className="mb-4 flex items-center text-lg font-bold">
@@ -238,6 +242,101 @@ export function ActionWindowPage() {
         </>
       ) : null}
     </main>
+  );
+}
+
+function AlternativeComparisonSection({ comparison }: { comparison: AlternativeComparison }) {
+  return (
+    <section>
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-4">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">可比备选明细</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            规则 {comparison.ruleVersion} · 参考采集 {formatDecisionTimestamp(comparison.referenceCollectedAt)} · 安全总价 {formatNumber(comparison.safeTotalPrice)} 万元
+          </p>
+        </div>
+        <StatusBadge tone={comparisonTone[comparison.status]}>
+          {comparisonStatusCopy[comparison.status]}
+        </StatusBadge>
+      </div>
+      {comparison.candidates.length === 0 ? (
+        <p className="py-6 text-sm text-slate-500">观察池中没有其他候选小区。</p>
+      ) : (
+        <div>
+          {comparison.candidates.map((candidate) => (
+            <AlternativeCandidateRow key={candidate.neighborhoodId} candidate={candidate} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AlternativeCandidateRow({ candidate }: { candidate: AlternativeCandidate }) {
+  return (
+    <article className="border-b border-slate-200 py-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            href={`/neighborhoods?id=${encodeURIComponent(candidate.neighborhoodId)}`}
+            className="font-semibold text-blue-700 hover:underline"
+          >
+            {candidate.name}
+          </Link>
+          <p className="mt-1 text-xs text-slate-500">
+            {candidate.area} · {candidate.targetLayout}
+          </p>
+        </div>
+        <StatusBadge tone={candidateTone[candidate.status]}>
+          {candidateStatusCopy[candidate.status]}
+        </StatusBadge>
+      </div>
+
+      <dl className="mt-4 grid grid-cols-2 gap-x-5 gap-y-4 text-sm lg:grid-cols-4">
+        <ComparisonValue label="成交中位价" value={formatPriceDifference(candidate)} />
+        <ComparisonValue label="市场信号" value={formatSignalDifference(candidate)} />
+        <ComparisonValue label="目标户型供给" value={formatSupplyDifference(candidate)} />
+        <ComparisonValue label="预算约束" value={formatBudgetStatus(candidate.withinBudget)} />
+      </dl>
+
+      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600">
+        <span>改善：{formatDimensions(candidate.improvements)}</span>
+        <span>劣化：{formatDimensions(candidate.deteriorations)}</span>
+      </div>
+      <ul className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+        {candidate.reasons.map((reason) => (
+          <li key={reason} className="border-l-2 border-slate-300 pl-2">
+            {alternativeReasonCopy[reason]}
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-4 text-xs text-slate-500">
+        {candidate.metric ? (
+          <Link
+            href={`/data/imports/${encodeURIComponent(candidate.metric.collectionRunId)}`}
+            className="inline-flex items-center gap-1.5 text-blue-700 hover:underline"
+          >
+            <span>
+              候选批次 {shortReference(candidate.metric.collectionRunId)} ·{" "}
+              {formatDecisionTimestamp(candidate.metric.collectedAt)}
+            </span>
+            <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+          </Link>
+        ) : (
+          <span>无合格指标来源</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ComparisonValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-1 break-words font-medium text-slate-900">{value}</dd>
+    </div>
   );
 }
 
@@ -376,6 +475,60 @@ const factorSourceCopy: Record<NonNullable<DecisionFactor["source"]>["type"], st
   alternative_comparison: "备选比较",
 };
 
+const comparisonStatusCopy: Record<AlternativeComparison["status"], string> = {
+  better_found: "发现更优备选",
+  none: "未发现更优备选",
+  unknown: "备选证据不足",
+};
+
+const comparisonTone: Record<
+  AlternativeComparison["status"],
+  "emerald" | "slate" | "amber"
+> = {
+  better_found: "emerald",
+  none: "slate",
+  unknown: "amber",
+};
+
+const candidateStatusCopy: Record<AlternativeCandidate["status"], string> = {
+  better: "更优",
+  not_better: "未达更优门槛",
+  unknown: "数据不足",
+};
+
+const candidateTone: Record<
+  AlternativeCandidate["status"],
+  "emerald" | "slate" | "amber"
+> = {
+  better: "emerald",
+  not_better: "slate",
+  unknown: "amber",
+};
+
+const dimensionCopy: Record<AlternativeCandidate["improvements"][number], string> = {
+  transaction_price: "成交价",
+  market_signal: "市场信号",
+  target_layout_supply: "户型供给",
+};
+
+const alternativeReasonCopy: Record<AlternativeCandidate["reasons"][number], string> = {
+  layout_mismatch: "目标户型不一致",
+  metric_missing: "缺少当前算法指标",
+  algorithm_version_mismatch: "指标算法版本不一致",
+  coverage_not_full: "不是完整覆盖批次",
+  metric_not_current: "指标不在当前新鲜度",
+  metric_quality_insufficient: "指标质量不足",
+  transaction_evidence_insufficient: "成交样本少于 3 笔",
+  comparison_window_mismatch: "采集时间相差超过 7 天",
+  transaction_price_missing: "缺少成交价格区间",
+  target_evidence_insufficient: "目标小区证据不足",
+  signal_not_comparable: "市场信号不可比较",
+  over_budget: "候选成交中位价超出安全总价",
+  insufficient_improvements: "实质改善少于两项",
+  deterioration_present: "至少一项指标明显劣化",
+  better_threshold_met: "预算内、至少两项改善且无劣化",
+};
+
 const qualityStateCopy: Record<ActionWindowResponse["metric"]["qualityState"], string> = {
   sufficient: "证据充分",
   low_confidence: "证据可信度较低",
@@ -403,6 +556,7 @@ const freshnessCopy: Record<ActionWindowResponse["metric"]["freshness"], string>
 
 const evidenceTextCopy: Record<string, string> = {
   bargain: "适合砍价",
+  better_found: "发现更优备选",
   complete: "可追溯",
   current: "当前",
   danger: "危险",
@@ -410,11 +564,13 @@ const evidenceTextCopy: Record<string, string> = {
   high: "高",
   low: "低",
   medium: "中",
+  none: "未发现更优备选",
   safe: "安全",
   stable: "平稳",
   strained: "承压",
   strong: "活跃",
   sufficient: "充分",
+  unknown: "未知",
   weak: "偏弱",
 };
 
@@ -435,6 +591,54 @@ function formatFactorEvidence(evidence: DecisionFactorEvidence): string {
     return formatDecisionTimestamp(evidence.textValue);
   }
   return evidenceTextCopy[evidence.textValue] ?? evidence.textValue;
+}
+
+function formatPriceDifference(candidate: AlternativeCandidate): string {
+  if (
+    candidate.targetTransactionPriceMidpoint == null ||
+    candidate.candidateTransactionPriceMidpoint == null ||
+    candidate.priceDifference == null ||
+    candidate.priceDifferencePct == null
+  ) {
+    return "不可比";
+  }
+  return `${formatNumber(candidate.targetTransactionPriceMidpoint)} → ${formatNumber(candidate.candidateTransactionPriceMidpoint)} 万元（${formatSigned(candidate.priceDifference)} / ${formatSigned(candidate.priceDifferencePct)}%）`;
+}
+
+function formatSignalDifference(candidate: AlternativeCandidate): string {
+  if (!candidate.targetSignal || !candidate.candidateSignal || candidate.signalRankDifference == null) {
+    return "不可比";
+  }
+  return `${candidate.targetSignal} → ${candidate.candidateSignal}（${formatSigned(candidate.signalRankDifference)} 级）`;
+}
+
+function formatSupplyDifference(candidate: AlternativeCandidate): string {
+  if (candidate.candidateTargetLayoutSupply == null || candidate.supplyDifference == null) {
+    return "不可比";
+  }
+  const percentage = candidate.supplyDifferencePct == null
+    ? "基线为 0"
+    : `${formatSigned(candidate.supplyDifferencePct)}%`;
+  return `${candidate.targetLayoutSupply} → ${candidate.candidateTargetLayoutSupply} 套（${formatSigned(candidate.supplyDifference)} / ${percentage}）`;
+}
+
+function formatBudgetStatus(withinBudget: boolean | null): string {
+  if (withinBudget == null) return "不可判断";
+  return withinBudget ? "在安全总价内" : "超出安全总价";
+}
+
+function formatDimensions(dimensions: AlternativeCandidate["improvements"]): string {
+  if (dimensions.length === 0) return "无";
+  return dimensions.map((dimension) => dimensionCopy[dimension]).join("、");
+}
+
+function formatSigned(value: number): string {
+  const formatted = formatNumber(value);
+  return value > 0 ? `+${formatted}` : formatted;
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value);
 }
 
 function factorSourceHref(

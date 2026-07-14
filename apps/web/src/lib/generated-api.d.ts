@@ -1347,6 +1347,7 @@ export interface components {
             target: components["schemas"]["ActionWindowTarget"];
             capacityCalculation: components["schemas"]["CapacityCalculationReference"];
             metric: components["schemas"]["DecisionMetricReference"];
+            alternativeComparison: components["schemas"]["AlternativeComparison"];
             factors: components["schemas"]["DecisionFactor"][];
             /**
              * @example [
@@ -1423,6 +1424,42 @@ export interface components {
             numberValue?: number | null;
             booleanValue?: boolean | null;
             unit?: string;
+        };
+        AlternativeComparison: {
+            /** @enum {string} */
+            status: "better_found" | "none" | "unknown";
+            ruleVersion: string;
+            /** Format: date-time */
+            referenceCollectedAt: string;
+            safeTotalPrice: number;
+            candidates: components["schemas"]["AlternativeCandidateComparison"][];
+        };
+        AlternativeCandidateComparison: {
+            /** Format: uuid */
+            neighborhoodId: string;
+            name: string;
+            area: string;
+            targetLayout: string;
+            /** @enum {string} */
+            status: "better" | "not_better" | "unknown";
+            reasons: ("layout_mismatch" | "metric_missing" | "algorithm_version_mismatch" | "coverage_not_full" | "metric_not_current" | "metric_quality_insufficient" | "transaction_evidence_insufficient" | "comparison_window_mismatch" | "transaction_price_missing" | "target_evidence_insufficient" | "signal_not_comparable" | "over_budget" | "insufficient_improvements" | "deterioration_present" | "better_threshold_met")[];
+            improvements: ("transaction_price" | "market_signal" | "target_layout_supply")[];
+            deteriorations: ("transaction_price" | "market_signal" | "target_layout_supply")[];
+            withinBudget: boolean | null;
+            targetTransactionPriceMidpoint: number | null;
+            candidateTransactionPriceMidpoint: number | null;
+            priceDifference: number | null;
+            priceDifferencePct: number | null;
+            /** @enum {string|null} */
+            targetSignal: "适合砍价" | "重点看" | "继续观察" | "暂不建议追" | "价格偏硬" | null;
+            /** @enum {string|null} */
+            candidateSignal: "适合砍价" | "重点看" | "继续观察" | "暂不建议追" | "价格偏硬" | null;
+            signalRankDifference: number | null;
+            targetLayoutSupply: number;
+            candidateTargetLayoutSupply: number | null;
+            supplyDifference: number | null;
+            supplyDifferencePct: number | null;
+            metric: components["schemas"]["DecisionMetricReference"] | null;
         };
         AccessStatusResponse: {
             /** @enum {string} */

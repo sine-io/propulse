@@ -103,7 +103,13 @@ func openRuntime(ctx context.Context, cfg config.Config, _ zerolog.Logger) (*run
 	rt.metric = appmetric.NewService(metricRepo, cfg.MetricAlgorithmVersion)
 	rt.neighborhood = appneighborhood.NewServiceWithMetricConfig(neighborhoodRepo, cfg.MetricAlgorithmVersion, time.Now)
 	rt.collection = appcollection.NewServiceWithMetricRefresh(collectionRepo, time.Now, nil, rt.metric, rt.enqueuer, cfg.MetricAlgorithmVersion)
-	rt.decision = appdecision.NewService(rt.capacity, rt.neighborhood, cfg.UserID)
+	rt.decision = appdecision.NewService(
+		rt.capacity,
+		rt.neighborhood,
+		cfg.UserID,
+		cfg.AlternativeComparisonRuleVersion,
+		cfg.MetricAlgorithmVersion,
+	)
 
 	return rt, nil
 }

@@ -30,16 +30,24 @@ type NeighborhoodReader interface {
 }
 
 type Service struct {
-	capacity     CapacityReader
-	neighborhood NeighborhoodReader
-	userID       string
+	capacity          CapacityReader
+	neighborhood      NeighborhoodReader
+	userID            string
+	alternativePolicy domaindecision.AlternativeComparisonPolicy
 }
 
-func NewService(capacity CapacityReader, neighborhood NeighborhoodReader, userID string) *Service {
+func NewService(
+	capacity CapacityReader,
+	neighborhood NeighborhoodReader,
+	userID string,
+	alternativeRuleVersion string,
+	metricAlgorithmVersion string,
+) *Service {
 	return &Service{
-		capacity:     capacity,
-		neighborhood: neighborhood,
-		userID:       userID,
+		capacity:          capacity,
+		neighborhood:      neighborhood,
+		userID:            userID,
+		alternativePolicy: domaindecision.NewAlternativeComparisonPolicy(alternativeRuleVersion, metricAlgorithmVersion),
 	}
 }
 
@@ -97,11 +105,16 @@ func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuer
 	if err != nil {
 		return ActionWindowResult{}, err
 	}
+	alternativeComparison, err := s.compareAlternatives(ctx, capacity, target, metric, watchlist)
+	if err != nil {
+		return ActionWindowResult{}, err
+	}
 	recommendation := domaindecision.RecommendActionWindow(domaindecision.ActionWindowInput{
-		BudgetPressure:       capacity.Result.PressureLevel,
-		HasDownPaymentGap:    capacity.Result.DownPaymentGap > 0,
-		NeighborhoodStatus:   metric.Signal.Status,
-		TargetLayoutScarcity: metric.Signal.TargetLayoutScarcity,
+		BudgetPressure:        capacity.Result.PressureLevel,
+		HasDownPaymentGap:     capacity.Result.DownPaymentGap > 0,
+		NeighborhoodStatus:    metric.Signal.Status,
+		TargetLayoutScarcity:  metric.Signal.TargetLayoutScarcity,
+		AlternativeComparison: alternativeComparison.Status,
 	})
-	return newActionWindowResult(capacity, target, metric, recommendation), nil
+	return newActionWindowResult(capacity, target, metric, alternativeComparison, recommendation), nil
 }

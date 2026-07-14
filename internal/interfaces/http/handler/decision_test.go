@@ -53,6 +53,22 @@ func TestGetActionWindowReturnsRecommendation(t *testing.T) {
 			CollectionRunID string `json:"collectionRunId"`
 			CollectedAt     string `json:"collectedAt"`
 		} `json:"metric"`
+		AlternativeComparison struct {
+			Status               string  `json:"status"`
+			RuleVersion          string  `json:"ruleVersion"`
+			ReferenceCollectedAt string  `json:"referenceCollectedAt"`
+			SafeTotalPrice       float64 `json:"safeTotalPrice"`
+			Candidates           []struct {
+				NeighborhoodID                    string   `json:"neighborhoodId"`
+				Status                            string   `json:"status"`
+				WithinBudget                      *bool    `json:"withinBudget"`
+				CandidateTransactionPriceMidpoint *float64 `json:"candidateTransactionPriceMidpoint"`
+				Improvements                      []string `json:"improvements"`
+				Metric                            *struct {
+					CollectionRunID string `json:"collectionRunId"`
+				} `json:"metric"`
+			} `json:"candidates"`
+		} `json:"alternativeComparison"`
 		Factors []struct {
 			Key    string `json:"key"`
 			Status string `json:"status"`
@@ -82,10 +98,21 @@ func TestGetActionWindowReturnsRecommendation(t *testing.T) {
 	if response.CapacityCalculation.ID != "22222222-2222-2222-2222-222222222222" || response.CapacityCalculation.CreatedAt != "2026-07-14T07:30:00Z" || response.Metric.ID != "33333333-3333-3333-3333-333333333333" || response.Metric.CollectionRunID != "44444444-4444-4444-4444-444444444444" || response.Metric.CollectedAt != "2026-07-14T08:00:00Z" {
 		t.Fatalf("source references = %#v", response)
 	}
+	if response.AlternativeComparison.Status != "better_found" || response.AlternativeComparison.RuleVersion != "alternative-comparison/test.1" || response.AlternativeComparison.ReferenceCollectedAt != "2026-07-14T08:00:00Z" || response.AlternativeComparison.SafeTotalPrice != 500 || len(response.AlternativeComparison.Candidates) != 2 {
+		t.Fatalf("alternative comparison = %#v", response.AlternativeComparison)
+	}
+	alternative := response.AlternativeComparison.Candidates[0]
+	if alternative.NeighborhoodID != "66666666-6666-4666-8666-666666666666" || alternative.Status != "better" || alternative.WithinBudget == nil || !*alternative.WithinBudget || alternative.CandidateTransactionPriceMidpoint == nil || *alternative.CandidateTransactionPriceMidpoint != 450 || len(alternative.Improvements) != 2 || alternative.Metric == nil || alternative.Metric.CollectionRunID != "88888888-8888-4888-8888-888888888888" {
+		t.Fatalf("alternative candidate = %#v", alternative)
+	}
+	unknownAlternative := response.AlternativeComparison.Candidates[1]
+	if unknownAlternative.Status != "unknown" || unknownAlternative.WithinBudget != nil || unknownAlternative.CandidateTransactionPriceMidpoint != nil || unknownAlternative.Metric != nil {
+		t.Fatalf("unknown alternative = %#v, want nullable evidence", unknownAlternative)
+	}
 	if len(response.Factors) != 6 || response.Factors[0].Key != "budget_pressure" || response.Factors[0].Source == nil || response.Factors[0].Source.ID != "22222222-2222-2222-2222-222222222222" || response.Factors[0].Source.ObservedAt != "2026-07-14T07:30:00Z" || response.Factors[0].Evidence[0].NumberValue == nil || *response.Factors[0].Evidence[0].NumberValue != 32 {
 		t.Fatalf("budget factor = %#v", response.Factors)
 	}
-	if response.Factors[5].Key != "alternatives" || response.Factors[5].Status != "unknown" || response.Factors[5].Source != nil || len(response.Factors[5].Evidence) != 0 {
+	if response.Factors[5].Key != "alternatives" || response.Factors[5].Status != "positive" || response.Factors[5].Source == nil || response.Factors[5].Source.Type != "alternative_comparison" {
 		t.Fatalf("alternatives factor = %#v", response.Factors[5])
 	}
 	if len(response.Checklist) != 1 || response.Checklist[0] != "约看 3 套成交区间附近、挂牌超过 60 天的目标户型。" {
@@ -201,6 +228,18 @@ func decisionResultFixture() appdecision.ActionWindowResult {
 	collectedAt := time.Date(2026, 7, 14, 8, 0, 0, 0, time.UTC)
 	calculatedAt := time.Date(2026, 7, 14, 8, 5, 0, 0, time.UTC)
 	value := 32.0
+	withinBudget := true
+	targetMidpoint := 500.0
+	candidateMidpoint := 450.0
+	priceDifference := -50.0
+	priceDifferencePct := -10.0
+	targetSignal := domainneighborhood.NeighborhoodStatusBargain
+	candidateSignal := domainneighborhood.NeighborhoodStatusBargain
+	signalDifference := 0
+	targetSupply := 10
+	candidateSupply := 12
+	supplyDifference := 2
+	supplyDifferencePct := 20.0
 	capacitySource := &appdecision.DecisionFactorSource{
 		Type: appdecision.FactorSourceCapacityCalculation, ID: "22222222-2222-2222-2222-222222222222", ObservedAt: calculationTime,
 	}
@@ -226,13 +265,44 @@ func decisionResultFixture() appdecision.ActionWindowResult {
 			Coverage: domainneighborhood.CoverageFull, Freshness: domainneighborhood.FreshnessCurrent,
 			QualityState: domainneighborhood.MarketQualitySufficient, QualityWarnings: []domainneighborhood.QualityWarning{},
 		},
+		AlternativeComparison: appdecision.AlternativeComparisonResult{
+			Status: domaindecision.AlternativeComparisonBetterFound, RuleVersion: "alternative-comparison/test.1",
+			ReferenceCollectedAt: collectedAt, SafeTotalPrice: 500,
+			Candidates: []appdecision.AlternativeCandidateComparison{
+				{
+					NeighborhoodID: "66666666-6666-4666-8666-666666666666", Name: "更优候选", Area: "南城", TargetLayout: "三房",
+					Status: domaindecision.AlternativeCandidateBetter, Reasons: []domaindecision.AlternativeComparisonReason{domaindecision.AlternativeReasonBetterThresholdMet},
+					Improvements:   []domaindecision.AlternativeComparisonDimension{domaindecision.AlternativeDimensionTransactionPrice, domaindecision.AlternativeDimensionTargetLayoutSupply},
+					Deteriorations: []domaindecision.AlternativeComparisonDimension{}, WithinBudget: &withinBudget,
+					TargetTransactionPriceMidpoint: &targetMidpoint, CandidateTransactionPriceMidpoint: &candidateMidpoint,
+					PriceDifference: &priceDifference, PriceDifferencePct: &priceDifferencePct,
+					TargetSignal: &targetSignal, CandidateSignal: &candidateSignal, SignalRankDifference: &signalDifference,
+					TargetLayoutSupply: targetSupply, CandidateTargetLayoutSupply: &candidateSupply,
+					SupplyDifference: &supplyDifference, SupplyDifferencePct: &supplyDifferencePct,
+					Metric: &appdecision.DecisionMetricReference{
+						ID: "77777777-7777-4777-8777-777777777777", CollectionRunID: "88888888-8888-4888-8888-888888888888",
+						AlgorithmVersion: "market-metrics/2026.07.14.1", CollectedAt: collectedAt, CalculatedAt: calculatedAt,
+						SourceIDs: []string{}, ListingSampleCount: 20, TransactionSampleCount: 3,
+						Coverage: domainneighborhood.CoverageFull, Freshness: domainneighborhood.FreshnessCurrent,
+						QualityState: domainneighborhood.MarketQualitySufficient, QualityWarnings: []domainneighborhood.QualityWarning{},
+					},
+				},
+				{
+					NeighborhoodID: "99999999-9999-4999-8999-999999999999", Name: "缺指标候选", Area: "西城", TargetLayout: "三房",
+					Status:       domaindecision.AlternativeCandidateUnknown,
+					Reasons:      []domaindecision.AlternativeComparisonReason{domaindecision.AlternativeReasonMetricMissing},
+					Improvements: []domaindecision.AlternativeComparisonDimension{}, Deteriorations: []domaindecision.AlternativeComparisonDimension{},
+					TargetLayoutSupply: targetSupply,
+				},
+			},
+		},
 		Factors: []appdecision.DecisionFactor{
 			{Key: appdecision.FactorBudgetPressure, Status: appdecision.FactorStatusCaution, Summary: "资金接近承压区。", Source: capacitySource, Evidence: []appdecision.DecisionFactorEvidence{{Key: "monthly_payment_ratio", Label: "月供收入比", ValueType: appdecision.EvidenceValueNumber, NumberValue: &value, Unit: "%"}}},
 			{Key: appdecision.FactorDownPaymentGap, Status: appdecision.FactorStatusPositive, Summary: "没有首付缺口。", Source: capacitySource, Evidence: []appdecision.DecisionFactorEvidence{}},
 			{Key: appdecision.FactorMarketSignal, Status: appdecision.FactorStatusPositive, Summary: "小区支持议价。", Source: metricSource, Evidence: []appdecision.DecisionFactorEvidence{}},
 			{Key: appdecision.FactorTransactionMomentum, Status: appdecision.FactorStatusPositive, Summary: "成交偏弱。", Source: metricSource, Evidence: []appdecision.DecisionFactorEvidence{}},
 			{Key: appdecision.FactorTargetLayoutSupply, Status: appdecision.FactorStatusNeutral, Summary: "户型供给中等。", Source: metricSource, Evidence: []appdecision.DecisionFactorEvidence{}},
-			{Key: appdecision.FactorAlternatives, Status: appdecision.FactorStatusUnknown, Summary: "尚未比较备选。", Source: nil, Evidence: []appdecision.DecisionFactorEvidence{}},
+			{Key: appdecision.FactorAlternatives, Status: appdecision.FactorStatusPositive, Summary: "发现 1 个更优备选。", Source: &appdecision.DecisionFactorSource{Type: appdecision.FactorSourceAlternativeComparison, ID: "alternative-comparison/test.1", ObservedAt: collectedAt}, Evidence: []appdecision.DecisionFactorEvidence{}},
 		},
 		Checklist: []string{"约看 3 套成交区间附近、挂牌超过 60 天的目标户型。"},
 		Risks:     []string{"预算不是完全宽松，砍价失败时不要上调总价硬追。"},

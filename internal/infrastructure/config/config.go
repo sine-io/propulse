@@ -12,29 +12,31 @@ import (
 )
 
 const (
-	defaultHTTPAddr               = ":8080"
-	defaultDatabaseURL            = "postgres://propulse:propulse@127.0.0.1:5432/propulse?sslmode=disable"
-	defaultRedisAddr              = "127.0.0.1:6379"
-	defaultLogLevel               = "info"
-	defaultSchedulerInterval      = time.Hour
-	currentMetricAlgorithmVersion = "market-metrics/2026.07.14.1"
-	capacityRuleVersion           = "2026.07.14"
-	capacityEffectiveDate         = "2026-07-14"
-	capacityRuleSource            = "propulse capacity rule set"
-	capacityLoanSource            = "propulse configured loan defaults"
+	defaultHTTPAddr                         = ":8080"
+	defaultDatabaseURL                      = "postgres://propulse:propulse@127.0.0.1:5432/propulse?sslmode=disable"
+	defaultRedisAddr                        = "127.0.0.1:6379"
+	defaultLogLevel                         = "info"
+	defaultSchedulerInterval                = time.Hour
+	currentMetricAlgorithmVersion           = "market-metrics/2026.07.14.1"
+	currentAlternativeComparisonRuleVersion = "alternative-comparison/2026.07.14.1"
+	capacityRuleVersion                     = "2026.07.14"
+	capacityEffectiveDate                   = "2026-07-14"
+	capacityRuleSource                      = "propulse capacity rule set"
+	capacityLoanSource                      = "propulse configured loan defaults"
 )
 
 type Config struct {
-	HTTPAddr               string
-	DatabaseURL            string
-	RedisAddr              string
-	AccessToken            string
-	UserID                 string
-	Mode                   string
-	SchedulerInterval      time.Duration
-	MetricAlgorithmVersion string
-	CapacityAssumptions    domaincapacity.Assumptions
-	Log                    LogConfig
+	HTTPAddr                         string
+	DatabaseURL                      string
+	RedisAddr                        string
+	AccessToken                      string
+	UserID                           string
+	Mode                             string
+	SchedulerInterval                time.Duration
+	MetricAlgorithmVersion           string
+	AlternativeComparisonRuleVersion string
+	CapacityAssumptions              domaincapacity.Assumptions
+	Log                              LogConfig
 }
 
 type LogConfig struct {
@@ -50,13 +52,14 @@ var (
 
 func Load(mode string) (Config, error) {
 	cfg := Config{
-		HTTPAddr:               getEnv("PROPULSE_HTTP_ADDR", defaultHTTPAddr),
-		DatabaseURL:            getEnv("PROPULSE_DATABASE_URL", defaultDatabaseURL),
-		RedisAddr:              getEnv("PROPULSE_REDIS_ADDR", defaultRedisAddr),
-		AccessToken:            getEnv("PROPULSE_ACCESS_TOKEN", ""),
-		Mode:                   mode,
-		SchedulerInterval:      defaultSchedulerInterval,
-		MetricAlgorithmVersion: currentMetricAlgorithmVersion,
+		HTTPAddr:                         getEnv("PROPULSE_HTTP_ADDR", defaultHTTPAddr),
+		DatabaseURL:                      getEnv("PROPULSE_DATABASE_URL", defaultDatabaseURL),
+		RedisAddr:                        getEnv("PROPULSE_REDIS_ADDR", defaultRedisAddr),
+		AccessToken:                      getEnv("PROPULSE_ACCESS_TOKEN", ""),
+		Mode:                             mode,
+		SchedulerInterval:                defaultSchedulerInterval,
+		MetricAlgorithmVersion:           currentMetricAlgorithmVersion,
+		AlternativeComparisonRuleVersion: currentAlternativeComparisonRuleVersion,
 		Log: LogConfig{
 			Level:  getEnv("PROPULSE_LOG_LEVEL", defaultLogLevel),
 			Pretty: getEnv("PROPULSE_LOG_PRETTY", "") == "true",

@@ -1386,6 +1386,7 @@ components:
         - target
         - capacityCalculation
         - metric
+        - alternativeComparison
         - factors
         - checklist
         - risks
@@ -1412,6 +1413,8 @@ components:
           $ref: '#/components/schemas/CapacityCalculationReference'
         metric:
           $ref: '#/components/schemas/DecisionMetricReference'
+        alternativeComparison:
+          $ref: '#/components/schemas/AlternativeComparison'
         factors:
           type: array
           minItems: 6
@@ -1572,6 +1575,135 @@ components:
           nullable: true
         unit:
           type: string
+    AlternativeComparison:
+      type: object
+      required: [status, ruleVersion, referenceCollectedAt, safeTotalPrice, candidates]
+      properties:
+        status:
+          type: string
+          enum: [better_found, none, unknown]
+        ruleVersion:
+          type: string
+        referenceCollectedAt:
+          type: string
+          format: date-time
+        safeTotalPrice:
+          type: number
+          minimum: 0
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlternativeCandidateComparison'
+    AlternativeCandidateComparison:
+      type: object
+      required:
+        - neighborhoodId
+        - name
+        - area
+        - targetLayout
+        - status
+        - reasons
+        - improvements
+        - deteriorations
+        - withinBudget
+        - targetTransactionPriceMidpoint
+        - candidateTransactionPriceMidpoint
+        - priceDifference
+        - priceDifferencePct
+        - targetSignal
+        - candidateSignal
+        - signalRankDifference
+        - targetLayoutSupply
+        - candidateTargetLayoutSupply
+        - supplyDifference
+        - supplyDifferencePct
+        - metric
+      properties:
+        neighborhoodId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        area:
+          type: string
+        targetLayout:
+          type: string
+        status:
+          type: string
+          enum: [better, not_better, unknown]
+        reasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - layout_mismatch
+              - metric_missing
+              - algorithm_version_mismatch
+              - coverage_not_full
+              - metric_not_current
+              - metric_quality_insufficient
+              - transaction_evidence_insufficient
+              - comparison_window_mismatch
+              - transaction_price_missing
+              - target_evidence_insufficient
+              - signal_not_comparable
+              - over_budget
+              - insufficient_improvements
+              - deterioration_present
+              - better_threshold_met
+        improvements:
+          type: array
+          items:
+            type: string
+            enum: [transaction_price, market_signal, target_layout_supply]
+        deteriorations:
+          type: array
+          items:
+            type: string
+            enum: [transaction_price, market_signal, target_layout_supply]
+        withinBudget:
+          type: boolean
+          nullable: true
+        targetTransactionPriceMidpoint:
+          type: number
+          nullable: true
+        candidateTransactionPriceMidpoint:
+          type: number
+          nullable: true
+        priceDifference:
+          type: number
+          nullable: true
+        priceDifferencePct:
+          type: number
+          nullable: true
+        targetSignal:
+          type: string
+          nullable: true
+          enum: ["适合砍价", "重点看", "继续观察", "暂不建议追", "价格偏硬"]
+        candidateSignal:
+          type: string
+          nullable: true
+          enum: ["适合砍价", "重点看", "继续观察", "暂不建议追", "价格偏硬"]
+        signalRankDifference:
+          type: integer
+          nullable: true
+        targetLayoutSupply:
+          type: integer
+          minimum: 0
+        candidateTargetLayoutSupply:
+          type: integer
+          nullable: true
+          minimum: 0
+        supplyDifference:
+          type: integer
+          nullable: true
+        supplyDifferencePct:
+          type: number
+          nullable: true
+        metric:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/DecisionMetricReference'
     AccessStatusResponse:
       type: object
       required: [status]

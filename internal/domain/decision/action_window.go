@@ -23,10 +23,11 @@ const (
 )
 
 type ActionWindowInput struct {
-	BudgetPressure       domaincapacity.PressureLevel
-	HasDownPaymentGap    bool
-	NeighborhoodStatus   domainneighborhood.NeighborhoodStatus
-	TargetLayoutScarcity domainneighborhood.Scarcity
+	BudgetPressure        domaincapacity.PressureLevel
+	HasDownPaymentGap     bool
+	NeighborhoodStatus    domainneighborhood.NeighborhoodStatus
+	TargetLayoutScarcity  domainneighborhood.Scarcity
+	AlternativeComparison AlternativeComparisonStatus
 }
 
 type ActionWindowResult struct {
@@ -55,6 +56,15 @@ func RecommendActionWindow(input ActionWindowInput) ActionWindowResult {
 	}
 
 	if input.NeighborhoodStatus == domainneighborhood.NeighborhoodStatusBargain {
+		confidence := ConfidenceMedium
+		confidenceReason := "目标小区支持议价，但备选数据不足，不能据此提高置信度。"
+		switch input.AlternativeComparison {
+		case AlternativeComparisonBetterFound:
+			confidence = ConfidenceHigh
+			confidenceReason = "目标小区支持议价，且版本化比较发现至少一个预算内更优备选。"
+		case AlternativeComparisonNone:
+			confidenceReason = "目标小区支持议价，但备选比较没有发现满足规则的更优候选。"
+		}
 		risks := []string{"单套低价房源可能存在硬伤，不要把个案当成整体价格。"}
 		if input.BudgetPressure == domaincapacity.PressureStrained {
 			risks = []string{"预算不是完全宽松，砍价失败时不要上调总价硬追。"}
@@ -62,8 +72,8 @@ func RecommendActionWindow(input ActionWindowInput) ActionWindowResult {
 
 		return ActionWindowResult{
 			Action:            ActionBargain,
-			Confidence:        ConfidenceMedium,
-			ConfidenceReasons: []string{"预算与目标小区信号支持议价，但尚无可比备选证据用于提高置信度。"},
+			Confidence:        confidence,
+			ConfidenceReasons: []string{confidenceReason},
 			Summary:           "预算仍可服务，且目标小区供应与降价信号支持买方试探底价。",
 			Checklist: []string{
 				"约看 3 套成交区间附近、挂牌超过 60 天的目标户型。",
