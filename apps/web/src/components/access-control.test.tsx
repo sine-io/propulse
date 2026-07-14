@@ -1,8 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  clearAccessToken,
   getAccessToken,
   setAccessToken,
 } from "@/lib/access-token";
@@ -22,7 +21,7 @@ describe("AccessControl", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.mocked(verifyAccessToken).mockReset();
-    clearAccessToken();
+    window.sessionStorage.clear();
   });
 
   it("unlocks after the token is verified", async () => {
@@ -82,7 +81,15 @@ describe("AccessControl", () => {
     render(<AccessControl reloadPage={vi.fn()} />);
     expect(screen.getByRole("button", { name: "已解锁" })).toBeInTheDocument();
 
-    await expect(getWatchlist()).rejects.toMatchObject({ status: 401 });
+    let requestError: unknown;
+    await act(async () => {
+      try {
+        await getWatchlist();
+      } catch (caught) {
+        requestError = caught;
+      }
+    });
+    expect(requestError).toMatchObject({ status: 401 });
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "解锁" })).toBeInTheDocument();
     });
