@@ -41,6 +41,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/capacity/assumptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get default calculation assumptions
+         * @description Public. Returns the current default loan params and rule version for pre-filling the calculator.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default assumptions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CapacityAssumptionsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/capacity/calculations": {
         parameters: {
             query?: never;
@@ -786,6 +825,19 @@ export interface components {
             renovationBudget: number;
             transactionCosts: number;
             transitionRentCost: number;
+            loanOverride?: components["schemas"]["LoanParams"];
+        };
+        LoanParams: {
+            annualInterestRate: number;
+            loanTermMonths: number;
+            /** @enum {string} */
+            repaymentMethod: "equal_installment" | "equal_principal";
+        };
+        CapacityAssumptionsResponse: {
+            ruleVersion: string;
+            effectiveDate: string;
+            downPaymentRate: number;
+            loan: components["schemas"]["LoanParams"];
         };
         HousingCapacityResult: {
             netOldHomeProceeds: number;

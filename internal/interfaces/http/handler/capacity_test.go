@@ -66,6 +66,67 @@ func TestCreateCapacityCalculationReturnsSummary(t *testing.T) {
 	}
 }
 
+func TestCreateCapacityCalculationMapsLoanOverride(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	service := &stubCapacityApplication{
+		createRecord: appcapacity.CalculationRecord{ID: "calc_1"},
+	}
+	engine := gin.New()
+	engine.POST("/api/v1/capacity/calculations", NewCapacity(service, user.SingleUserID).CreateCalculation)
+
+	body := `{"cashOnHand":150,"oldHomeValue":320,"oldLoanBalance":80,"monthlyIncome":3.5,"currentMonthlyMortgage":0,"acceptableMonthlyMortgage":1.5,"targetTotalPrice":500,"renovationBudget":40,"transactionCosts":18,"transitionRentCost":5,"loanOverride":{"annualInterestRate":0.045,"loanTermMonths":240,"repaymentMethod":"equal_installment"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/capacity/calculations", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+	override := service.createCommand.Input.LoanOverride
+	if override == nil {
+		t.Fatal("LoanOverride = nil, want mapped loan params")
+	}
+	if override.AnnualInterestRate != 0.045 || override.LoanTermMonths != 240 ||
+		override.RepaymentMethod != domaincapacity.RepaymentEqualInstallment {
+		t.Fatalf("LoanOverride = %#v, want 0.045/240/equal_installment", *override)
+	}
+}
+
+func TestGetAssumptionsReturnsDefaults(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	engine := gin.New()
+	engine.GET("/api/v1/capacity/assumptions", NewCapacity(&stubCapacityApplication{}, user.SingleUserID).GetAssumptions)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/capacity/assumptions", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		RuleVersion string `json:"ruleVersion"`
+		Loan        struct {
+			AnnualInterestRate float64 `json:"annualInterestRate"`
+			LoanTermMonths     int     `json:"loanTermMonths"`
+			RepaymentMethod    string  `json:"repaymentMethod"`
+		} `json:"loan"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	defaults := domaincapacity.DefaultAssumptions()
+	if body.RuleVersion != defaults.RuleVersion {
+		t.Fatalf("ruleVersion = %q, want %q", body.RuleVersion, defaults.RuleVersion)
+	}
+	if body.Loan.AnnualInterestRate != defaults.Loan.AnnualInterestRate ||
+		body.Loan.LoanTermMonths != defaults.Loan.LoanTermMonths ||
+		body.Loan.RepaymentMethod != string(defaults.Loan.RepaymentMethod) {
+		t.Fatalf("loan defaults = %#v, want match domain defaults", body.Loan)
+	}
+}
+
 func TestCreateCapacityCalculationRejectsInvalidJSON(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()

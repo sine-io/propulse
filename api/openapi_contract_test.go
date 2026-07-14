@@ -38,6 +38,7 @@ func TestAccessProtectionContract(t *testing.T) {
 
 	contracts := []operationContract{
 		{path: "/api/v1/access", method: "get", protected: true},
+		{path: "/api/v1/capacity/assumptions", method: "get"},
 		{path: "/api/v1/capacity/calculations", method: "post", protected: true},
 		{path: "/api/v1/capacity/calculations/{id}", method: "get", protected: true},
 		{path: "/api/v1/neighborhoods", method: "get"},

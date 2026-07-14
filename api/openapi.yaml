@@ -17,6 +17,17 @@ paths:
                 $ref: '#/components/schemas/AccessStatusResponse'
         '401':
           $ref: '#/components/responses/AccessRequired'
+  /api/v1/capacity/assumptions:
+    get:
+      summary: Get default calculation assumptions
+      description: Public. Returns the current default loan params and rule version for pre-filling the calculator.
+      responses:
+        '200':
+          description: Default assumptions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapacityAssumptionsResponse'
   /api/v1/capacity/calculations:
     post:
       summary: Create a housing capacity calculation
@@ -517,6 +528,31 @@ components:
           type: number
         transitionRentCost:
           type: number
+        loanOverride:
+          $ref: '#/components/schemas/LoanParams'
+    LoanParams:
+      type: object
+      required: [annualInterestRate, loanTermMonths, repaymentMethod]
+      properties:
+        annualInterestRate:
+          type: number
+        loanTermMonths:
+          type: integer
+        repaymentMethod:
+          type: string
+          enum: [equal_installment, equal_principal]
+    CapacityAssumptionsResponse:
+      type: object
+      required: [ruleVersion, effectiveDate, downPaymentRate, loan]
+      properties:
+        ruleVersion:
+          type: string
+        effectiveDate:
+          type: string
+        downPaymentRate:
+          type: number
+        loan:
+          $ref: '#/components/schemas/LoanParams'
     HousingCapacityResult:
       type: object
       required:

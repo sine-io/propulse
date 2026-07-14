@@ -148,6 +148,26 @@ func (input HousingCapacityInput) Validate() error {
 	if input.MonthlyIncome <= 0 || input.TargetTotalPrice <= 0 {
 		return ErrInvalidInput
 	}
+	if input.LoanOverride != nil {
+		if err := input.LoanOverride.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Validate 校验用户提交的贷款参数：利率非负、期限为正、还款方式合法。
+func (l LoanParams) Validate() error {
+	if math.IsNaN(l.AnnualInterestRate) || math.IsInf(l.AnnualInterestRate, 0) ||
+		l.AnnualInterestRate < 0 || l.AnnualInterestRate > 1 {
+		return ErrInvalidInput
+	}
+	if l.LoanTermMonths <= 0 || l.LoanTermMonths > 600 {
+		return ErrInvalidInput
+	}
+	if l.RepaymentMethod != RepaymentEqualInstallment && l.RepaymentMethod != RepaymentEqualPrincipal {
+		return ErrInvalidInput
+	}
 	return nil
 }
 

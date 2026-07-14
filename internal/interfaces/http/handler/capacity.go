@@ -46,16 +46,23 @@ type calculationResponse struct {
 }
 
 type housingCapacityInputResponse struct {
-	CashOnHand                float64 `json:"cashOnHand"`
-	OldHomeValue              float64 `json:"oldHomeValue"`
-	OldLoanBalance            float64 `json:"oldLoanBalance"`
-	MonthlyIncome             float64 `json:"monthlyIncome"`
-	CurrentMonthlyMortgage    float64 `json:"currentMonthlyMortgage"`
-	AcceptableMonthlyMortgage float64 `json:"acceptableMonthlyMortgage"`
-	TargetTotalPrice          float64 `json:"targetTotalPrice"`
-	RenovationBudget          float64 `json:"renovationBudget"`
-	TransactionCosts          float64 `json:"transactionCosts"`
-	TransitionRentCost        float64 `json:"transitionRentCost"`
+	CashOnHand                float64             `json:"cashOnHand"`
+	OldHomeValue              float64             `json:"oldHomeValue"`
+	OldLoanBalance            float64             `json:"oldLoanBalance"`
+	MonthlyIncome             float64             `json:"monthlyIncome"`
+	CurrentMonthlyMortgage    float64             `json:"currentMonthlyMortgage"`
+	AcceptableMonthlyMortgage float64             `json:"acceptableMonthlyMortgage"`
+	TargetTotalPrice          float64             `json:"targetTotalPrice"`
+	RenovationBudget          float64             `json:"renovationBudget"`
+	TransactionCosts          float64             `json:"transactionCosts"`
+	TransitionRentCost        float64             `json:"transitionRentCost"`
+	LoanOverride              *loanParamsResponse `json:"loanOverride,omitempty"`
+}
+
+type loanParamsResponse struct {
+	AnnualInterestRate float64 `json:"annualInterestRate"`
+	LoanTermMonths     int     `json:"loanTermMonths"`
+	RepaymentMethod    string  `json:"repaymentMethod"`
 }
 
 type housingCapacityResultResponse struct {
@@ -108,6 +115,28 @@ func (h Capacity) CreateCalculation(c *gin.Context) {
 	})
 }
 
+type capacityAssumptionsResponse struct {
+	RuleVersion     string             `json:"ruleVersion"`
+	EffectiveDate   string             `json:"effectiveDate"`
+	DownPaymentRate float64            `json:"downPaymentRate"`
+	Loan            loanParamsResponse `json:"loan"`
+}
+
+// GetAssumptions 返回当前生效的默认测算假设（公开，供前端预填并标注来源）。
+func (h Capacity) GetAssumptions(c *gin.Context) {
+	a := domaincapacity.DefaultAssumptions()
+	c.JSON(http.StatusOK, capacityAssumptionsResponse{
+		RuleVersion:     a.RuleVersion,
+		EffectiveDate:   a.EffectiveDate,
+		DownPaymentRate: a.DownPaymentRate,
+		Loan: loanParamsResponse{
+			AnnualInterestRate: a.Loan.AnnualInterestRate,
+			LoanTermMonths:     a.Loan.LoanTermMonths,
+			RepaymentMethod:    string(a.Loan.RepaymentMethod),
+		},
+	})
+}
+
 func (h Capacity) GetCalculation(c *gin.Context) {
 	record, err := h.app.GetCalculation(c.Request.Context(), appcapacity.GetCalculationQuery{ID: c.Param("id")})
 	if err != nil {
@@ -128,13 +157,21 @@ func (h Capacity) GetCalculation(c *gin.Context) {
 }
 
 func (response housingCapacityInputResponse) domainInput() domaincapacity.HousingCapacityInput {
-	return domaincapacity.HousingCapacityInput{
+	input := domaincapacity.HousingCapacityInput{
 		CashOnHand: response.CashOnHand, OldHomeValue: response.OldHomeValue, OldLoanBalance: response.OldLoanBalance,
 		MonthlyIncome: response.MonthlyIncome, CurrentMonthlyMortgage: response.CurrentMonthlyMortgage,
 		AcceptableMonthlyMortgage: response.AcceptableMonthlyMortgage, TargetTotalPrice: response.TargetTotalPrice,
 		RenovationBudget: response.RenovationBudget, TransactionCosts: response.TransactionCosts,
 		TransitionRentCost: response.TransitionRentCost,
 	}
+	if response.LoanOverride != nil {
+		input.LoanOverride = &domaincapacity.LoanParams{
+			AnnualInterestRate: response.LoanOverride.AnnualInterestRate,
+			LoanTermMonths:     response.LoanOverride.LoanTermMonths,
+			RepaymentMethod:    domaincapacity.RepaymentMethod(response.LoanOverride.RepaymentMethod),
+		}
+	}
+	return input
 }
 
 func newHousingCapacityInputResponse(input domaincapacity.HousingCapacityInput) housingCapacityInputResponse {
