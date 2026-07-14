@@ -231,6 +231,23 @@ func (m *memoryRepository) GetNeighborhood(_ context.Context, id string) (Neighb
 	return neighborhood, nil
 }
 
+func (m *memoryRepository) SearchNeighborhoods(_ context.Context, input SearchNeighborhoodsInput) (SearchNeighborhoodsResult, error) {
+	items := make([]Neighborhood, 0, len(m.neighborhoods))
+	for _, n := range m.neighborhoods {
+		items = append(items, n)
+	}
+	total := len(items)
+	start := input.Offset
+	if start > total {
+		start = total
+	}
+	end := start + input.Limit
+	if input.Limit <= 0 || end > total {
+		end = total
+	}
+	return SearchNeighborhoodsResult{Items: items[start:end], Total: total}, nil
+}
+
 func (m *memoryRepository) AddWatchlistItem(_ context.Context, userID string, neighborhoodID string) (WatchlistItem, error) {
 	if _, ok := m.neighborhoods[neighborhoodID]; !ok {
 		return WatchlistItem{}, ErrNeighborhoodNotFound

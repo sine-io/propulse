@@ -14,6 +14,59 @@ func (s *Service) GetNeighborhood(ctx context.Context, query GetNeighborhoodQuer
 	return s.repo.GetNeighborhood(ctx, query.ID)
 }
 
+const (
+	defaultSearchPageSize = 20
+	maxSearchPageSize     = 100
+)
+
+type SearchNeighborhoodsQuery struct {
+	Query        string
+	Area         string
+	TargetLayout string
+	Page         int
+	PageSize     int
+}
+
+type SearchNeighborhoodsPage struct {
+	Items    []Neighborhood
+	Total    int
+	Page     int
+	PageSize int
+}
+
+// SearchNeighborhoods 归一分页参数后委托 repository 查询，返回当页结果与总数。
+func (s *Service) SearchNeighborhoods(ctx context.Context, query SearchNeighborhoodsQuery) (SearchNeighborhoodsPage, error) {
+	page := query.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := query.PageSize
+	if pageSize < 1 {
+		pageSize = defaultSearchPageSize
+	}
+	if pageSize > maxSearchPageSize {
+		pageSize = maxSearchPageSize
+	}
+
+	result, err := s.repo.SearchNeighborhoods(ctx, SearchNeighborhoodsInput{
+		Query:        query.Query,
+		Area:         query.Area,
+		TargetLayout: query.TargetLayout,
+		Limit:        pageSize,
+		Offset:       (page - 1) * pageSize,
+	})
+	if err != nil {
+		return SearchNeighborhoodsPage{}, err
+	}
+
+	return SearchNeighborhoodsPage{
+		Items:    result.Items,
+		Total:    result.Total,
+		Page:     page,
+		PageSize: pageSize,
+	}, nil
+}
+
 type ListWatchlistQuery struct {
 	UserID string
 }

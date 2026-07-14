@@ -40,6 +40,7 @@ func TestAccessProtectionContract(t *testing.T) {
 		{path: "/api/v1/access", method: "get", protected: true},
 		{path: "/api/v1/capacity/calculations", method: "post", protected: true},
 		{path: "/api/v1/capacity/calculations/{id}", method: "get", protected: true},
+		{path: "/api/v1/neighborhoods", method: "get"},
 		{path: "/api/v1/neighborhoods", method: "post", protected: true},
 		{path: "/api/v1/neighborhoods/{id}", method: "get"},
 		{path: "/api/v1/neighborhoods/{id}/metrics", method: "get"},

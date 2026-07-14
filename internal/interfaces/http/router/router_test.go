@@ -718,6 +718,16 @@ func (s *stubNeighborhoodApplication) GetNeighborhood(_ context.Context, _ appne
 	return appneighborhood.Neighborhood{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"}, nil
 }
 
+func (s *stubNeighborhoodApplication) SearchNeighborhoods(_ context.Context, _ appneighborhood.SearchNeighborhoodsQuery) (appneighborhood.SearchNeighborhoodsPage, error) {
+	s.calls++
+	return appneighborhood.SearchNeighborhoodsPage{
+		Items:    []appneighborhood.Neighborhood{{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"}},
+		Total:    1,
+		Page:     1,
+		PageSize: 20,
+	}, nil
+}
+
 func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, _ appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {
 	s.calls++
 	return appneighborhood.MetricWithSignal{

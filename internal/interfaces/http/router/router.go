@@ -94,6 +94,7 @@ func New(deps Dependencies) (*gin.Engine, error) {
 	neighborhoodHandler := httphandler.NewNeighborhood(deps.NeighborhoodApplication)
 	watchlistHandler := httphandler.NewWatchlist(deps.NeighborhoodApplication, deps.UserID)
 	protected.POST("/neighborhoods", neighborhoodHandler.CreateNeighborhood)
+	api.GET("/neighborhoods", neighborhoodHandler.SearchNeighborhoods)
 	api.GET("/neighborhoods/:id", neighborhoodHandler.GetNeighborhood)
 	api.GET("/neighborhoods/:id/metrics", neighborhoodHandler.GetMetrics)
 	protected.POST("/watchlist/items", watchlistHandler.AddItem)

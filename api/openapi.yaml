@@ -82,6 +82,51 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
   /api/v1/neighborhoods:
+    get:
+      summary: Search neighborhoods
+      description: Public, anonymous. Supports fuzzy query, area/layout filters and pagination.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: area
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: targetLayout
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Matching neighborhoods
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NeighborhoodSearchResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       summary: Create a neighborhood
       security:
@@ -580,6 +625,20 @@ components:
         createdAt:
           type: string
           format: date-time
+    NeighborhoodSearchResponse:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NeighborhoodResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
     NeighborhoodMetricResponse:
       type: object
       required:

@@ -2,6 +2,8 @@ package router
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,6 +65,40 @@ func (r *inMemoryNeighborhoodRepository) GetNeighborhood(_ context.Context, id s
 		return appneighborhood.Neighborhood{}, appneighborhood.ErrNeighborhoodNotFound
 	}
 	return neighborhood, nil
+}
+
+func (r *inMemoryNeighborhoodRepository) SearchNeighborhoods(_ context.Context, input appneighborhood.SearchNeighborhoodsInput) (appneighborhood.SearchNeighborhoodsResult, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	matched := make([]appneighborhood.Neighborhood, 0, len(r.neighborhoods))
+	for _, n := range r.neighborhoods {
+		if input.Query != "" &&
+			!strings.Contains(n.Name, input.Query) && !strings.Contains(n.Area, input.Query) {
+			continue
+		}
+		if input.Area != "" && n.Area != input.Area {
+			continue
+		}
+		if input.TargetLayout != "" && n.TargetLayout != input.TargetLayout {
+			continue
+		}
+		matched = append(matched, n)
+	}
+
+	sort.Slice(matched, func(i, j int) bool { return matched[i].Name < matched[j].Name })
+	total := len(matched)
+
+	start := input.Offset
+	if start > total {
+		start = total
+	}
+	end := start + input.Limit
+	if input.Limit <= 0 || end > total {
+		end = total
+	}
+
+	return appneighborhood.SearchNeighborhoodsResult{Items: matched[start:end], Total: total}, nil
 }
 
 func (r *inMemoryNeighborhoodRepository) exists(_ context.Context, id string) (bool, error) {

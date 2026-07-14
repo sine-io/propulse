@@ -899,6 +899,10 @@ func (s *stubAppNeighborhoodApplication) GetNeighborhood(_ context.Context, _ ap
 	return appneighborhood.Neighborhood{}, appneighborhood.ErrNeighborhoodNotFound
 }
 
+func (s *stubAppNeighborhoodApplication) SearchNeighborhoods(_ context.Context, _ appneighborhood.SearchNeighborhoodsQuery) (appneighborhood.SearchNeighborhoodsPage, error) {
+	return appneighborhood.SearchNeighborhoodsPage{}, nil
+}
+
 func (s *stubAppNeighborhoodApplication) LatestMetric(_ context.Context, _ appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {
 	return appneighborhood.MetricWithSignal{}, appneighborhood.ErrMetricNotFound
 }

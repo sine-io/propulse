@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 type NeighborhoodApplication interface {
 	CreateNeighborhood(ctx context.Context, command appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error)
 	GetNeighborhood(ctx context.Context, query appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error)
+	SearchNeighborhoods(ctx context.Context, query appneighborhood.SearchNeighborhoodsQuery) (appneighborhood.SearchNeighborhoodsPage, error)
 	LatestMetric(ctx context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error)
 	AddWatchlistItem(ctx context.Context, command appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error)
 	ListWatchlist(ctx context.Context, query appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error)
@@ -40,6 +42,13 @@ type neighborhoodResponse struct {
 	Area         string `json:"area"`
 	TargetLayout string `json:"targetLayout"`
 	CreatedAt    string `json:"createdAt,omitempty"`
+}
+
+type neighborhoodSearchResponse struct {
+	Items    []neighborhoodResponse `json:"items"`
+	Total    int                    `json:"total"`
+	Page     int                    `json:"page"`
+	PageSize int                    `json:"pageSize"`
 }
 
 type metricResponse struct {
@@ -99,6 +108,54 @@ func (h Neighborhood) CreateNeighborhood(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, newNeighborhoodResponse(neighborhood))
+}
+
+func (h Neighborhood) SearchNeighborhoods(c *gin.Context) {
+	page, err := parsePositiveIntQuery(c.Query("page"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "page must be a positive integer")
+		return
+	}
+	pageSize, err := parsePositiveIntQuery(c.Query("pageSize"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "pageSize must be a positive integer")
+		return
+	}
+
+	result, err := h.app.SearchNeighborhoods(c.Request.Context(), appneighborhood.SearchNeighborhoodsQuery{
+		Query:        strings.TrimSpace(c.Query("q")),
+		Area:         strings.TrimSpace(c.Query("area")),
+		TargetLayout: strings.TrimSpace(c.Query("targetLayout")),
+		Page:         page,
+		PageSize:     pageSize,
+	})
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
+		return
+	}
+
+	items := make([]neighborhoodResponse, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, newNeighborhoodResponse(item))
+	}
+	c.JSON(http.StatusOK, neighborhoodSearchResponse{
+		Items:    items,
+		Total:    result.Total,
+		Page:     result.Page,
+		PageSize: result.PageSize,
+	})
+}
+
+// parsePositiveIntQuery 解析可选的正整数查询参数；空串返回 0（交由 service 取默认）。
+func parsePositiveIntQuery(raw string) (int, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return 0, errors.New("invalid positive integer")
+	}
+	return value, nil
 }
 
 func (h Neighborhood) GetNeighborhood(c *gin.Context) {

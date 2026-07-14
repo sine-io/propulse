@@ -15,6 +15,58 @@ import (
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
+func TestSearchNeighborhoodsReturnsPagedResults(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	service := &stubNeighborhoodApplication{
+		searchPage: appneighborhood.SearchNeighborhoodsPage{
+			Items: []appneighborhood.Neighborhood{
+				{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"},
+			},
+			Total:    1,
+			Page:     2,
+			PageSize: 10,
+		},
+	}
+	engine := gin.New()
+	engine.GET("/api/v1/neighborhoods", NewNeighborhood(service).SearchNeighborhoods)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/neighborhoods?q=青枫&area=滨江核心&page=2&pageSize=10", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if service.searchQuery.Query != "青枫" || service.searchQuery.Area != "滨江核心" {
+		t.Fatalf("search query = %#v, want q=青枫 area=滨江核心", service.searchQuery)
+	}
+	if service.searchQuery.Page != 2 || service.searchQuery.PageSize != 10 {
+		t.Fatalf("pagination = page %d size %d, want 2/10", service.searchQuery.Page, service.searchQuery.PageSize)
+	}
+
+	var body neighborhoodSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Total != 1 || len(body.Items) != 1 || body.Items[0].ID != "neighborhood_1" {
+		t.Fatalf("body = %#v, want 1 item neighborhood_1", body)
+	}
+}
+
+func TestSearchNeighborhoodsRejectsInvalidPage(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	engine := gin.New()
+	engine.GET("/api/v1/neighborhoods", NewNeighborhood(&stubNeighborhoodApplication{}).SearchNeighborhoods)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/neighborhoods?page=0", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
 func TestCreateNeighborhoodReturnsCreatedNeighborhood(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubNeighborhoodApplication{
@@ -357,11 +409,22 @@ type stubNeighborhoodApplication struct {
 	addCalled             bool
 	watchlist             []appneighborhood.WatchlistItemSummary
 	watchlistErr          error
+	searchPage            appneighborhood.SearchNeighborhoodsPage
+	searchErr             error
+	searchQuery           appneighborhood.SearchNeighborhoodsQuery
 }
 
 func (s *stubNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
 	s.createCalled = true
 	return s.createNeighborhood, s.createNeighborhoodErr
+}
+
+func (s *stubNeighborhoodApplication) SearchNeighborhoods(_ context.Context, query appneighborhood.SearchNeighborhoodsQuery) (appneighborhood.SearchNeighborhoodsPage, error) {
+	s.searchQuery = query
+	if s.searchErr != nil {
+		return appneighborhood.SearchNeighborhoodsPage{}, s.searchErr
+	}
+	return s.searchPage, nil
 }
 
 func (s *stubNeighborhoodApplication) GetNeighborhood(_ context.Context, _ appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error) {

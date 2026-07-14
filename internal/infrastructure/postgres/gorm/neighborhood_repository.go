@@ -3,6 +3,7 @@ package gormrepo
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
@@ -68,6 +69,43 @@ func (r *NeighborhoodRepository) GetNeighborhood(ctx context.Context, id string)
 		return appneighborhood.Neighborhood{}, err
 	}
 	return neighborhoodFromModel(model), nil
+}
+
+func (r *NeighborhoodRepository) SearchNeighborhoods(ctx context.Context, input appneighborhood.SearchNeighborhoodsInput) (appneighborhood.SearchNeighborhoodsResult, error) {
+	query := r.db.WithContext(ctx).Model(&NeighborhoodModel{})
+
+	if trimmed := strings.TrimSpace(input.Query); trimmed != "" {
+		like := "%" + trimmed + "%"
+		query = query.Where("name ILIKE ? OR area ILIKE ?", like, like)
+	}
+	if area := strings.TrimSpace(input.Area); area != "" {
+		query = query.Where("area = ?", area)
+	}
+	if layout := strings.TrimSpace(input.TargetLayout); layout != "" {
+		query = query.Where("target_layout = ?", layout)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return appneighborhood.SearchNeighborhoodsResult{}, err
+	}
+
+	var models []NeighborhoodModel
+	err := query.
+		Order("name ASC").
+		Limit(input.Limit).
+		Offset(input.Offset).
+		Find(&models).Error
+	if err != nil {
+		return appneighborhood.SearchNeighborhoodsResult{}, err
+	}
+
+	items := make([]appneighborhood.Neighborhood, 0, len(models))
+	for _, model := range models {
+		items = append(items, neighborhoodFromModel(model))
+	}
+
+	return appneighborhood.SearchNeighborhoodsResult{Items: items, Total: int(total)}, nil
 }
 
 func (r *NeighborhoodRepository) AddWatchlistItem(ctx context.Context, userID string, neighborhoodID string) (appneighborhood.WatchlistItem, error) {

@@ -164,7 +164,45 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Search neighborhoods
+         * @description Public, anonymous. Supports fuzzy query, area/layout filters and pagination.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    q?: string;
+                    area?: string;
+                    targetLayout?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Matching neighborhoods */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NeighborhoodSearchResponse"];
+                    };
+                };
+                /** @description Invalid query parameters */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
         put?: never;
         /** Create a neighborhood */
         post: {
@@ -797,6 +835,12 @@ export interface components {
             targetLayout: string;
             /** Format: date-time */
             createdAt?: string;
+        };
+        NeighborhoodSearchResponse: {
+            items: components["schemas"]["NeighborhoodResponse"][];
+            total: number;
+            page: number;
+            pageSize: number;
         };
         NeighborhoodMetricResponse: {
             id: string;
