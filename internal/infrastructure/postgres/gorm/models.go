@@ -113,3 +113,18 @@ type TransactionObservationModel struct {
 func (TransactionObservationModel) TableName() string {
 	return "transaction_observations"
 }
+
+type ReviewNoteModel struct {
+	ID             string     `gorm:"column:id;type:uuid;primaryKey"`
+	UserID         string     `gorm:"column:user_id"`
+	NeighborhoodID *string    `gorm:"column:neighborhood_id;type:uuid"`
+	Kind           string     `gorm:"column:kind"`
+	WeekStartDate  *time.Time `gorm:"column:week_start_date;type:date"`
+	Content        string     `gorm:"column:content"`
+	CreatedAt      time.Time  `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (ReviewNoteModel) TableName() string {
+	return "review_notes"
+}

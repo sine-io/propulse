@@ -28,6 +28,8 @@ func TestEmbeddedMigrationSetIsCompleteAndOrdered(t *testing.T) {
 		"000002_listing_snapshots_collection_run.up.sql",
 		"000003_trusted_market_data.down.sql",
 		"000003_trusted_market_data.up.sql",
+		"000004_review_notes.down.sql",
+		"000004_review_notes.up.sql",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("embedded migrations = %#v, want %#v", names, want)

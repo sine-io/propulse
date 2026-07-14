@@ -94,6 +94,17 @@ type NeighborhoodMetric struct {
 	QualityWarnings          []byte
 }
 
+type ReviewNote struct {
+	ID             pgtype.UUID
+	UserID         string
+	NeighborhoodID pgtype.UUID
+	Kind           string
+	WeekStartDate  pgtype.Date
+	Content        string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
 type TransactionObservation struct {
 	ID                 pgtype.UUID
 	CollectionRunID    pgtype.UUID
