@@ -2,6 +2,9 @@ import type { components } from "./generated-api";
 import { clearAccessToken, getAccessToken } from "./access-token";
 
 export type HousingCapacityInput = components["schemas"]["HousingCapacityInput"];
+export type LoanParams = components["schemas"]["LoanParams"];
+export type CapacityAssumptionsResponse =
+  components["schemas"]["CapacityAssumptionsResponse"];
 export type CapacityCalculationResponse =
   components["schemas"]["CreateCalculationResponse"];
 export type WatchlistResponse = components["schemas"]["WatchlistResponse"];
@@ -32,6 +35,15 @@ export async function createCapacityCalculation(
     method: "POST",
     signal,
   });
+}
+
+export async function getCapacityAssumptions(
+  signal?: AbortSignal,
+): Promise<CapacityAssumptionsResponse> {
+  return request<CapacityAssumptionsResponse>(
+    "/api/v1/capacity/assumptions",
+    signal ? { signal } : undefined,
+  );
 }
 
 export async function getWatchlist(

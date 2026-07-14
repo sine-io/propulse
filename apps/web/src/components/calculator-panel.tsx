@@ -1,10 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Calculator, CheckCircle } from "lucide-react";
 
-import { ApiError, createCapacityCalculation } from "@/lib/api-client";
+import {
+  ApiError,
+  createCapacityCalculation,
+  getCapacityAssumptions,
+  type LoanParams,
+} from "@/lib/api-client";
 import {
   calculateHousingCapacity,
   type HousingCapacityInput,
@@ -122,6 +127,23 @@ export function CalculatorPanel() {
   >();
   const [apiError, setApiError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // 贷款参数默认取自后端配置（#67），用户可编辑并随测算提交为 loanOverride。
+  const [loanParams, setLoanParams] = useState<LoanParams | undefined>();
+  const [loanSource, setLoanSource] = useState<string | undefined>();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getCapacityAssumptions(controller.signal)
+      .then((assumptions) => {
+        setLoanParams(assumptions.loan);
+        setLoanSource(`默认取自规则版本 ${assumptions.ruleVersion}（生效 ${assumptions.effectiveDate}），可按需调整。`);
+      })
+      .catch(() => {
+        // 拉取失败时保持字段为空，提交时不带 loanOverride，用后端默认。
+      });
+    return () => controller.abort();
+  }, []);
+
   const localResult = useMemo(() => calculateHousingCapacity(input), [input]);
   const result = apiResult ? { ...localResult, ...apiResult } : localResult;
   const pressure = pressureCopy[result.pressureLevel];
@@ -140,6 +162,27 @@ export function CalculatorPanel() {
     setApiError(undefined);
   };
 
+  const updateLoanParam = <K extends keyof LoanParams>(
+    key: K,
+    value: LoanParams[K],
+  ) => {
+    setLoanParams((current) => {
+      if (!current) {
+        return current;
+      }
+      const next = { ...current, [key]: value };
+      if (typeof next.annualInterestRate !== "number" || Number.isNaN(next.annualInterestRate)) {
+        next.annualInterestRate = 0;
+      }
+      if (typeof next.loanTermMonths !== "number" || Number.isNaN(next.loanTermMonths)) {
+        next.loanTermMonths = 0;
+      }
+      return next;
+    });
+    setApiResult(undefined);
+    setApiError(undefined);
+  };
+
   const regenerateReport = async () => {
     const controller = new AbortController();
 
@@ -147,7 +190,8 @@ export function CalculatorPanel() {
     setApiError(undefined);
 
     try {
-      const response = await createCapacityCalculation(input, controller.signal);
+      const payload = loanParams ? { ...input, loanOverride: loanParams } : input;
+      const response = await createCapacityCalculation(payload, controller.signal);
       setApiResult(response.result);
 	} catch (error) {
 		setApiError(
@@ -204,6 +248,69 @@ export function CalculatorPanel() {
               </div>
             </fieldset>
           ))}
+
+          {loanParams ? (
+            <fieldset className="border-t border-slate-100 pt-4">
+              <legend className="mb-3 text-sm font-semibold text-slate-700">
+                贷款假设 (可调整)
+              </legend>
+              <div className="grid grid-cols-2 gap-4">
+                <label htmlFor="loan-rate" className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">
+                    年利率 (%)
+                  </span>
+                  <input
+                    id="loan-rate"
+                    aria-label="年利率（%）"
+                    type="text"
+                    inputMode="decimal"
+                    value={(loanParams.annualInterestRate * 100).toString()}
+                    onChange={(event) =>
+                      updateLoanParam("annualInterestRate", Number(event.target.value) / 100)
+                    }
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-medium text-slate-900 outline-none transition-colors focus:border-blue-500"
+                  />
+                </label>
+                <label htmlFor="loan-term" className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">
+                    贷款期限 (月)
+                  </span>
+                  <input
+                    id="loan-term"
+                    aria-label="贷款期限（月）"
+                    type="text"
+                    inputMode="numeric"
+                    value={loanParams.loanTermMonths.toString()}
+                    onChange={(event) =>
+                      updateLoanParam("loanTermMonths", Math.trunc(Number(event.target.value)))
+                    }
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-medium text-slate-900 outline-none transition-colors focus:border-blue-500"
+                  />
+                </label>
+                <label htmlFor="loan-method" className="col-span-2 block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">
+                    还款方式
+                  </span>
+                  <select
+                    id="loan-method"
+                    aria-label="还款方式"
+                    value={loanParams.repaymentMethod}
+                    onChange={(event) =>
+                      updateLoanParam("repaymentMethod", event.target.value as LoanParams["repaymentMethod"])
+                    }
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-medium text-slate-900 outline-none transition-colors focus:border-blue-500"
+                  >
+                    <option value="equal_installment">等额本息</option>
+                    <option value="equal_principal">等额本金</option>
+                  </select>
+                </label>
+              </div>
+              {loanSource ? (
+                <p className="mt-2 text-xs text-slate-400">{loanSource}</p>
+              ) : null}
+            </fieldset>
+          ) : null}
+
           <button
             type="button"
             onClick={regenerateReport}

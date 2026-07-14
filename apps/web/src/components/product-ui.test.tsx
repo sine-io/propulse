@@ -7,6 +7,7 @@ import RootLayout, { metadata } from "@/app/layout";
 import {
   createCapacityCalculation,
   getActionWindow,
+  getCapacityAssumptions,
   getWatchlist,
 } from "@/lib/api-client";
 import { AppHeader } from "./app-header";
@@ -25,6 +26,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
     ...actual,
     createCapacityCalculation: vi.fn(),
     getActionWindow: vi.fn(),
+    getCapacityAssumptions: vi.fn(),
     getWatchlist: vi.fn(),
   };
 });
@@ -32,9 +34,11 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
 beforeEach(() => {
   vi.mocked(createCapacityCalculation).mockReset();
   vi.mocked(getActionWindow).mockReset();
+  vi.mocked(getCapacityAssumptions).mockReset();
   vi.mocked(getWatchlist).mockReset();
   vi.mocked(createCapacityCalculation).mockRejectedValue(new Error("api unavailable"));
   vi.mocked(getActionWindow).mockRejectedValue(new Error("api unavailable"));
+  vi.mocked(getCapacityAssumptions).mockRejectedValue(new Error("api unavailable"));
   vi.mocked(getWatchlist).mockRejectedValue(new Error("api unavailable"));
 });
 
@@ -210,6 +214,52 @@ describe("CalculatorPanel", () => {
       name: /为什么月供安全线比总价更重要/,
     });
     expect(link).toHaveAttribute("href", "/methods");
+  });
+
+  it("pre-fills editable loan params from assumptions and submits them (CALC-006.2)", async () => {
+    vi.mocked(getCapacityAssumptions).mockResolvedValueOnce({
+      ruleVersion: "2026.08",
+      effectiveDate: "2026-08-01",
+      downPaymentRate: 0.35,
+      loan: {
+        annualInterestRate: 0.039,
+        loanTermMonths: 360,
+        repaymentMethod: "equal_installment",
+      },
+    });
+    vi.mocked(createCapacityCalculation).mockResolvedValueOnce({
+      id: "calc_1",
+      result: {
+        pressureLevel: "safe",
+        strategy: "可以同步推进",
+        ruleVersion: "2026.08",
+        effectiveDate: "2026-08-01",
+      },
+    });
+    render(createElement(CalculatorPanel));
+
+    // 默认值来自 assumptions，且标注来源。
+    const rate = await screen.findByLabelText("年利率（%）");
+    expect(rate).toHaveValue("3.9");
+    expect(screen.getByText(/默认取自规则版本 2026.08/)).toBeInTheDocument();
+
+    // 用户调整利率并提交，payload 携带 loanOverride。
+    fireEvent.change(rate, { target: { value: "4.9" } });
+    fillCoreInput("500");
+    fireEvent.click(screen.getByRole("button", { name: "重新生成诊断报告" }));
+
+    await waitFor(() => {
+      expect(createCapacityCalculation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          loanOverride: expect.objectContaining({
+            annualInterestRate: expect.closeTo(0.049, 5),
+            loanTermMonths: 360,
+            repaymentMethod: "equal_installment",
+          }),
+        }),
+        expect.any(AbortSignal),
+      );
+    });
   });
 
   it("posts current input and displays the API diagnosis when regenerated", async () => {
