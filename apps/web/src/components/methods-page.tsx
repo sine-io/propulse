@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { methodRuleMeta } from "@/lib/method-rules";
+
 // 目录只对已完成的文章开放跳转；其余主题标注为即将上线，不再假装可点击（METHOD-001）。
 const topics: Array<{ title: string; available: boolean }> = [
   { title: "挂牌变多但成交弱，说明什么？", available: true },
@@ -103,12 +105,14 @@ export function MethodsPage() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="rounded-lg border border-slate-100 bg-white p-3">
                     <p className="text-sm font-semibold text-slate-800">在售套数增幅</p>
-                    <p className="mt-1 text-xs text-slate-500">连续四周增加是个强信号。</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      连续多周持续增加，比单周波动更能说明供应转松。
+                    </p>
                   </div>
                   <div className="rounded-lg border border-slate-100 bg-white p-3">
                     <p className="text-sm font-semibold text-slate-800">降价房源占比</p>
                     <p className="mt-1 text-xs text-slate-500">
-                      超过 20% 的在售房源下调过报价。
+                      明显偏高且仍在上升，说明房东预期开始松动。
                     </p>
                   </div>
                 </div>
@@ -128,8 +132,38 @@ export function MethodsPage() {
                   不要怕被别人抢走，耐心挑瑕疵。
                   <br />
                   3. <strong className="text-blue-900">大胆砍价：</strong>{" "}
-                  专挑挂牌时间长、有过降价记录的房源，按照成交底价再往下砍 3%-5%
-                  试探底线。
+                  专挑挂牌时间长、有过降价记录的房源，以近期成交低位为锚点小幅试探底线。
+                </p>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="font-bold text-slate-800">方法适用范围与来源</h3>
+                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                    规则版本 {methodRuleMeta.version}
+                  </span>
+                </div>
+                <dl className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                  <div>
+                    <dt className="font-semibold text-slate-700">适用范围</dt>
+                    <dd className="mt-0.5">{methodRuleMeta.applicableScope}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-slate-700">样本要求</dt>
+                    <dd className="mt-0.5">{methodRuleMeta.sampleRequirement}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-slate-700">来源</dt>
+                    <dd className="mt-0.5">{methodRuleMeta.source}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-slate-700">局限</dt>
+                    <dd className="mt-0.5">{methodRuleMeta.limitation}</dd>
+                  </div>
+                </dl>
+                <p className="mt-3 text-xs text-slate-400">
+                  更新时间 {methodRuleMeta.updatedAt}，生效日期 {methodRuleMeta.effectiveDate}；
+                  方法规则与测算规则共用同一版本方案。
                 </p>
               </section>
             </div>

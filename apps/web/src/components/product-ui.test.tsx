@@ -337,6 +337,19 @@ describe("MethodsPage", () => {
     ).not.toBeInTheDocument();
     expect(screen.getAllByText("即将上线")).toHaveLength(5);
   });
+
+  it("replaces fixed magnitudes with qualitative wording and shows provenance (METHOD-002)", () => {
+    render(createElement(MethodsPage));
+
+    // 固定幅度承诺已去除。
+    expect(screen.queryByText(/超过 20%/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/砍 3%-5%/)).not.toBeInTheDocument();
+    // 来源/适用范围与版本可见。
+    expect(screen.getByText("方法适用范围与来源")).toBeInTheDocument();
+    expect(screen.getByText(/规则版本 2026.07/)).toBeInTheDocument();
+    expect(screen.getByText("适用范围")).toBeInTheDocument();
+    expect(screen.getByText("来源")).toBeInTheDocument();
+  });
 });
 
 describe("WatchlistPage", () => {
