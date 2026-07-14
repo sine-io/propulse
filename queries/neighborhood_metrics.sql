@@ -143,8 +143,8 @@ latest_transactions AS (
   WHERE cr.status = 'completed'
     AND cr.neighborhood_id = tr.neighborhood_id
     AND (cr.collected_at, cr.id) <= (tr.collected_at, tr.id)
-    AND tx.transaction_date >= (tr.collected_at::date - interval '90 days')
-    AND tx.transaction_date <= tr.collected_at::date
+    AND tx.transaction_date >= ((tr.collected_at AT TIME ZONE 'UTC')::date - 90)
+    AND tx.transaction_date <= (tr.collected_at AT TIME ZONE 'UTC')::date
   ORDER BY cr.data_source_id, tx.source_record_id, cr.collected_at DESC, cr.id DESC, tx.captured_at DESC
 ),
 transaction_aggregate AS (
@@ -152,10 +152,10 @@ transaction_aggregate AS (
     COUNT(*)::int AS transaction_sample_count,
     MIN(transaction_price)::numeric AS transaction_price_min,
     MAX(transaction_price)::numeric AS transaction_price_max,
-    COUNT(*) FILTER (WHERE transaction_date > (SELECT collected_at::date - interval '30 days' FROM trigger_run))::int AS last_thirty_day_transaction_count,
+    COUNT(*) FILTER (WHERE transaction_date > (SELECT (collected_at AT TIME ZONE 'UTC')::date - 30 FROM trigger_run))::int AS last_thirty_day_transaction_count,
     COUNT(*) FILTER (
-      WHERE transaction_date <= (SELECT collected_at::date - interval '30 days' FROM trigger_run)
-        AND transaction_date >= (SELECT collected_at::date - interval '90 days' FROM trigger_run)
+      WHERE transaction_date <= (SELECT (collected_at AT TIME ZONE 'UTC')::date - 30 FROM trigger_run)
+        AND transaction_date >= (SELECT (collected_at AT TIME ZONE 'UTC')::date - 90 FROM trigger_run)
     )::int AS preceding_sixty_day_transaction_count,
     MAX(captured_at) AS latest_transaction_observed_at
   FROM latest_transactions
@@ -225,32 +225,19 @@ INSERT INTO neighborhood_metrics (
   quality_state,
   latest_observed_at,
   inventory_collected_at,
-  quality_warnings
+  quality_warnings,
+  algorithm_version,
+  transaction_window_start,
+  transaction_window_end,
+  recent_30_day_transaction_count,
+  preceding_60_day_transaction_count,
+  recent_30_day_monthly_frequency,
+  preceding_60_day_monthly_frequency
 ) VALUES (
-  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29
 )
-ON CONFLICT (collection_run_id) DO UPDATE SET
-  listed_homes = EXCLUDED.listed_homes,
-  price_cut_homes = EXCLUDED.price_cut_homes,
-  avg_days_on_market = EXCLUDED.avg_days_on_market,
-  listing_price_min = EXCLUDED.listing_price_min,
-  listing_price_max = EXCLUDED.listing_price_max,
-  transaction_price_min = EXCLUDED.transaction_price_min,
-  transaction_price_max = EXCLUDED.transaction_price_max,
-  transaction_momentum = EXCLUDED.transaction_momentum,
-  target_layout_supply = EXCLUDED.target_layout_supply,
-  inventory_collection_run_id = EXCLUDED.inventory_collection_run_id,
-  source_ids = EXCLUDED.source_ids,
-  listing_sample_count = EXCLUDED.listing_sample_count,
-  transaction_sample_count = EXCLUDED.transaction_sample_count,
-  listed_homes_change_pct = EXCLUDED.listed_homes_change_pct,
-  coverage = EXCLUDED.coverage,
-  freshness = EXCLUDED.freshness,
-  quality_state = EXCLUDED.quality_state,
-  latest_observed_at = EXCLUDED.latest_observed_at,
-  inventory_collected_at = EXCLUDED.inventory_collected_at,
-  quality_warnings = EXCLUDED.quality_warnings,
-  calculated_at = now()
+ON CONFLICT (collection_run_id, algorithm_version) DO UPDATE SET
+  algorithm_version = neighborhood_metrics.algorithm_version
 RETURNING *;
 
 -- name: ListNeighborhoodMetricHistory :many

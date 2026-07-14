@@ -162,13 +162,13 @@ func (r *inMemoryCollectionRepository) GetCollectionRun(_ context.Context, id st
 	return copyCollectionRunDetail(detail), nil
 }
 
-func (r *inMemoryCollectionRepository) ListMetricRefreshCandidates(_ context.Context, updatedBefore time.Time, limit int) ([]appcollection.MetricRefreshCandidate, error) {
+func (r *inMemoryCollectionRepository) ListMetricRefreshCandidates(_ context.Context, filter appcollection.MetricRefreshCandidateFilter) ([]appcollection.MetricRefreshCandidate, error) {
 	r.marketState.mu.RLock()
 	defer r.marketState.mu.RUnlock()
 
 	runs := make([]appcollection.CollectionRun, 0)
 	for _, run := range r.marketState.collectionRuns {
-		if (run.MetricStatus == appcollection.MetricStatusPending || run.MetricStatus == appcollection.MetricStatusFailed) && !run.UpdatedAt.After(updatedBefore) {
+		if (run.MetricStatus == appcollection.MetricStatusPending || run.MetricStatus == appcollection.MetricStatusFailed) && !run.UpdatedAt.After(filter.UpdatedBefore) {
 			runs = append(runs, run)
 		}
 	}
@@ -178,8 +178,8 @@ func (r *inMemoryCollectionRepository) ListMetricRefreshCandidates(_ context.Con
 		}
 		return runs[i].ID < runs[j].ID
 	})
-	if len(runs) > limit {
-		runs = runs[:limit]
+	if len(runs) > filter.Limit {
+		runs = runs[:filter.Limit]
 	}
 	candidates := make([]appcollection.MetricRefreshCandidate, 0, len(runs))
 	for _, run := range runs {

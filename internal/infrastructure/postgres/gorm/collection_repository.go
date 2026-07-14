@@ -151,14 +151,19 @@ func (r *CollectionRepository) GetCollectionRun(ctx context.Context, id string) 
 	}, nil
 }
 
-func (r *CollectionRepository) ListMetricRefreshCandidates(ctx context.Context, updatedBefore time.Time, limit int) ([]appcollection.MetricRefreshCandidate, error) {
+func (r *CollectionRepository) ListMetricRefreshCandidates(ctx context.Context, filter appcollection.MetricRefreshCandidateFilter) ([]appcollection.MetricRefreshCandidate, error) {
 	var runs []CollectionRunModel
 	if err := r.db.WithContext(ctx).
 		Select("id", "neighborhood_id").
-		Where("metric_status IN ?", []string{string(appcollection.MetricStatusPending), string(appcollection.MetricStatusFailed)}).
-		Where("updated_at <= ?", updatedBefore).
+		Where("status = ?", string(appcollection.CollectionRunStatusCompleted)).
+		Where("updated_at <= ?", filter.UpdatedBefore).
+		Where(
+			"metric_status IN ? OR NOT EXISTS (SELECT 1 FROM neighborhood_metrics nm WHERE nm.collection_run_id = collection_runs.id AND nm.algorithm_version = ?)",
+			[]string{string(appcollection.MetricStatusPending), string(appcollection.MetricStatusFailed)},
+			filter.AlgorithmVersion,
+		).
 		Order("updated_at ASC, id ASC").
-		Limit(limit).
+		Limit(filter.Limit).
 		Find(&runs).Error; err != nil {
 		return nil, err
 	}

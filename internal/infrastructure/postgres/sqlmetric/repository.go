@@ -114,6 +114,9 @@ func (r *Repository) AggregateMarketObservations(ctx context.Context, params app
 }
 
 func (r *Repository) UpsertNeighborhoodMetric(ctx context.Context, snapshot appmetric.MetricSnapshot) (appmetric.MetricSnapshot, error) {
+	if snapshot.TransactionEvidence == nil {
+		return appmetric.MetricSnapshot{}, appmetric.ErrInconsistentTransactionEvidence
+	}
 	neighborhoodID, err := uuidParam(snapshot.NeighborhoodID)
 	if err != nil {
 		return appmetric.MetricSnapshot{}, err
@@ -157,6 +160,19 @@ func (r *Repository) UpsertNeighborhoodMetric(ctx context.Context, snapshot appm
 		LatestObservedAt:         timeParam(snapshot.LatestObservedAt),
 		InventoryCollectedAt:     optionalTimeParam(snapshot.InventoryCollectedAt),
 		QualityWarnings:          warnings,
+		AlgorithmVersion:         snapshot.AlgorithmVersion,
+		TransactionWindowStart:   dateParam(snapshot.TransactionEvidence.WindowStart),
+		TransactionWindowEnd:     dateParam(snapshot.TransactionEvidence.WindowEnd),
+		Recent30DayTransactionCount: pgtype.Int4{
+			Int32: int32(snapshot.TransactionEvidence.RecentThirtyDayCount),
+			Valid: true,
+		},
+		Preceding60DayTransactionCount: pgtype.Int4{
+			Int32: int32(snapshot.TransactionEvidence.PrecedingSixtyDayCount),
+			Valid: true,
+		},
+		Recent30DayMonthlyFrequency:    numericParam(snapshot.TransactionEvidence.RecentThirtyDayMonthlyFrequency),
+		Preceding60DayMonthlyFrequency: numericParam(snapshot.TransactionEvidence.PrecedingSixtyDayMonthlyFrequency),
 	})
 	if err != nil {
 		return appmetric.MetricSnapshot{}, err
@@ -214,6 +230,7 @@ func metricFromRow(row sqlc.NeighborhoodMetric) appmetric.MetricSnapshot {
 		ID:                       uuidString(row.ID),
 		NeighborhoodID:           uuidString(row.NeighborhoodID),
 		CollectionRunID:          uuidString(row.CollectionRunID),
+		AlgorithmVersion:         row.AlgorithmVersion,
 		InventoryCollectionRunID: uuidStringPtr(row.InventoryCollectionRunID),
 		SourceIDs:                stringSlice(row.SourceIds),
 		LatestObservedAt:         row.LatestObservedAt.Time,
@@ -225,6 +242,7 @@ func metricFromRow(row sqlc.NeighborhoodMetric) appmetric.MetricSnapshot {
 		TransactionPriceMin:      numericFloatPtr(row.TransactionPriceMin),
 		TransactionPriceMax:      numericFloatPtr(row.TransactionPriceMax),
 		TransactionMomentum:      domainneighborhood.TransactionMomentum(row.TransactionMomentum),
+		TransactionEvidence:      transactionEvidenceFromRow(row),
 		TargetLayoutSupply:       int(row.TargetLayoutSupply),
 		ListingSampleCount:       int(row.ListingSampleCount),
 		TransactionSampleCount:   int(row.TransactionSampleCount),
@@ -243,6 +261,7 @@ func neighborhoodMetricFromRow(row sqlc.NeighborhoodMetric) appneighborhood.Metr
 		ID:                       uuidString(row.ID),
 		NeighborhoodID:           uuidString(row.NeighborhoodID),
 		CollectionRunID:          uuidString(row.CollectionRunID),
+		AlgorithmVersion:         row.AlgorithmVersion,
 		InventoryCollectionRunID: uuidStringPtr(row.InventoryCollectionRunID),
 		SourceIDs:                stringSlice(row.SourceIds),
 		LatestObservedAt:         row.LatestObservedAt.Time,
@@ -254,6 +273,7 @@ func neighborhoodMetricFromRow(row sqlc.NeighborhoodMetric) appneighborhood.Metr
 		TransactionPriceMin:      numericFloatPtr(row.TransactionPriceMin),
 		TransactionPriceMax:      numericFloatPtr(row.TransactionPriceMax),
 		TransactionMomentum:      domainneighborhood.TransactionMomentum(row.TransactionMomentum),
+		TransactionEvidence:      transactionEvidenceFromRow(row),
 		TargetLayoutSupply:       int(row.TargetLayoutSupply),
 		ListingSampleCount:       int(row.ListingSampleCount),
 		TransactionSampleCount:   int(row.TransactionSampleCount),
@@ -349,6 +369,29 @@ func numericParam(value float64) pgtype.Numeric {
 	var numeric pgtype.Numeric
 	_ = numeric.Scan(strconv.FormatFloat(value, 'f', -1, 64))
 	return numeric
+}
+
+func dateParam(value time.Time) pgtype.Date {
+	return pgtype.Date{Time: value.UTC(), Valid: true}
+}
+
+func transactionEvidenceFromRow(row sqlc.NeighborhoodMetric) *domainneighborhood.TransactionMomentumEvidence {
+	recentFrequency := numericFloatPtr(row.Recent30DayMonthlyFrequency)
+	precedingFrequency := numericFloatPtr(row.Preceding60DayMonthlyFrequency)
+	if !row.TransactionWindowStart.Valid || !row.TransactionWindowEnd.Valid ||
+		!row.Recent30DayTransactionCount.Valid || !row.Preceding60DayTransactionCount.Valid ||
+		recentFrequency == nil || precedingFrequency == nil {
+		return nil
+	}
+	return &domainneighborhood.TransactionMomentumEvidence{
+		WindowStart:                       row.TransactionWindowStart.Time,
+		WindowEnd:                         row.TransactionWindowEnd.Time,
+		SampleCount:                       int(row.TransactionSampleCount),
+		RecentThirtyDayCount:              int(row.Recent30DayTransactionCount.Int32),
+		PrecedingSixtyDayCount:            int(row.Preceding60DayTransactionCount.Int32),
+		RecentThirtyDayMonthlyFrequency:   *recentFrequency,
+		PrecedingSixtyDayMonthlyFrequency: *precedingFrequency,
+	}
 }
 
 func numericPtrParam(value *float64) pgtype.Numeric {

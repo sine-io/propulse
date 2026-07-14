@@ -11,6 +11,8 @@ import (
 var ErrNeighborhoodNotFound = errors.New("neighborhood not found")
 var ErrCollectionRunNotFound = errors.New("collection_run_not_found")
 var ErrCollectionRunNeighborhoodMismatch = errors.New("collection_run_neighborhood_mismatch")
+var ErrInconsistentTransactionEvidence = errors.New("inconsistent_transaction_evidence")
+var ErrInvalidAlgorithmVersion = errors.New("invalid_algorithm_version")
 
 type Repository interface {
 	GetNeighborhood(ctx context.Context, id string) (Neighborhood, error)
@@ -30,6 +32,7 @@ type MetricSnapshot struct {
 	ID                       string
 	NeighborhoodID           string
 	CollectionRunID          string
+	AlgorithmVersion         string
 	InventoryCollectionRunID *string
 	SourceIDs                []string
 	LatestObservedAt         time.Time
@@ -41,6 +44,7 @@ type MetricSnapshot struct {
 	TransactionPriceMin      *float64
 	TransactionPriceMax      *float64
 	TransactionMomentum      domainneighborhood.TransactionMomentum
+	TransactionEvidence      *domainneighborhood.TransactionMomentumEvidence
 	TargetLayoutSupply       int
 	ListingSampleCount       int
 	TransactionSampleCount   int

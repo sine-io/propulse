@@ -84,6 +84,7 @@ type MetricSnapshot struct {
 	ID                       string
 	NeighborhoodID           string
 	CollectionRunID          string
+	AlgorithmVersion         string
 	InventoryCollectionRunID *string
 	SourceIDs                []string
 	LatestObservedAt         time.Time
@@ -95,6 +96,7 @@ type MetricSnapshot struct {
 	TransactionPriceMin      *float64
 	TransactionPriceMax      *float64
 	TransactionMomentum      domainneighborhood.TransactionMomentum
+	TransactionEvidence      *domainneighborhood.TransactionMomentumEvidence
 	TargetLayoutSupply       int
 	ListingSampleCount       int
 	TransactionSampleCount   int

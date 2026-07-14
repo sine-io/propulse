@@ -32,6 +32,8 @@ func TestEmbeddedMigrationSetIsCompleteAndOrdered(t *testing.T) {
 		"000004_review_notes.up.sql",
 		"000005_remove_legacy_demo_neighborhoods.down.sql",
 		"000005_remove_legacy_demo_neighborhoods.up.sql",
+		"000006_versioned_metric_evidence.down.sql",
+		"000006_versioned_metric_evidence.up.sql",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("embedded migrations = %#v, want %#v", names, want)
@@ -76,6 +78,27 @@ func TestEmbeddedMigrationSetIsCompleteAndOrdered(t *testing.T) {
 	const stableUserDefault = "user_id TEXT NOT NULL DEFAULT 'propulse-user'"
 	if count := strings.Count(string(body), stableUserDefault); count != 2 {
 		t.Fatalf("initial schema has %d %q defaults, want 2", count, stableUserDefault)
+	}
+}
+
+func TestVersionedMetricMigrationPreservesLegacyRowsWithoutInventingEvidence(t *testing.T) {
+	body, err := fs.ReadFile(FS, "000006_versioned_metric_evidence.up.sql")
+	if err != nil {
+		t.Fatalf("ReadFile(version 6) error = %v", err)
+	}
+
+	for _, required := range []string{
+		"SET algorithm_version = 'legacy_unversioned'",
+		"ALTER COLUMN algorithm_version SET NOT NULL",
+		"transaction_window_start DATE",
+		"recent_30_day_transaction_count INT",
+		"preceding_60_day_transaction_count INT",
+		"UNIQUE (collection_run_id, algorithm_version)",
+		"transaction_sample_count = recent_30_day_transaction_count + preceding_60_day_transaction_count",
+	} {
+		if !strings.Contains(string(body), required) {
+			t.Fatalf("versioned metric migration is missing %q", required)
+		}
 	}
 }
 

@@ -55,6 +55,9 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	if cfg.SchedulerInterval.String() != "1h0m0s" {
 		t.Fatalf("SchedulerInterval = %s, want 1h0m0s", cfg.SchedulerInterval)
 	}
+	if cfg.MetricAlgorithmVersion != "market-metrics/2026.07.14.1" {
+		t.Fatalf("MetricAlgorithmVersion = %q", cfg.MetricAlgorithmVersion)
+	}
 }
 
 func TestLoadReadsAccessToken(t *testing.T) {

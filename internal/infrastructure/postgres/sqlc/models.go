@@ -68,30 +68,37 @@ type Neighborhood struct {
 }
 
 type NeighborhoodMetric struct {
-	ID                       pgtype.UUID
-	NeighborhoodID           pgtype.UUID
-	ListedHomes              int32
-	PriceCutHomes            int32
-	AvgDaysOnMarket          pgtype.Numeric
-	ListingPriceMin          pgtype.Numeric
-	ListingPriceMax          pgtype.Numeric
-	TransactionPriceMin      pgtype.Numeric
-	TransactionPriceMax      pgtype.Numeric
-	TransactionMomentum      string
-	TargetLayoutSupply       int32
-	CalculatedAt             pgtype.Timestamptz
-	CollectionRunID          pgtype.UUID
-	InventoryCollectionRunID pgtype.UUID
-	SourceIds                []byte
-	ListingSampleCount       int32
-	TransactionSampleCount   int32
-	ListedHomesChangePct     pgtype.Numeric
-	Coverage                 string
-	Freshness                string
-	QualityState             string
-	LatestObservedAt         pgtype.Timestamptz
-	InventoryCollectedAt     pgtype.Timestamptz
-	QualityWarnings          []byte
+	ID                             pgtype.UUID
+	NeighborhoodID                 pgtype.UUID
+	ListedHomes                    int32
+	PriceCutHomes                  int32
+	AvgDaysOnMarket                pgtype.Numeric
+	ListingPriceMin                pgtype.Numeric
+	ListingPriceMax                pgtype.Numeric
+	TransactionPriceMin            pgtype.Numeric
+	TransactionPriceMax            pgtype.Numeric
+	TransactionMomentum            string
+	TargetLayoutSupply             int32
+	CalculatedAt                   pgtype.Timestamptz
+	CollectionRunID                pgtype.UUID
+	InventoryCollectionRunID       pgtype.UUID
+	SourceIds                      []byte
+	ListingSampleCount             int32
+	TransactionSampleCount         int32
+	ListedHomesChangePct           pgtype.Numeric
+	Coverage                       string
+	Freshness                      string
+	QualityState                   string
+	LatestObservedAt               pgtype.Timestamptz
+	InventoryCollectedAt           pgtype.Timestamptz
+	QualityWarnings                []byte
+	AlgorithmVersion               string
+	TransactionWindowStart         pgtype.Date
+	TransactionWindowEnd           pgtype.Date
+	Recent30DayTransactionCount    pgtype.Int4
+	Preceding60DayTransactionCount pgtype.Int4
+	Recent30DayMonthlyFrequency    pgtype.Numeric
+	Preceding60DayMonthlyFrequency pgtype.Numeric
 }
 
 type ReviewNote struct {
