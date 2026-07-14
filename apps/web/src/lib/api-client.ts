@@ -16,12 +16,26 @@ export type ActionWindowResponse =
   components["schemas"]["ActionWindowResponse"];
 export type ErrorResponse = components["schemas"]["ErrorResponse"];
 export type AccessStatusResponse = components["schemas"]["AccessStatusResponse"];
+export type CreateDataSourceRequest = components["schemas"]["CreateDataSourceRequest"];
+export type DataSource = components["schemas"]["DataSource"];
+export type CreateNeighborhoodRequest = components["schemas"]["CreateNeighborhoodRequest"];
+export type Neighborhood = components["schemas"]["NeighborhoodResponse"];
+export type NeighborhoodSearchResponse = components["schemas"]["NeighborhoodSearchResponse"];
+export type ImportJSONRequest = components["schemas"]["ImportJSONRequest"];
+export type ImportJSONRecord = components["schemas"]["ImportJSONRecord"];
+export type ImportCollectionRunResponse = components["schemas"]["ImportCollectionRunResponse"];
+export type CollectionRunDetail = components["schemas"]["CollectionRunDetail"];
+export type ValidationIssue = components["schemas"]["ValidationIssue"];
+export type ImportMetadata = Omit<ImportJSONRequest, "records">;
 
 export class ApiError extends Error {
   constructor(
     public readonly code: string,
     message: string,
     public readonly status: number,
+    public readonly details: ValidationIssue[] = [],
+    public readonly acceptedRecordCount?: number,
+    public readonly rejectedRecordCount?: number,
   ) {
     super(message);
     this.name = "ApiError";
@@ -78,11 +92,115 @@ export async function verifyAccessToken(
   );
 }
 
+export async function listDataSources(signal?: AbortSignal): Promise<DataSource[]> {
+  const response = await request<{ items: DataSource[] }>(
+    "/admin/api/data-sources",
+    signal ? { signal } : undefined,
+  );
+  return response.items;
+}
+
+export async function createDataSource(
+  input: CreateDataSourceRequest,
+  signal?: AbortSignal,
+): Promise<DataSource> {
+  return request<DataSource>("/admin/api/data-sources", {
+    body: JSON.stringify(input),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    signal,
+  });
+}
+
+export async function searchNeighborhoods(
+  query = "",
+  signal?: AbortSignal,
+): Promise<NeighborhoodSearchResponse> {
+  const params = new URLSearchParams({ page: "1", pageSize: "50" });
+  if (query.trim()) {
+    params.set("q", query.trim());
+  }
+  return request<NeighborhoodSearchResponse>(
+    `/api/v1/neighborhoods?${params.toString()}`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function createNeighborhood(
+  input: CreateNeighborhoodRequest,
+  signal?: AbortSignal,
+): Promise<Neighborhood> {
+  return request<Neighborhood>("/api/v1/neighborhoods", {
+    body: JSON.stringify(input),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    signal,
+  });
+}
+
+export async function importJSONCollectionRun(
+  input: ImportJSONRequest,
+  signal?: AbortSignal,
+): Promise<ImportCollectionRunResponse> {
+  return request<ImportCollectionRunResponse>("/admin/api/imports/json", {
+    body: JSON.stringify(input),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    signal,
+  });
+}
+
+export async function importCSVCollectionRun(
+  metadata: ImportMetadata,
+  file: File,
+  signal?: AbortSignal,
+): Promise<ImportCollectionRunResponse> {
+  const body = new FormData();
+  body.set("dataSourceId", metadata.dataSourceId);
+  body.set("neighborhoodId", metadata.neighborhoodId);
+  body.set("sourceRef", metadata.sourceRef);
+  body.set("collectedAt", metadata.collectedAt);
+  body.set("coverage", metadata.coverage);
+  body.set("file", file);
+  return request<ImportCollectionRunResponse>("/admin/api/imports/csv", {
+    body,
+    method: "POST",
+    signal,
+  });
+}
+
+export async function getCollectionRunDetail(
+  id: string,
+  signal?: AbortSignal,
+): Promise<CollectionRunDetail> {
+  return request<CollectionRunDetail>(
+    `/admin/api/imports/${encodeURIComponent(id)}`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function getCSVImportTemplate(signal?: AbortSignal): Promise<Blob> {
+  const response = await authorizedResponse(
+    "/admin/api/imports/csv/template",
+    signal ? { signal } : undefined,
+  );
+  return response.blob();
+}
+
 async function request<T>(
   url: string,
   init?: RequestInit,
   explicitToken?: string,
 ): Promise<T> {
+  const response = await authorizedResponse(url, init, explicitToken);
+  return response.json() as Promise<T>;
+}
+
+async function authorizedResponse(
+  url: string,
+  init?: RequestInit,
+  explicitToken?: string,
+): Promise<Response> {
   const storedToken = getAccessToken();
   const token = explicitToken?.trim() || storedToken;
   let requestInit = init;
@@ -93,13 +211,9 @@ async function request<T>(
   }
 
   const response = await fetch(url, requestInit);
-  const data = (await response.json().catch(() => undefined)) as
-    | T
-    | ErrorResponse
-    | undefined;
-
   if (!response.ok) {
-    const error = isErrorResponse(data)
+    const data = await response.json().catch(() => undefined);
+    const error = isAPIErrorPayload(data)
       ? data.error
       : {
           code: `http_${response.status}`,
@@ -109,13 +223,30 @@ async function request<T>(
     if (response.status === 401 && storedToken && token === storedToken) {
       clearAccessToken();
     }
-    throw new ApiError(error.code, error.message, response.status);
+    throw new ApiError(
+      error.code,
+      error.message,
+      response.status,
+      isAPIErrorPayload(data) ? data.error.details ?? [] : [],
+      isAPIErrorPayload(data) ? data.acceptedRecordCount : undefined,
+      isAPIErrorPayload(data) ? data.rejectedRecordCount : undefined,
+    );
   }
 
-  return data as T;
+  return response;
 }
 
-function isErrorResponse(value: unknown): value is ErrorResponse {
+interface APIErrorPayload {
+  error: {
+    code: string;
+    message: string;
+    details?: ValidationIssue[];
+  };
+  acceptedRecordCount?: number;
+  rejectedRecordCount?: number;
+}
+
+function isAPIErrorPayload(value: unknown): value is APIErrorPayload {
   if (!value || typeof value !== "object" || !("error" in value)) {
     return false;
   }

@@ -21,7 +21,7 @@ export default function RootLayout({
         {children}
         <footer className="mt-auto border-t border-slate-200 bg-white py-6">
           <div className="mx-auto max-w-7xl px-4 text-center text-sm text-slate-400 sm:px-6 lg:px-8">
-            © 2026 房脉 propulse Prototype. 原型阶段：页面中的小区与指标为示例数据，尚未接入真实市场数据源。
+            © 2026 房脉 propulse. 数据与结论以页面标注的来源、采集时间和质量状态为准。
           </div>
         </footer>
       </body>
