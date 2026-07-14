@@ -424,13 +424,107 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ValidationErrorResponse'
+                $ref: '#/components/schemas/ImportValidationErrorResponse'
         '500':
           description: Import failed
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /admin/api/imports/csv:
+    post:
+      summary: Import a traceable CSV collection run through the shared import pipeline
+      security:
+        - AccessBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [dataSourceId, neighborhoodId, sourceRef, collectedAt, coverage, file]
+              properties:
+                dataSourceId:
+                  type: string
+                  format: uuid
+                neighborhoodId:
+                  type: string
+                  format: uuid
+                sourceRef:
+                  type: string
+                  maxLength: 256
+                collectedAt:
+                  type: string
+                  format: date-time
+                coverage:
+                  type: string
+                  enum: [full, partial]
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Idempotent replay of an existing collection run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCollectionRunResponse'
+        '201':
+          description: Collection run imported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCollectionRunResponse'
+        '400':
+          description: Invalid multipart request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '404':
+          description: Selected source or neighborhood not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: CSV file or multipart request exceeds its size limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: CSV parsing or import semantic validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportValidationErrorResponse'
+        '500':
+          description: Import failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/api/imports/csv/template:
+    get:
+      summary: Download the canonical UTF-8 CSV import template
+      security:
+        - AccessBearerAuth: []
+      responses:
+        '200':
+          description: CSV header template
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/AccessRequired'
   /admin/api/imports/{id}:
     get:
       summary: Get a traceable collection run and normalized observations
@@ -1180,8 +1274,17 @@ components:
           type: string
     ImportCollectionRunResponse:
       type: object
-      required: [collectionRun, listingObservationCount, transactionObservationCount, idempotentReplay, metricRefreshStatus]
+      required: [collectionRunId, acceptedRecordCount, rejectedRecordCount, collectionRun, listingObservationCount, transactionObservationCount, idempotentReplay, metricRefreshStatus]
       properties:
+        collectionRunId:
+          type: string
+          format: uuid
+        acceptedRecordCount:
+          type: integer
+          minimum: 0
+        rejectedRecordCount:
+          type: integer
+          minimum: 0
         collectionRun:
           $ref: '#/components/schemas/CollectionRun'
         listingObservationCount:
@@ -1262,6 +1365,29 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/ValidationIssue'
+    ImportValidationErrorResponse:
+      type: object
+      required: [error, acceptedRecordCount, rejectedRecordCount]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+              enum: [validation_failed]
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ValidationIssue'
+        acceptedRecordCount:
+          type: integer
+          enum: [0]
+        rejectedRecordCount:
+          type: integer
+          minimum: 0
     ErrorResponse:
       type: object
       required: [error]

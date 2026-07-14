@@ -652,6 +652,8 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 		{method: http.MethodPost, path: "/admin/api/data-sources", body: `{}`},
 		{method: http.MethodGet, path: "/admin/api/data-sources"},
 		{method: http.MethodPost, path: "/admin/api/imports/json", body: `{}`},
+		{method: http.MethodPost, path: "/admin/api/imports/csv"},
+		{method: http.MethodGet, path: "/admin/api/imports/csv/template"},
 		{method: http.MethodGet, path: "/admin/api/imports/33333333-3333-3333-3333-333333333333"},
 	}
 

@@ -16,7 +16,9 @@ import (
 )
 
 func TestAdminImportsJSONPreservesRawPayloadAndNormalizesRecords(t *testing.T) {
-	app := &stubTrustedCollectionApplication{result: trustedImportResult(false)}
+	result := trustedImportResult(false)
+	result.TransactionCount = 1
+	app := &stubTrustedCollectionApplication{result: result}
 	engine := gin.New()
 	engine.POST("/imports/json", NewAdminImports(app).CreateJSON)
 	body := `{"dataSourceId":"11111111-1111-1111-1111-111111111111","neighborhoodId":"22222222-2222-2222-2222-222222222222","sourceRef":"weekly-1","collectedAt":"2026-07-13T10:00:00Z","coverage":"full","records":[{"recordType":"listing","sourceRecordId":"listing-1","layout":"三房","areaSqm":89.5,"listingPrice":520.25,"daysOnMarket":12,"status":"active"},{"recordType":"transaction","sourceRecordId":"tx-1","layout":"三房","areaSqm":89.5,"transactionPrice":505.5,"transactionDate":"2026-07-01"}]}`
@@ -32,6 +34,13 @@ func TestAdminImportsJSONPreservesRawPayloadAndNormalizesRecords(t *testing.T) {
 	}
 	if app.command.Records[1].TransactionDate == nil || app.command.Records[1].TransactionDate.Format(time.DateOnly) != "2026-07-01" {
 		t.Fatalf("transaction date = %#v", app.command.Records[1].TransactionDate)
+	}
+	var response importCollectionRunResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.CollectionRunID != app.result.Run.ID || response.AcceptedRecordCount != 2 || response.RejectedRecordCount != 0 {
+		t.Fatalf("response counts/id = %#v", response)
 	}
 }
 
@@ -55,6 +64,13 @@ func TestAdminImportsJSONReturnsValidationDetails(t *testing.T) {
 	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/imports/json", bytes.NewBufferString(validTrustedImportBody())))
 	if recorder.Code != http.StatusUnprocessableEntity || !bytes.Contains(recorder.Body.Bytes(), []byte(`"details"`)) {
 		t.Fatalf("status/body = %d / %s", recorder.Code, recorder.Body.String())
+	}
+	var response importValidationErrorResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.AcceptedRecordCount != 0 || response.RejectedRecordCount != 1 {
+		t.Fatalf("validation counts = %d/%d", response.AcceptedRecordCount, response.RejectedRecordCount)
 	}
 }
 

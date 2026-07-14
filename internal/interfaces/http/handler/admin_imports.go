@@ -50,6 +50,9 @@ type jsonImportRecord struct {
 }
 
 type importCollectionRunResponse struct {
+	CollectionRunID             string                `json:"collectionRunId"`
+	AcceptedRecordCount         int                   `json:"acceptedRecordCount"`
+	RejectedRecordCount         int                   `json:"rejectedRecordCount"`
 	CollectionRun               collectionRunResponse `json:"collectionRun"`
 	ListingObservationCount     int                   `json:"listingObservationCount"`
 	TransactionObservationCount int                   `json:"transactionObservationCount"`
@@ -148,7 +151,7 @@ func (h AdminImports) CreateJSON(c *gin.Context) {
 	}
 	records, issues := jsonObservationInputs(request.Records)
 	if len(issues) > 0 {
-		writeValidationError(c, issues)
+		writeImportValidationError(c, issues, len(request.Records))
 		return
 	}
 
@@ -158,7 +161,7 @@ func (h AdminImports) CreateJSON(c *gin.Context) {
 		RawPayload: append([]byte(nil), raw...), RawContentType: "application/json", Records: records,
 	})
 	if err != nil {
-		writeCollectionError(c, err)
+		writeCollectionError(c, err, len(records))
 		return
 	}
 	status := http.StatusCreated
@@ -215,11 +218,11 @@ func jsonObservationInputs(records []jsonImportRecord) ([]appcollection.Observat
 	return inputs, issues
 }
 
-func writeCollectionError(c *gin.Context, err error) {
+func writeCollectionError(c *gin.Context, err error, recordCount int) {
 	var validationErr *appcollection.ValidationError
 	switch {
 	case errors.As(err, &validationErr):
-		writeValidationError(c, validationErr.Issues)
+		writeImportValidationError(c, validationErr.Issues, recordCount)
 	case errors.Is(err, appcollection.ErrDataSourceNotFound):
 		writeError(c, http.StatusNotFound, "data_source_not_found", "data source not found")
 	case errors.Is(err, appcollection.ErrNeighborhoodNotFound):
@@ -230,7 +233,9 @@ func writeCollectionError(c *gin.Context, err error) {
 }
 
 func newImportCollectionRunResponse(result appcollection.ImportCollectionRunResult) importCollectionRunResponse {
+	acceptedRecordCount := result.ListingCount + result.TransactionCount
 	return importCollectionRunResponse{
+		CollectionRunID: result.Run.ID, AcceptedRecordCount: acceptedRecordCount, RejectedRecordCount: 0,
 		CollectionRun: newCollectionRunResponse(result.Run), ListingObservationCount: result.ListingCount,
 		TransactionObservationCount: result.TransactionCount, IdempotentReplay: result.IdempotentReplay,
 		MetricRefreshStatus: string(result.MetricRefreshStatus),

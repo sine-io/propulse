@@ -111,6 +111,8 @@ func New(deps Dependencies) (*gin.Engine, error) {
 	admin.POST("/data-sources", dataSourcesHandler.Create)
 	admin.GET("/data-sources", dataSourcesHandler.List)
 	admin.POST("/imports/json", adminImportsHandler.CreateJSON)
+	admin.POST("/imports/csv", adminImportsHandler.CreateCSV)
+	admin.GET("/imports/csv/template", adminImportsHandler.GetCSVTemplate)
 	admin.GET("/imports/:id", adminImportsHandler.GetDetail)
 
 	fileServer := http.FileServer(http.FS(staticFS))
