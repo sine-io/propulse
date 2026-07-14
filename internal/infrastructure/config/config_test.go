@@ -16,7 +16,7 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "")
 	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 
-	cfg, err := Load()
+	cfg, err := Load("serve")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -52,7 +52,7 @@ func TestLoadReadsAccessToken(t *testing.T) {
 	t.Setenv("PROPULSE_ACCESS_TOKEN", "secret-token")
 	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "legacy-token")
 
-	cfg, err := Load()
+	cfg, err := Load("api")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestLoadDoesNotAcceptLegacyAdminToken(t *testing.T) {
 	t.Setenv("PROPULSE_ACCESS_TOKEN", "")
 	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "legacy-token")
 
-	cfg, err := Load()
+	cfg, err := Load("worker")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -79,7 +79,7 @@ func TestLoadParsesSchedulerInterval(t *testing.T) {
 	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "10s")
 
-	cfg, err := Load()
+	cfg, err := Load("scheduler")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -93,18 +93,45 @@ func TestLoadRejectsInvalidSchedulerInterval(t *testing.T) {
 	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "sometimes")
 
-	_, err := Load()
+	_, err := Load("scheduler")
 	if err == nil {
 		t.Fatal("Load() error = nil, want invalid interval error")
 	}
 }
 
-func TestLoadRequiresUserID(t *testing.T) {
-	// 缺失稳定用户身份时必须启动失败（fail-fast），不得静默回退（#36 / SYS-001.1 AC3）。
-	t.Setenv("PROPULSE_USER_ID", "")
+func TestLoadRequiresUserIDForRuntimeModes(t *testing.T) {
+	for _, mode := range []string{"serve", "api", "worker", "scheduler"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("PROPULSE_USER_ID", "")
 
-	_, err := Load()
-	if !errors.Is(err, ErrMissingUserID) {
-		t.Fatalf("Load() error = %v, want ErrMissingUserID", err)
+			_, err := Load(mode)
+			if !errors.Is(err, ErrMissingUserID) {
+				t.Fatalf("Load(%q) error = %v, want ErrMissingUserID", mode, err)
+			}
+		})
+	}
+}
+
+func TestLoadMigrationsOnlyRequireDatabaseConfiguration(t *testing.T) {
+	for _, mode := range []string{"migrate up", "migrate down"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("PROPULSE_DATABASE_URL", "postgres://migration-db")
+			t.Setenv("PROPULSE_USER_ID", "")
+			t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "not-a-duration")
+
+			cfg, err := Load(mode)
+			if err != nil {
+				t.Fatalf("Load(%q) error = %v", mode, err)
+			}
+			if cfg.DatabaseURL != "postgres://migration-db" {
+				t.Fatalf("DatabaseURL = %q, want postgres://migration-db", cfg.DatabaseURL)
+			}
+			if cfg.Mode != mode {
+				t.Fatalf("Mode = %q, want %q", cfg.Mode, mode)
+			}
+			if cfg.UserID != "" {
+				t.Fatalf("UserID = %q, want empty for migration mode", cfg.UserID)
+			}
+		})
 	}
 }

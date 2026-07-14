@@ -1,4 +1,4 @@
-FROM node:22-alpine AS node-deps
+FROM node:22.23.1-alpine AS node-deps
 
 ENV NEXT_TELEMETRY_DISABLED=1
 

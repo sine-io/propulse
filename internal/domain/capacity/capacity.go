@@ -51,8 +51,8 @@ type Assumptions struct {
 // 调整参数或阈值时应递增 RuleVersion 并更新 EffectiveDate。
 func DefaultAssumptions() Assumptions {
 	return Assumptions{
-		RuleVersion:     "2026.08",
-		EffectiveDate:   "2026-08-01",
+		RuleVersion:     "2026.07.14",
+		EffectiveDate:   "2026-07-14",
 		DownPaymentRate: 0.35,
 		Loan: LoanParams{
 			AnnualInterestRate: 0.039,

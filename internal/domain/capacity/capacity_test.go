@@ -29,6 +29,16 @@ func TestCalculateStampsDefaultRuleVersion(t *testing.T) {
 	}
 }
 
+func TestDefaultAssumptionsUseCurrentReleaseMetadata(t *testing.T) {
+	defaults := DefaultAssumptions()
+	if defaults.RuleVersion != "2026.07.14" {
+		t.Fatalf("RuleVersion = %q, want 2026.07.14", defaults.RuleVersion)
+	}
+	if defaults.EffectiveDate != "2026-07-14" {
+		t.Fatalf("EffectiveDate = %q, want 2026-07-14", defaults.EffectiveDate)
+	}
+}
+
 func TestCalculateWithVariesByAssumptions(t *testing.T) {
 	input := referenceInput()
 	base := Calculate(input)

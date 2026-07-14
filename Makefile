@@ -1,6 +1,6 @@
 .PHONY: build verify verify-go verify-web verify-generated
 
-SQLC_VERSION ?= v1.31.1
+SQLC_VERSION ?= v1.30.0
 
 build:
 	go build -o dist/propulse ./cmd/propulse
