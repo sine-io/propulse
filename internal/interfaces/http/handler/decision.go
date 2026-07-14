@@ -51,6 +51,14 @@ func (h Decision) GetActionWindow(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "metric_required", "no neighborhood metric is available")
 			return
 		}
+		if errors.Is(err, appdecision.ErrMetricStale) {
+			writeError(c, http.StatusConflict, "metric_stale", "the latest neighborhood metric is stale")
+			return
+		}
+		if errors.Is(err, appdecision.ErrMetricInsufficient) {
+			writeError(c, http.StatusConflict, "metric_insufficient", "the latest neighborhood metric is insufficient")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}

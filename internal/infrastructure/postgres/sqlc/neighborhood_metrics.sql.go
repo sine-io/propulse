@@ -336,17 +336,58 @@ func (q *Queries) LatestCompletedFullCollectionRun(ctx context.Context, arg Late
 }
 
 const latestNeighborhoodMetric = `-- name: LatestNeighborhoodMetric :one
-SELECT nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.target_layout_supply, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings, nm.algorithm_version, nm.transaction_window_start, nm.transaction_window_end, nm.recent_30_day_transaction_count, nm.preceding_60_day_transaction_count, nm.recent_30_day_monthly_frequency, nm.preceding_60_day_monthly_frequency
+SELECT nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.target_layout_supply, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings, nm.algorithm_version, nm.transaction_window_start, nm.transaction_window_end, nm.recent_30_day_transaction_count, nm.preceding_60_day_transaction_count, nm.recent_30_day_monthly_frequency, nm.preceding_60_day_monthly_frequency, cr.collected_at AS collection_run_collected_at
 FROM neighborhood_metrics nm
 JOIN collection_runs cr ON cr.id = nm.collection_run_id
 WHERE nm.neighborhood_id = $1
+  AND nm.algorithm_version = $2
 ORDER BY cr.collected_at DESC, cr.id DESC
 LIMIT 1
 `
 
-func (q *Queries) LatestNeighborhoodMetric(ctx context.Context, neighborhoodID pgtype.UUID) (NeighborhoodMetric, error) {
-	row := q.db.QueryRow(ctx, latestNeighborhoodMetric, neighborhoodID)
-	var i NeighborhoodMetric
+type LatestNeighborhoodMetricParams struct {
+	NeighborhoodID   pgtype.UUID
+	AlgorithmVersion string
+}
+
+type LatestNeighborhoodMetricRow struct {
+	ID                             pgtype.UUID
+	NeighborhoodID                 pgtype.UUID
+	ListedHomes                    int32
+	PriceCutHomes                  int32
+	AvgDaysOnMarket                pgtype.Numeric
+	ListingPriceMin                pgtype.Numeric
+	ListingPriceMax                pgtype.Numeric
+	TransactionPriceMin            pgtype.Numeric
+	TransactionPriceMax            pgtype.Numeric
+	TransactionMomentum            string
+	TargetLayoutSupply             int32
+	CalculatedAt                   pgtype.Timestamptz
+	CollectionRunID                pgtype.UUID
+	InventoryCollectionRunID       pgtype.UUID
+	SourceIds                      []byte
+	ListingSampleCount             int32
+	TransactionSampleCount         int32
+	ListedHomesChangePct           pgtype.Numeric
+	Coverage                       string
+	Freshness                      string
+	QualityState                   string
+	LatestObservedAt               pgtype.Timestamptz
+	InventoryCollectedAt           pgtype.Timestamptz
+	QualityWarnings                []byte
+	AlgorithmVersion               string
+	TransactionWindowStart         pgtype.Date
+	TransactionWindowEnd           pgtype.Date
+	Recent30DayTransactionCount    pgtype.Int4
+	Preceding60DayTransactionCount pgtype.Int4
+	Recent30DayMonthlyFrequency    pgtype.Numeric
+	Preceding60DayMonthlyFrequency pgtype.Numeric
+	CollectionRunCollectedAt       pgtype.Timestamptz
+}
+
+func (q *Queries) LatestNeighborhoodMetric(ctx context.Context, arg LatestNeighborhoodMetricParams) (LatestNeighborhoodMetricRow, error) {
+	row := q.db.QueryRow(ctx, latestNeighborhoodMetric, arg.NeighborhoodID, arg.AlgorithmVersion)
+	var i LatestNeighborhoodMetricRow
 	err := row.Scan(
 		&i.ID,
 		&i.NeighborhoodID,
@@ -379,33 +420,86 @@ func (q *Queries) LatestNeighborhoodMetric(ctx context.Context, neighborhoodID p
 		&i.Preceding60DayTransactionCount,
 		&i.Recent30DayMonthlyFrequency,
 		&i.Preceding60DayMonthlyFrequency,
+		&i.CollectionRunCollectedAt,
 	)
 	return i, err
 }
 
 const listNeighborhoodMetricHistory = `-- name: ListNeighborhoodMetricHistory :many
-SELECT nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.target_layout_supply, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings, nm.algorithm_version, nm.transaction_window_start, nm.transaction_window_end, nm.recent_30_day_transaction_count, nm.preceding_60_day_transaction_count, nm.recent_30_day_monthly_frequency, nm.preceding_60_day_monthly_frequency
+SELECT
+  nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.target_layout_supply, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings, nm.algorithm_version, nm.transaction_window_start, nm.transaction_window_end, nm.recent_30_day_transaction_count, nm.preceding_60_day_transaction_count, nm.recent_30_day_monthly_frequency, nm.preceding_60_day_monthly_frequency,
+  cr.data_source_id,
+  cr.source_ref,
+  cr.collected_at AS collection_run_collected_at,
+  cr.coverage AS collection_run_coverage
 FROM neighborhood_metrics nm
 JOIN collection_runs cr ON cr.id = nm.collection_run_id
 WHERE nm.neighborhood_id = $1
-  AND cr.collected_at >= $2
+  AND nm.algorithm_version = $2
+  AND cr.collected_at >= $3
+  AND cr.collected_at <= $4
 ORDER BY cr.collected_at ASC, cr.id ASC
 `
 
 type ListNeighborhoodMetricHistoryParams struct {
-	NeighborhoodID pgtype.UUID
-	CollectedAt    pgtype.Timestamptz
+	NeighborhoodID   pgtype.UUID
+	AlgorithmVersion string
+	CollectedFrom    pgtype.Timestamptz
+	CollectedTo      pgtype.Timestamptz
 }
 
-func (q *Queries) ListNeighborhoodMetricHistory(ctx context.Context, arg ListNeighborhoodMetricHistoryParams) ([]NeighborhoodMetric, error) {
-	rows, err := q.db.Query(ctx, listNeighborhoodMetricHistory, arg.NeighborhoodID, arg.CollectedAt)
+type ListNeighborhoodMetricHistoryRow struct {
+	ID                             pgtype.UUID
+	NeighborhoodID                 pgtype.UUID
+	ListedHomes                    int32
+	PriceCutHomes                  int32
+	AvgDaysOnMarket                pgtype.Numeric
+	ListingPriceMin                pgtype.Numeric
+	ListingPriceMax                pgtype.Numeric
+	TransactionPriceMin            pgtype.Numeric
+	TransactionPriceMax            pgtype.Numeric
+	TransactionMomentum            string
+	TargetLayoutSupply             int32
+	CalculatedAt                   pgtype.Timestamptz
+	CollectionRunID                pgtype.UUID
+	InventoryCollectionRunID       pgtype.UUID
+	SourceIds                      []byte
+	ListingSampleCount             int32
+	TransactionSampleCount         int32
+	ListedHomesChangePct           pgtype.Numeric
+	Coverage                       string
+	Freshness                      string
+	QualityState                   string
+	LatestObservedAt               pgtype.Timestamptz
+	InventoryCollectedAt           pgtype.Timestamptz
+	QualityWarnings                []byte
+	AlgorithmVersion               string
+	TransactionWindowStart         pgtype.Date
+	TransactionWindowEnd           pgtype.Date
+	Recent30DayTransactionCount    pgtype.Int4
+	Preceding60DayTransactionCount pgtype.Int4
+	Recent30DayMonthlyFrequency    pgtype.Numeric
+	Preceding60DayMonthlyFrequency pgtype.Numeric
+	DataSourceID                   pgtype.UUID
+	SourceRef                      string
+	CollectionRunCollectedAt       pgtype.Timestamptz
+	CollectionRunCoverage          string
+}
+
+func (q *Queries) ListNeighborhoodMetricHistory(ctx context.Context, arg ListNeighborhoodMetricHistoryParams) ([]ListNeighborhoodMetricHistoryRow, error) {
+	rows, err := q.db.Query(ctx, listNeighborhoodMetricHistory,
+		arg.NeighborhoodID,
+		arg.AlgorithmVersion,
+		arg.CollectedFrom,
+		arg.CollectedTo,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []NeighborhoodMetric
+	var items []ListNeighborhoodMetricHistoryRow
 	for rows.Next() {
-		var i NeighborhoodMetric
+		var i ListNeighborhoodMetricHistoryRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.NeighborhoodID,
@@ -438,6 +532,10 @@ func (q *Queries) ListNeighborhoodMetricHistory(ctx context.Context, arg ListNei
 			&i.Preceding60DayTransactionCount,
 			&i.Recent30DayMonthlyFrequency,
 			&i.Preceding60DayMonthlyFrequency,
+			&i.DataSourceID,
+			&i.SourceRef,
+			&i.CollectionRunCollectedAt,
+			&i.CollectionRunCoverage,
 		); err != nil {
 			return nil, err
 		}

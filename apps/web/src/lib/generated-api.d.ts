@@ -378,6 +378,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/neighborhoods/{id}/metrics/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get current-algorithm neighborhood metric history and comparisons */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Inclusive collection-time lower bound. Defaults to eight weeks before `to`. */
+                    from?: string;
+                    /** @description Inclusive collection-time upper bound. Defaults to the current time. */
+                    to?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Metric history, including an explicit empty status when no points exist */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MetricHistoryResponse"];
+                    };
+                };
+                /** @description Invalid or longer-than-52-week time window */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Neighborhood not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/watchlist/items": {
         parameters: {
             query?: never;
@@ -527,6 +588,15 @@ export interface paths {
                          *       }
                          *     }
                          */
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description The latest metric exists but cannot support an action window */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
                         "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
@@ -1094,6 +1164,9 @@ export interface components {
             sourceIds: string[];
             /** Format: date-time */
             latestObservedAt: string;
+            /** Format: date-time */
+            collectedAt: string;
+            algorithmVersion: string;
             listedHomes: number;
             priceCutHomes: number;
             avgDaysOnMarket: number | null;
@@ -1103,6 +1176,7 @@ export interface components {
             transactionPriceMax?: number | null;
             /** @enum {string} */
             transactionMomentum: "unknown" | "weak" | "stable" | "strong";
+            transactionEvidence: components["schemas"]["TransactionMomentumEvidence"];
             targetLayoutSupply: number;
             listingSampleCount: number;
             transactionSampleCount: number;
@@ -1124,7 +1198,93 @@ export interface components {
             advice: string;
             reasons?: string[];
             /** Format: date-time */
-            calculatedAt?: string;
+            calculatedAt: string;
+        };
+        TransactionMomentumEvidence: {
+            /** Format: date */
+            windowStart: string;
+            /** Format: date */
+            windowEnd: string;
+            sampleCount: number;
+            recent30DayTransactionCount: number;
+            preceding60DayTransactionCount: number;
+            recent30DayMonthlyFrequency: number;
+            preceding60DayMonthlyFrequency: number;
+        };
+        CollectionRunReference: {
+            /** Format: uuid */
+            collectionRunId: string;
+            /** Format: uuid */
+            dataSourceId: string;
+            sourceRef: string;
+            /** Format: date-time */
+            collectedAt: string;
+            /** @enum {string} */
+            coverage: "full" | "partial";
+        };
+        MetricChangeValue: {
+            current: number;
+            baseline: number;
+            absoluteChange: number;
+            percentageChange: number | null;
+            /** @enum {string} */
+            percentageStatus: "available" | "zero_baseline";
+        };
+        MetricComparison: {
+            /** @enum {string} */
+            status: "available" | "unavailable";
+            /** @enum {string} */
+            reason?: "current_partial_coverage" | "full_baseline_not_found" | "transaction_evidence_missing";
+            currentBatch: components["schemas"]["CollectionRunReference"];
+            baselineBatch?: components["schemas"]["CollectionRunReference"];
+            listedHomes?: components["schemas"]["MetricChangeValue"];
+            priceCutHomes?: components["schemas"]["MetricChangeValue"];
+            recent30DayTransactions?: components["schemas"]["MetricChangeValue"];
+        };
+        MetricHistoryPoint: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            neighborhoodId: string;
+            algorithmVersion: string;
+            /** Format: date-time */
+            collectedAt: string;
+            /** Format: date-time */
+            calculatedAt: string;
+            /** Format: date-time */
+            latestObservedAt: string;
+            batch: components["schemas"]["CollectionRunReference"];
+            sourceIds: string[];
+            listedHomes: number;
+            priceCutHomes: number;
+            /** @enum {string} */
+            transactionMomentum: "unknown" | "weak" | "stable" | "strong";
+            transactionEvidence: components["schemas"]["TransactionMomentumEvidence"];
+            listingSampleCount: number;
+            transactionSampleCount: number;
+            /** @enum {string} */
+            coverage: "full" | "partial";
+            /** @enum {string} */
+            freshness: "unknown" | "current" | "stale" | "expired";
+            /** @enum {string} */
+            qualityState: "sufficient" | "low_confidence" | "insufficient_data";
+            qualityWarnings: string[];
+            weeklyComparison: components["schemas"]["MetricComparison"];
+            monthlyComparison: components["schemas"]["MetricComparison"];
+        };
+        MetricHistoryResponse: {
+            /** @enum {string} */
+            status: "ready" | "empty";
+            /** Format: uuid */
+            neighborhoodId: string;
+            algorithmVersion: string;
+            window: {
+                /** Format: date-time */
+                from: string;
+                /** Format: date-time */
+                to: string;
+            };
+            items: components["schemas"]["MetricHistoryPoint"][];
         };
         AddWatchlistItemRequest: {
             neighborhoodId: string;
@@ -1146,12 +1306,27 @@ export interface components {
             area: string;
             targetLayout: string;
             /** @enum {string} */
-            status: "重点看" | "继续观察" | "适合砍价" | "价格偏硬" | "暂不建议追";
+            status: "数据不足" | "重点看" | "继续观察" | "适合砍价" | "价格偏硬" | "暂不建议追";
             listedHomes: number;
             priceCutHomes: number;
             /** @enum {string} */
-            transactionMomentum: "weak" | "stable" | "strong";
+            transactionMomentum: "unknown" | "weak" | "stable" | "strong";
             advice: string;
+            hasMetric: boolean;
+            /** Format: uuid */
+            collectionRunId?: string;
+            algorithmVersion?: string;
+            sourceIds: string[];
+            /** Format: date-time */
+            collectedAt: string | null;
+            transactionSampleCount: number;
+            /** @enum {string} */
+            coverage: "unknown" | "full" | "partial";
+            /** @enum {string} */
+            freshness: "unknown" | "current" | "stale" | "expired";
+            /** @enum {string} */
+            qualityState: "sufficient" | "low_confidence" | "insufficient_data";
+            qualityWarnings: string[];
         };
         ActionWindowResponse: {
             /**

@@ -18,6 +18,7 @@ type NeighborhoodRepository struct {
 
 type metricReader interface {
 	LatestMetric(ctx context.Context, neighborhoodID string) (appneighborhood.MetricSnapshot, error)
+	ListMetricHistory(ctx context.Context, query appneighborhood.MetricHistoryRepositoryQuery) ([]appneighborhood.MetricHistoryRecord, error)
 }
 
 func NewNeighborhoodRepository(db *gorm.DB) *NeighborhoodRepository {
@@ -184,6 +185,13 @@ func (r *NeighborhoodRepository) LatestMetric(ctx context.Context, neighborhoodI
 		return appneighborhood.MetricSnapshot{}, appneighborhood.ErrMetricNotFound
 	}
 	return r.metricReader.LatestMetric(ctx, neighborhoodID)
+}
+
+func (r *NeighborhoodRepository) ListMetricHistory(ctx context.Context, query appneighborhood.MetricHistoryRepositoryQuery) ([]appneighborhood.MetricHistoryRecord, error) {
+	if r.metricReader == nil {
+		return []appneighborhood.MetricHistoryRecord{}, nil
+	}
+	return r.metricReader.ListMetricHistory(ctx, query)
 }
 
 func neighborhoodFromModel(model NeighborhoodModel) appneighborhood.Neighborhood {

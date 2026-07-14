@@ -83,6 +83,15 @@ func EvaluateSignal(input SignalInput) SignalResult {
 			CanRecommend: false,
 		}
 	}
+	if input.TransactionMomentum == TransactionMomentumUnknown {
+		input.Quality.CanRecommend = false
+		if input.Quality.State == MarketQualitySufficient {
+			input.Quality.State = MarketQualityLowConfidence
+		}
+		if !containsQualityWarning(input.Quality.Warnings, WarningInsufficientTransactions) {
+			input.Quality.Warnings = append(input.Quality.Warnings, WarningInsufficientTransactions)
+		}
+	}
 	if !input.Quality.CanRecommend {
 		return SignalResult{
 			Name:                 input.Name,
@@ -164,6 +173,15 @@ func EvaluateSignal(input SignalInput) SignalResult {
 		NextAction:           nextAction,
 		Reasons:              reasons,
 	}
+}
+
+func containsQualityWarning(warnings []QualityWarning, want QualityWarning) bool {
+	for _, warning := range warnings {
+		if warning == want {
+			return true
+		}
+	}
+	return false
 }
 
 func midpoint(priceRange PriceRange) float64 {

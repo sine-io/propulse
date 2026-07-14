@@ -95,24 +95,32 @@ func TestListWatchlistEvaluatesLatestMetric(t *testing.T) {
 			TargetLayout:   "三房",
 			HasMetric:      true,
 			Metric: MetricSnapshot{
-				ListedHomes:          42,
-				ListedHomesChangePct: testFloatPtr(18),
-				PriceCutHomes:        11,
-				AvgDaysOnMarket:      testFloatPtr(78),
-				ListingPriceMin:      testFloatPtr(520),
-				ListingPriceMax:      testFloatPtr(620),
-				TransactionPriceMin:  testFloatPtr(495),
-				TransactionPriceMax:  testFloatPtr(545),
-				TransactionMomentum:  domainneighborhood.TransactionMomentumWeak,
-				TargetLayoutSupply:   12,
-				Coverage:             domainneighborhood.CoverageFull,
-				Freshness:            domainneighborhood.FreshnessCurrent,
-				QualityState:         domainneighborhood.MarketQualitySufficient,
-				CalculatedAt:         time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+				CollectionRunID:          "run_1",
+				AlgorithmVersion:         "market-metrics/test.1",
+				InventoryCollectionRunID: testStringPtr("run_1"),
+				SourceIDs:                []string{"source_1"},
+				CollectedAt:              time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+				ListedHomes:              42,
+				ListedHomesChangePct:     testFloatPtr(18),
+				PriceCutHomes:            11,
+				AvgDaysOnMarket:          testFloatPtr(78),
+				ListingPriceMin:          testFloatPtr(520),
+				ListingPriceMax:          testFloatPtr(620),
+				TransactionPriceMin:      testFloatPtr(495),
+				TransactionPriceMax:      testFloatPtr(545),
+				TransactionMomentum:      domainneighborhood.TransactionMomentumWeak,
+				TargetLayoutSupply:       12,
+				ListingSampleCount:       42,
+				TransactionSampleCount:   3,
+				Coverage:                 domainneighborhood.CoverageFull,
+				Freshness:                domainneighborhood.FreshnessCurrent,
+				QualityState:             domainneighborhood.MarketQualitySufficient,
+				InventoryCollectedAt:     testTimePtr(time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)),
+				CalculatedAt:             time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 			},
 		},
 	}
-	service := NewService(repo)
+	service := NewServiceWithMetricConfig(repo, "market-metrics/test.1", func() time.Time { return time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC) })
 
 	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: user.SingleUserID})
 	if err != nil {
@@ -152,36 +160,86 @@ func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("items = %d, want 1", len(got))
 	}
-	if got[0].Status != domainneighborhood.NeighborhoodStatusObserve {
-		t.Fatalf("Status = %q, want %q", got[0].Status, domainneighborhood.NeighborhoodStatusObserve)
+	if got[0].Status != domainneighborhood.NeighborhoodStatusInsufficientData {
+		t.Fatalf("Status = %q, want %q", got[0].Status, domainneighborhood.NeighborhoodStatusInsufficientData)
 	}
 	if got[0].Advice != "暂无指标数据，等待导入或计算后再判断。" {
 		t.Fatalf("Advice = %q", got[0].Advice)
 	}
-	if got[0].ListedHomes != 0 || got[0].PriceCutHomes != 0 || got[0].TransactionMomentum != "" {
+	if got[0].ListedHomes != 0 || got[0].PriceCutHomes != 0 || got[0].TransactionMomentum != domainneighborhood.TransactionMomentumUnknown || got[0].HasMetric || got[0].QualityState != domainneighborhood.MarketQualityInsufficientData {
 		t.Fatalf("metric fields = listed %d, price cuts %d, momentum %q", got[0].ListedHomes, got[0].PriceCutHomes, got[0].TransactionMomentum)
+	}
+}
+
+func TestListWatchlistRefreshesStaleMetricQualityBeforeEvaluatingSignal(t *testing.T) {
+	collectedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	repo := newMemoryRepository()
+	repo.watchlist = []WatchlistSummary{
+		{
+			ID:             "watch_1",
+			NeighborhoodID: "neighborhood_1",
+			Name:           "青枫花园",
+			HasMetric:      true,
+			Metric: MetricSnapshot{
+				CollectionRunID:          "run_1",
+				AlgorithmVersion:         "market-metrics/test.1",
+				InventoryCollectionRunID: testStringPtr("run_1"),
+				CollectedAt:              collectedAt,
+				ListedHomes:              20,
+				PriceCutHomes:            8,
+				TransactionMomentum:      domainneighborhood.TransactionMomentumWeak,
+				ListingSampleCount:       20,
+				TransactionSampleCount:   3,
+				Coverage:                 domainneighborhood.CoverageFull,
+				Freshness:                domainneighborhood.FreshnessCurrent,
+				InventoryCollectedAt:     &collectedAt,
+				QualityState:             domainneighborhood.MarketQualitySufficient,
+			},
+		},
+	}
+	service := NewServiceWithMetricConfig(repo, "market-metrics/test.1", func() time.Time {
+		return collectedAt.Add(8 * 24 * time.Hour)
+	})
+
+	got, err := service.ListWatchlist(context.Background(), ListWatchlistQuery{UserID: user.SingleUserID})
+	if err != nil {
+		t.Fatalf("ListWatchlist() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Freshness != domainneighborhood.FreshnessStale || got[0].QualityState != domainneighborhood.MarketQualityLowConfidence {
+		t.Fatalf("quality = %#v", got)
+	}
+	if got[0].Status != domainneighborhood.NeighborhoodStatusInsufficientData || got[0].Advice == "" {
+		t.Fatalf("signal = %#v", got[0])
 	}
 }
 
 func TestLatestMetricEvaluatesSignal(t *testing.T) {
 	repo := newMemoryRepository()
 	repo.metrics["neighborhood_1"] = MetricSnapshot{
-		ListedHomes:          14,
-		ListedHomesChangePct: testFloatPtr(-6),
-		PriceCutHomes:        1,
-		AvgDaysOnMarket:      testFloatPtr(35),
-		ListingPriceMin:      testFloatPtr(700),
-		ListingPriceMax:      testFloatPtr(760),
-		TransactionPriceMin:  testFloatPtr(690),
-		TransactionPriceMax:  testFloatPtr(745),
-		TransactionMomentum:  domainneighborhood.TransactionMomentumStrong,
-		TargetLayoutSupply:   3,
-		Coverage:             domainneighborhood.CoverageFull,
-		Freshness:            domainneighborhood.FreshnessCurrent,
-		QualityState:         domainneighborhood.MarketQualitySufficient,
-		CalculatedAt:         time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		CollectionRunID:          "run_1",
+		AlgorithmVersion:         "market-metrics/test.1",
+		InventoryCollectionRunID: testStringPtr("run_1"),
+		SourceIDs:                []string{"source_1"},
+		CollectedAt:              time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		ListedHomes:              14,
+		ListedHomesChangePct:     testFloatPtr(-6),
+		PriceCutHomes:            1,
+		AvgDaysOnMarket:          testFloatPtr(35),
+		ListingPriceMin:          testFloatPtr(700),
+		ListingPriceMax:          testFloatPtr(760),
+		TransactionPriceMin:      testFloatPtr(690),
+		TransactionPriceMax:      testFloatPtr(745),
+		TransactionMomentum:      domainneighborhood.TransactionMomentumStrong,
+		TargetLayoutSupply:       3,
+		ListingSampleCount:       14,
+		TransactionSampleCount:   3,
+		Coverage:                 domainneighborhood.CoverageFull,
+		Freshness:                domainneighborhood.FreshnessCurrent,
+		QualityState:             domainneighborhood.MarketQualitySufficient,
+		InventoryCollectedAt:     testTimePtr(time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)),
+		CalculatedAt:             time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 	}
-	service := NewService(repo)
+	service := NewServiceWithMetricConfig(repo, "market-metrics/test.1", func() time.Time { return time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC) })
 
 	got, err := service.LatestMetric(context.Background(), LatestMetricQuery{NeighborhoodID: "neighborhood_1"})
 	if err != nil {
@@ -197,6 +255,7 @@ type memoryRepository struct {
 	neighborhoods map[string]Neighborhood
 	metrics       map[string]MetricSnapshot
 	watchlist     []WatchlistSummary
+	history       []MetricHistoryRecord
 	nextID        int
 }
 
@@ -276,6 +335,21 @@ func (m *memoryRepository) LatestMetric(_ context.Context, neighborhoodID string
 	return metric, nil
 }
 
+func (m *memoryRepository) ListMetricHistory(_ context.Context, query MetricHistoryRepositoryQuery) ([]MetricHistoryRecord, error) {
+	result := make([]MetricHistoryRecord, 0)
+	for _, record := range m.history {
+		if record.Batch.CollectedAt.Before(query.From) || record.Batch.CollectedAt.After(query.To) {
+			continue
+		}
+		result = append(result, record)
+	}
+	return result, nil
+}
+
 func testFloatPtr(value float64) *float64 {
 	return &value
 }
+
+func testStringPtr(value string) *string { return &value }
+
+func testTimePtr(value time.Time) *time.Time { return &value }

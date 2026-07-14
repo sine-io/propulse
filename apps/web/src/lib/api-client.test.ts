@@ -10,6 +10,7 @@ import {
   listDataSources,
   createCapacityCalculation,
   getActionWindow,
+	getMetricHistory,
   getWatchlist,
   verifyAccessToken,
   type HousingCapacityInput,
@@ -91,6 +92,28 @@ describe("api-client", () => {
       { signal },
     );
   });
+
+	it("queries metric history with an encoded inclusive window", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			jsonResponse({
+				status: "empty",
+				neighborhoodId: "neighborhood/1",
+				algorithmVersion: "market-metrics/test.1",
+				window: { from: "2026-05-19T00:00:00Z", to: "2026-07-14T00:00:00Z" },
+				items: [],
+			}),
+		);
+
+		await getMetricHistory("neighborhood/1", {
+			from: "2026-05-19T00:00:00Z",
+			to: "2026-07-14T00:00:00Z",
+		});
+
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/v1/neighborhoods/neighborhood%2F1/metrics/history?from=2026-05-19T00%3A00%3A00Z&to=2026-07-14T00%3A00%3A00Z",
+			undefined,
+		);
+	});
 
   it("validates and attaches bearer access tokens", async () => {
     const fetchMock = vi

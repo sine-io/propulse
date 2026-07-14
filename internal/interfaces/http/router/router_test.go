@@ -403,6 +403,7 @@ func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
 		{method: http.MethodPost, path: "/api/v1/neighborhoods", body: `{"name":"青枫花园","area":"滨江核心","targetLayout":"三房"}`, status: http.StatusCreated, auth: true},
 		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1", status: http.StatusOK},
 		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1/metrics", status: http.StatusOK},
+		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1/metrics/history", status: http.StatusOK},
 		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{"neighborhoodId":"neighborhood_1"}`, status: http.StatusCreated, auth: true},
 		{method: http.MethodGet, path: "/api/v1/watchlist", status: http.StatusOK, auth: true},
 	} {
@@ -692,6 +693,7 @@ func TestPublicNeighborhoodReadsDoNotRequireAccessToken(t *testing.T) {
 	for _, path := range []string{
 		"/api/v1/neighborhoods/neighborhood_1",
 		"/api/v1/neighborhoods/neighborhood_1/metrics",
+		"/api/v1/neighborhoods/neighborhood_1/metrics/history",
 	} {
 		t.Run(path, func(t *testing.T) {
 			service := &stubNeighborhoodApplication{}
@@ -780,6 +782,11 @@ func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, _ appneigh
 			NextAction:     "重点看 495-545 万成交区间附近房源，对挂牌久、降价过的房源试探底价。",
 		},
 	}, nil
+}
+
+func (s *stubNeighborhoodApplication) MetricHistory(_ context.Context, _ appneighborhood.MetricHistoryQuery) (appneighborhood.MetricHistoryResult, error) {
+	s.calls++
+	return appneighborhood.MetricHistoryResult{Status: appneighborhood.MetricHistoryEmpty, Items: []appneighborhood.MetricHistoryPoint{}}, nil
 }
 
 func (s *stubNeighborhoodApplication) AddWatchlistItem(_ context.Context, _ appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error) {

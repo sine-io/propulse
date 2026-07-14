@@ -207,6 +207,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/neighborhoods/{id}/metrics/history:
+    get:
+      summary: Get current-algorithm neighborhood metric history and comparisons
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: from
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Inclusive collection-time lower bound. Defaults to eight weeks before `to`.
+        - in: query
+          name: to
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Inclusive collection-time upper bound. Defaults to the current time.
+      responses:
+        '200':
+          description: Metric history, including an explicit empty status when no points exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricHistoryResponse'
+        '400':
+          description: Invalid or longer-than-52-week time window
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Neighborhood not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/watchlist/items:
     post:
       summary: Add a neighborhood to the user's watchlist
@@ -306,6 +348,23 @@ paths:
                 error:
                   code: metric_required
                   message: no neighborhood metric is available
+        '409':
+          description: The latest metric exists but cannot support an action window
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                metricStale:
+                  value:
+                    error:
+                      code: metric_stale
+                      message: the latest neighborhood metric is stale
+                metricInsufficient:
+                  value:
+                    error:
+                      code: metric_insufficient
+                      message: the latest neighborhood metric is insufficient
         '500':
           description: Internal server error
           content:
@@ -907,10 +966,13 @@ components:
         - collectionRunId
         - sourceIds
         - latestObservedAt
+        - collectedAt
+        - algorithmVersion
         - listedHomes
         - priceCutHomes
         - avgDaysOnMarket
         - transactionMomentum
+        - transactionEvidence
         - targetLayoutSupply
         - listingSampleCount
         - transactionSampleCount
@@ -921,6 +983,7 @@ components:
         - status
         - supplyPressure
         - advice
+        - calculatedAt
       properties:
         id:
           type: string
@@ -940,6 +1003,11 @@ components:
         latestObservedAt:
           type: string
           format: date-time
+        collectedAt:
+          type: string
+          format: date-time
+        algorithmVersion:
+          type: string
         listedHomes:
           type: integer
         priceCutHomes:
@@ -962,6 +1030,8 @@ components:
         transactionMomentum:
           type: string
           enum: [unknown, weak, stable, strong]
+        transactionEvidence:
+          $ref: '#/components/schemas/TransactionMomentumEvidence'
         targetLayoutSupply:
           type: integer
         listingSampleCount:
@@ -1003,6 +1073,196 @@ components:
         calculatedAt:
           type: string
           format: date-time
+    TransactionMomentumEvidence:
+      type: object
+      required:
+        - windowStart
+        - windowEnd
+        - sampleCount
+        - recent30DayTransactionCount
+        - preceding60DayTransactionCount
+        - recent30DayMonthlyFrequency
+        - preceding60DayMonthlyFrequency
+      properties:
+        windowStart:
+          type: string
+          format: date
+        windowEnd:
+          type: string
+          format: date
+        sampleCount:
+          type: integer
+          minimum: 0
+        recent30DayTransactionCount:
+          type: integer
+          minimum: 0
+        preceding60DayTransactionCount:
+          type: integer
+          minimum: 0
+        recent30DayMonthlyFrequency:
+          type: number
+          minimum: 0
+        preceding60DayMonthlyFrequency:
+          type: number
+          minimum: 0
+    CollectionRunReference:
+      type: object
+      required: [collectionRunId, dataSourceId, sourceRef, collectedAt, coverage]
+      properties:
+        collectionRunId:
+          type: string
+          format: uuid
+        dataSourceId:
+          type: string
+          format: uuid
+        sourceRef:
+          type: string
+        collectedAt:
+          type: string
+          format: date-time
+        coverage:
+          type: string
+          enum: [full, partial]
+    MetricChangeValue:
+      type: object
+      required: [current, baseline, absoluteChange, percentageChange, percentageStatus]
+      properties:
+        current:
+          type: integer
+        baseline:
+          type: integer
+        absoluteChange:
+          type: integer
+        percentageChange:
+          type: number
+          nullable: true
+        percentageStatus:
+          type: string
+          enum: [available, zero_baseline]
+    MetricComparison:
+      type: object
+      required: [status, currentBatch]
+      properties:
+        status:
+          type: string
+          enum: [available, unavailable]
+        reason:
+          type: string
+          enum: [current_partial_coverage, full_baseline_not_found, transaction_evidence_missing]
+        currentBatch:
+          $ref: '#/components/schemas/CollectionRunReference'
+        baselineBatch:
+          $ref: '#/components/schemas/CollectionRunReference'
+        listedHomes:
+          $ref: '#/components/schemas/MetricChangeValue'
+        priceCutHomes:
+          $ref: '#/components/schemas/MetricChangeValue'
+        recent30DayTransactions:
+          $ref: '#/components/schemas/MetricChangeValue'
+    MetricHistoryPoint:
+      type: object
+      required:
+        - id
+        - neighborhoodId
+        - algorithmVersion
+        - collectedAt
+        - calculatedAt
+        - latestObservedAt
+        - batch
+        - sourceIds
+        - listedHomes
+        - priceCutHomes
+        - transactionMomentum
+        - transactionEvidence
+        - listingSampleCount
+        - transactionSampleCount
+        - coverage
+        - freshness
+        - qualityState
+        - qualityWarnings
+        - weeklyComparison
+        - monthlyComparison
+      properties:
+        id:
+          type: string
+          format: uuid
+        neighborhoodId:
+          type: string
+          format: uuid
+        algorithmVersion:
+          type: string
+        collectedAt:
+          type: string
+          format: date-time
+        calculatedAt:
+          type: string
+          format: date-time
+        latestObservedAt:
+          type: string
+          format: date-time
+        batch:
+          $ref: '#/components/schemas/CollectionRunReference'
+        sourceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        listedHomes:
+          type: integer
+        priceCutHomes:
+          type: integer
+        transactionMomentum:
+          type: string
+          enum: [unknown, weak, stable, strong]
+        transactionEvidence:
+          $ref: '#/components/schemas/TransactionMomentumEvidence'
+        listingSampleCount:
+          type: integer
+        transactionSampleCount:
+          type: integer
+        coverage:
+          type: string
+          enum: [full, partial]
+        freshness:
+          type: string
+          enum: [unknown, current, stale, expired]
+        qualityState:
+          type: string
+          enum: [sufficient, low_confidence, insufficient_data]
+        qualityWarnings:
+          type: array
+          items:
+            type: string
+        weeklyComparison:
+          $ref: '#/components/schemas/MetricComparison'
+        monthlyComparison:
+          $ref: '#/components/schemas/MetricComparison'
+    MetricHistoryResponse:
+      type: object
+      required: [status, neighborhoodId, algorithmVersion, window, items]
+      properties:
+        status:
+          type: string
+          enum: [ready, empty]
+        neighborhoodId:
+          type: string
+          format: uuid
+        algorithmVersion:
+          type: string
+        window:
+          type: object
+          required: [from, to]
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricHistoryPoint'
     AddWatchlistItemRequest:
       type: object
       required: [neighborhoodId]
@@ -1043,6 +1303,14 @@ components:
         - priceCutHomes
         - transactionMomentum
         - advice
+        - hasMetric
+        - sourceIds
+        - collectedAt
+        - transactionSampleCount
+        - coverage
+        - freshness
+        - qualityState
+        - qualityWarnings
       properties:
         id:
           type: string
@@ -1056,16 +1324,48 @@ components:
           type: string
         status:
           type: string
-          enum: ["重点看", "继续观察", "适合砍价", "价格偏硬", "暂不建议追"]
+          enum: ["数据不足", "重点看", "继续观察", "适合砍价", "价格偏硬", "暂不建议追"]
         listedHomes:
           type: integer
         priceCutHomes:
           type: integer
         transactionMomentum:
           type: string
-          enum: [weak, stable, strong]
+          enum: [unknown, weak, stable, strong]
         advice:
           type: string
+        hasMetric:
+          type: boolean
+        collectionRunId:
+          type: string
+          format: uuid
+        algorithmVersion:
+          type: string
+        sourceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        collectedAt:
+          type: string
+          format: date-time
+          nullable: true
+        transactionSampleCount:
+          type: integer
+          minimum: 0
+        coverage:
+          type: string
+          enum: [unknown, full, partial]
+        freshness:
+          type: string
+          enum: [unknown, current, stale, expired]
+        qualityState:
+          type: string
+          enum: [sufficient, low_confidence, insufficient_data]
+        qualityWarnings:
+          type: array
+          items:
+            type: string
     ActionWindowResponse:
       type: object
       required: [action, confidence, summary, checklist, risks]

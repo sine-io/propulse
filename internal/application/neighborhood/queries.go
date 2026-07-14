@@ -2,6 +2,7 @@ package neighborhood
 
 import (
 	"context"
+	"time"
 
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
@@ -81,29 +82,48 @@ func (s *Service) ListWatchlist(ctx context.Context, query ListWatchlistQuery) (
 	for _, item := range items {
 		if !item.HasMetric {
 			summaries = append(summaries, WatchlistItemSummary{
-				ID:             item.ID,
-				NeighborhoodID: item.NeighborhoodID,
-				Name:           item.Name,
-				Area:           item.Area,
-				TargetLayout:   item.TargetLayout,
-				Status:         domainneighborhood.NeighborhoodStatusObserve,
-				Advice:         "暂无指标数据，等待导入或计算后再判断。",
+				ID:                  item.ID,
+				NeighborhoodID:      item.NeighborhoodID,
+				Name:                item.Name,
+				Area:                item.Area,
+				TargetLayout:        item.TargetLayout,
+				Status:              domainneighborhood.NeighborhoodStatusInsufficientData,
+				TransactionMomentum: domainneighborhood.TransactionMomentumUnknown,
+				Advice:              "暂无指标数据，等待导入或计算后再判断。",
+				HasMetric:           false,
+				SourceIDs:           []string{},
+				Coverage:            domainneighborhood.CoverageUnknown,
+				Freshness:           domainneighborhood.FreshnessUnknown,
+				QualityState:        domainneighborhood.MarketQualityInsufficientData,
+				QualityWarnings:     []domainneighborhood.QualityWarning{domainneighborhood.WarningMetricUnavailable},
 			})
 			continue
 		}
 
+		item.Metric = refreshMetricQuality(item.Metric, s.now())
 		signal := evaluateMetric(item.Name, item.Metric)
+		collectedAt := item.Metric.CollectedAt
 		summaries = append(summaries, WatchlistItemSummary{
-			ID:                  item.ID,
-			NeighborhoodID:      item.NeighborhoodID,
-			Name:                item.Name,
-			Area:                item.Area,
-			TargetLayout:        item.TargetLayout,
-			Status:              signal.Status,
-			ListedHomes:         item.Metric.ListedHomes,
-			PriceCutHomes:       item.Metric.PriceCutHomes,
-			TransactionMomentum: item.Metric.TransactionMomentum,
-			Advice:              signal.NextAction,
+			ID:                     item.ID,
+			NeighborhoodID:         item.NeighborhoodID,
+			Name:                   item.Name,
+			Area:                   item.Area,
+			TargetLayout:           item.TargetLayout,
+			Status:                 signal.Status,
+			ListedHomes:            item.Metric.ListedHomes,
+			PriceCutHomes:          item.Metric.PriceCutHomes,
+			TransactionMomentum:    item.Metric.TransactionMomentum,
+			Advice:                 signal.NextAction,
+			HasMetric:              true,
+			CollectionRunID:        item.Metric.CollectionRunID,
+			AlgorithmVersion:       item.Metric.AlgorithmVersion,
+			SourceIDs:              append([]string(nil), item.Metric.SourceIDs...),
+			CollectedAt:            &collectedAt,
+			TransactionSampleCount: item.Metric.TransactionSampleCount,
+			Coverage:               item.Metric.Coverage,
+			Freshness:              item.Metric.Freshness,
+			QualityState:           item.Metric.QualityState,
+			QualityWarnings:        append([]domainneighborhood.QualityWarning(nil), item.Metric.QualityWarnings...),
 		})
 	}
 
@@ -119,11 +139,28 @@ func (s *Service) LatestMetric(ctx context.Context, query LatestMetricQuery) (Me
 	if err != nil {
 		return MetricWithSignal{}, err
 	}
+	metric = refreshMetricQuality(metric, s.now())
 
 	return MetricWithSignal{
 		Metric: metric,
 		Signal: evaluateMetric("", metric),
 	}, nil
+}
+
+func refreshMetricQuality(metric MetricSnapshot, now time.Time) MetricSnapshot {
+	quality := domainneighborhood.AssessQuality(domainneighborhood.QualityInput{
+		Now:                    now,
+		InventoryCollectedAt:   metric.InventoryCollectedAt,
+		LatestCoverage:         metric.Coverage,
+		HasFullInventory:       metric.InventoryCollectionRunID != nil,
+		ListingSampleCount:     metric.ListingSampleCount,
+		TransactionSampleCount: metric.TransactionSampleCount,
+	})
+	metric.Coverage = quality.Coverage
+	metric.Freshness = quality.Freshness
+	metric.QualityState = quality.State
+	metric.QualityWarnings = quality.Warnings
+	return metric
 }
 
 func evaluateMetric(name string, metric MetricSnapshot) domainneighborhood.SignalResult {

@@ -122,6 +122,27 @@ func TestEvaluateSignalFailsClosedWithoutQualityAfterTrustedMetricCutover(t *tes
 	}
 }
 
+func TestEvaluateSignalTreatsUnknownTransactionMomentumAsInsufficient(t *testing.T) {
+	result := EvaluateSignal(SignalInput{
+		ListingPriceRange:     PriceRange{Min: 520, Max: 620},
+		TransactionPriceRange: PriceRange{Min: 495, Max: 545},
+		ListedHomes:           42,
+		ListedHomesChangePct:  18,
+		PriceCutHomes:         11,
+		AvgDaysOnMarket:       78,
+		TransactionMomentum:   TransactionMomentumUnknown,
+		TargetLayoutSupply:    12,
+		Quality:               sufficientQuality(),
+	})
+
+	if result.Status != NeighborhoodStatusInsufficientData || result.SupplyPressure != SupplyPressureUnknown || result.TargetLayoutScarcity != ScarcityUnknown {
+		t.Fatalf("result = %#v", result)
+	}
+	if !containsQualityWarning(result.Warnings, WarningInsufficientTransactions) {
+		t.Fatalf("warnings = %#v, want insufficient transactions", result.Warnings)
+	}
+}
+
 func sufficientQuality() QualityAssessment {
 	return QualityAssessment{
 		Coverage:     CoverageFull,

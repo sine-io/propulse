@@ -45,6 +45,7 @@ func TestAccessProtectionContract(t *testing.T) {
 		{path: "/api/v1/neighborhoods", method: "post", protected: true},
 		{path: "/api/v1/neighborhoods/{id}", method: "get"},
 		{path: "/api/v1/neighborhoods/{id}/metrics", method: "get"},
+		{path: "/api/v1/neighborhoods/{id}/metrics/history", method: "get"},
 		{path: "/api/v1/watchlist/items", method: "post", protected: true},
 		{path: "/api/v1/watchlist", method: "get", protected: true},
 		{path: "/api/v1/decision/action-window", method: "get", protected: true},
@@ -93,6 +94,54 @@ func TestAccessProtectionContract(t *testing.T) {
 	if importResponses := requiredMap(t, importOperation, "responses"); hasKey(importResponses, "403") {
 		t.Fatal("admin import operation must not retain the obsolete 403 response")
 	}
+}
+
+func TestMetricHistoryAndQualityContracts(t *testing.T) {
+	spec := loadOpenAPI(t)
+	components := requiredMap(t, spec, "components")
+	schemas := requiredMap(t, components, "schemas")
+	paths := requiredMap(t, spec, "paths")
+
+	latest := requiredMap(t, schemas, "NeighborhoodMetricResponse")
+	assertRequiredFields(t, latest, []string{"collectedAt", "algorithmVersion", "transactionEvidence", "calculatedAt"})
+	assertRequiredFields(t, requiredMap(t, schemas, "TransactionMomentumEvidence"), []string{
+		"windowStart", "windowEnd", "sampleCount", "recent30DayTransactionCount",
+		"preceding60DayTransactionCount", "recent30DayMonthlyFrequency", "preceding60DayMonthlyFrequency",
+	})
+
+	historyOperation := requiredMap(t, requiredMap(t, paths, "/api/v1/neighborhoods/{id}/metrics/history"), "get")
+	if got := requiredString(t, responseJSONSchema(t, historyOperation, "200"), "$ref"); got != "#/components/schemas/MetricHistoryResponse" {
+		t.Fatalf("history response schema = %q", got)
+	}
+	assertRequiredFields(t, requiredMap(t, schemas, "MetricHistoryResponse"), []string{"status", "neighborhoodId", "algorithmVersion", "window", "items"})
+	assertRequiredFields(t, requiredMap(t, schemas, "MetricHistoryPoint"), []string{"batch", "collectedAt", "calculatedAt", "weeklyComparison", "monthlyComparison"})
+	assertRequiredFields(t, requiredMap(t, schemas, "MetricComparison"), []string{"status", "currentBatch"})
+	assertRequiredFields(t, requiredMap(t, schemas, "MetricChangeValue"), []string{"absoluteChange", "percentageChange", "percentageStatus"})
+
+	watchlist := requiredMap(t, schemas, "WatchlistItem")
+	assertRequiredFields(t, watchlist, []string{"hasMetric", "collectedAt", "transactionSampleCount", "coverage", "freshness", "qualityState", "qualityWarnings", "sourceIds"})
+	watchlistProperties := requiredMap(t, watchlist, "properties")
+	assertStringEnumContains(t, requiredMap(t, watchlistProperties, "transactionMomentum"), "unknown")
+	assertStringEnumContains(t, requiredMap(t, watchlistProperties, "status"), "数据不足")
+
+	actionResponses := requiredMap(t, requiredMap(t, requiredMap(t, paths, "/api/v1/decision/action-window"), "get"), "responses")
+	if _, ok := actionResponses["409"]; !ok {
+		t.Fatal("action-window contract is missing metric stale/insufficient response")
+	}
+}
+
+func assertStringEnumContains(t *testing.T, schema map[string]interface{}, want string) {
+	t.Helper()
+	values, ok := schema["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("enum = %#v, want list", schema["enum"])
+	}
+	for _, value := range values {
+		if value == want {
+			return
+		}
+	}
+	t.Fatalf("enum = %#v, missing %q", values, want)
 }
 
 func TestCapacityCalculationContract(t *testing.T) {

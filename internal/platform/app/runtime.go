@@ -95,13 +95,13 @@ func openRuntime(ctx context.Context, cfg config.Config, _ zerolog.Logger) (*run
 	rt.queueClient = queueClient
 
 	capacityRepo := postgresgorm.NewCapacityRepository(gormDB)
-	metricRepo := sqlmetric.NewRepository(pgxPool)
+	metricRepo := sqlmetric.NewRepository(pgxPool, cfg.MetricAlgorithmVersion)
 	neighborhoodRepo := postgresgorm.NewNeighborhoodRepositoryWithMetricReader(gormDB, metricRepo)
 	collectionRepo := postgresgorm.NewCollectionRepository(gormDB)
 
 	rt.capacity = appcapacity.NewService(capacityRepo, cfg.CapacityAssumptions, time.Now, nil)
 	rt.metric = appmetric.NewService(metricRepo, cfg.MetricAlgorithmVersion)
-	rt.neighborhood = appneighborhood.NewService(neighborhoodRepo)
+	rt.neighborhood = appneighborhood.NewServiceWithMetricConfig(neighborhoodRepo, cfg.MetricAlgorithmVersion, time.Now)
 	rt.collection = appcollection.NewServiceWithMetricRefresh(collectionRepo, time.Now, nil, rt.metric, rt.enqueuer, cfg.MetricAlgorithmVersion)
 	rt.decision = appdecision.NewService(rt.capacity, rt.neighborhood, cfg.UserID)
 
