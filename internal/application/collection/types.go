@@ -201,6 +201,12 @@ type MetricRefreshCandidate struct {
 	NeighborhoodID  string
 }
 
+type MetricRefreshCandidateFilter struct {
+	AlgorithmVersion string
+	UpdatedBefore    time.Time
+	Limit            int
+}
+
 type ListMetricRefreshCandidatesQuery struct {
 	UpdatedBefore time.Time
 	Limit         int

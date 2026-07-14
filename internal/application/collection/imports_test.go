@@ -10,6 +10,8 @@ import (
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
+const testMetricAlgorithmVersion = "market-metrics/test.1"
+
 const (
 	testSourceID       = "11111111-1111-1111-1111-111111111111"
 	testNeighborhoodID = "22222222-2222-2222-2222-222222222222"
@@ -18,7 +20,7 @@ const (
 func TestCreateDataSourceNormalizesAndPersists(t *testing.T) {
 	repo := newFakeRepository()
 	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
-	service := NewService(repo, func() time.Time { return now }, func() string { return testSourceID })
+	service := NewService(repo, func() time.Time { return now }, func() string { return testSourceID }, testMetricAlgorithmVersion)
 
 	source, err := service.CreateDataSource(context.Background(), CreateDataSourceCommand{
 		Name: "  链家手工导入  ", SourceType: " manual_json ", City: " 杭州 ", Notes: " 每周导出 ",
@@ -36,7 +38,7 @@ func TestCreateDataSourceNormalizesAndPersists(t *testing.T) {
 
 func TestCreateDataSourceRejectsInvalidFieldsWithoutWrite(t *testing.T) {
 	repo := newFakeRepository()
-	service := NewService(repo, fixedCollectionClock, nil)
+	service := NewService(repo, fixedCollectionClock, nil, testMetricAlgorithmVersion)
 
 	_, err := service.CreateDataSource(context.Background(), CreateDataSourceCommand{SourceType: "INVALID TYPE"})
 	var validationErr *ValidationError
@@ -51,7 +53,7 @@ func TestCreateDataSourceRejectsInvalidFieldsWithoutWrite(t *testing.T) {
 func TestImportCollectionRunPersistsNormalizedBatchAndRefreshesExactRun(t *testing.T) {
 	repo := newFakeRepository()
 	calculator := &fakeMetricCalculator{}
-	service := NewServiceWithMetricRefresh(repo, fixedCollectionClock, nil, calculator, nil)
+	service := NewServiceWithMetricRefresh(repo, fixedCollectionClock, nil, calculator, nil, testMetricAlgorithmVersion)
 	command := validImportCommand()
 	command.CollectedAt = fixedCollectionClock().Add(-24 * time.Hour)
 
@@ -78,7 +80,7 @@ func TestImportCollectionRunPersistsNormalizedBatchAndRefreshesExactRun(t *testi
 
 func TestImportCollectionRunRejectsInvalidRecordWithoutWrite(t *testing.T) {
 	repo := newFakeRepository()
-	service := NewService(repo, fixedCollectionClock, nil)
+	service := NewService(repo, fixedCollectionClock, nil, testMetricAlgorithmVersion)
 	command := validImportCommand()
 	command.Records[0].ListingPrice = nil
 
@@ -104,7 +106,7 @@ func TestImportCollectionRunReturnsSelectionErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			repo := newFakeRepository()
 			test.configure(repo)
-			_, err := NewService(repo, fixedCollectionClock, nil).ImportCollectionRun(context.Background(), validImportCommand())
+			_, err := NewService(repo, fixedCollectionClock, nil, testMetricAlgorithmVersion).ImportCollectionRun(context.Background(), validImportCommand())
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
@@ -116,7 +118,7 @@ func TestImportCollectionRunKeepsDurableRunAndQueuesRepairWhenRefreshFails(t *te
 	repo := newFakeRepository()
 	calculator := &fakeMetricCalculator{err: errors.New("calculation failed")}
 	repair := &fakeMetricRepair{}
-	service := NewServiceWithMetricRefresh(repo, fixedCollectionClock, nil, calculator, repair)
+	service := NewServiceWithMetricRefresh(repo, fixedCollectionClock, nil, calculator, repair, testMetricAlgorithmVersion)
 
 	result, err := service.ImportCollectionRun(context.Background(), validImportCommand())
 	if err != nil {
@@ -134,7 +136,7 @@ func TestImportCollectionRunReportsReplayAndRetriesMetric(t *testing.T) {
 	repo := newFakeRepository()
 	repo.created = false
 	calculator := &fakeMetricCalculator{}
-	result, err := NewServiceWithMetricRefresh(repo, fixedCollectionClock, nil, calculator, nil).
+	result, err := NewServiceWithMetricRefresh(repo, fixedCollectionClock, nil, calculator, nil, testMetricAlgorithmVersion).
 		ImportCollectionRun(context.Background(), validImportCommand())
 	if err != nil {
 		t.Fatalf("ImportCollectionRun() error = %v", err)
@@ -148,7 +150,7 @@ func TestListAndGetCollectionRunsUseRepositoryQueries(t *testing.T) {
 	repo := newFakeRepository()
 	repo.sources = []DataSource{{ID: testSourceID}}
 	repo.detail = CollectionRunDetail{Run: CollectionRun{ID: "33333333-3333-3333-3333-333333333333"}}
-	service := NewService(repo, fixedCollectionClock, nil)
+	service := NewService(repo, fixedCollectionClock, nil, testMetricAlgorithmVersion)
 
 	sources, err := service.ListDataSources(context.Background(), ListDataSourcesQuery{})
 	if err != nil || len(sources) != 1 {
@@ -163,13 +165,13 @@ func TestListAndGetCollectionRunsUseRepositoryQueries(t *testing.T) {
 func TestListMetricRefreshCandidatesNormalizesQuery(t *testing.T) {
 	repo := newFakeRepository()
 	repo.refreshCandidates = []MetricRefreshCandidate{{CollectionRunID: "run_1", NeighborhoodID: testNeighborhoodID}}
-	service := NewService(repo, fixedCollectionClock, nil)
+	service := NewService(repo, fixedCollectionClock, nil, testMetricAlgorithmVersion)
 
 	candidates, err := service.ListMetricRefreshCandidates(context.Background(), ListMetricRefreshCandidatesQuery{})
 	if err != nil {
 		t.Fatalf("ListMetricRefreshCandidates() error = %v", err)
 	}
-	if len(candidates) != 1 || repo.refreshLimit != defaultMetricRefreshCandidateLimit || !repo.refreshUpdatedBefore.Equal(fixedCollectionClock()) {
+	if len(candidates) != 1 || repo.refreshLimit != defaultMetricRefreshCandidateLimit || !repo.refreshUpdatedBefore.Equal(fixedCollectionClock()) || repo.refreshAlgorithmVersion != testMetricAlgorithmVersion {
 		t.Fatalf("candidates/query = %#v, before=%v limit=%d", candidates, repo.refreshUpdatedBefore, repo.refreshLimit)
 	}
 
@@ -201,19 +203,20 @@ func fixedCollectionClock() time.Time {
 }
 
 type fakeRepository struct {
-	sourceExists         bool
-	neighborhoodExists   bool
-	created              bool
-	sources              []DataSource
-	detail               CollectionRunDetail
-	saved                ImportBatch
-	updatedStatus        MetricStatus
-	refreshCandidates    []MetricRefreshCandidate
-	refreshUpdatedBefore time.Time
-	refreshLimit         int
-	createSourceCalls    int
-	sourceExistsCalls    int
-	saveCalls            int
+	sourceExists            bool
+	neighborhoodExists      bool
+	created                 bool
+	sources                 []DataSource
+	detail                  CollectionRunDetail
+	saved                   ImportBatch
+	updatedStatus           MetricStatus
+	refreshCandidates       []MetricRefreshCandidate
+	refreshUpdatedBefore    time.Time
+	refreshLimit            int
+	refreshAlgorithmVersion string
+	createSourceCalls       int
+	sourceExistsCalls       int
+	saveCalls               int
 }
 
 func newFakeRepository() *fakeRepository {
@@ -242,9 +245,10 @@ func (r *fakeRepository) SaveCollectionRun(_ context.Context, batch ImportBatch)
 func (r *fakeRepository) GetCollectionRun(context.Context, string) (CollectionRunDetail, error) {
 	return r.detail, nil
 }
-func (r *fakeRepository) ListMetricRefreshCandidates(_ context.Context, updatedBefore time.Time, limit int) ([]MetricRefreshCandidate, error) {
-	r.refreshUpdatedBefore = updatedBefore
-	r.refreshLimit = limit
+func (r *fakeRepository) ListMetricRefreshCandidates(_ context.Context, filter MetricRefreshCandidateFilter) ([]MetricRefreshCandidate, error) {
+	r.refreshUpdatedBefore = filter.UpdatedBefore
+	r.refreshLimit = filter.Limit
+	r.refreshAlgorithmVersion = filter.AlgorithmVersion
 	return r.refreshCandidates, nil
 }
 func (r *fakeRepository) UpdateMetricStatus(_ context.Context, _ string, status MetricStatus) error {

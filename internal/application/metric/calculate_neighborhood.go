@@ -3,25 +3,30 @@ package metric
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
 type Service struct {
-	repo Repository
-	now  func() time.Time
+	repo             Repository
+	algorithmVersion string
+	now              func() time.Time
 }
 
-func NewService(repo Repository) *Service {
-	return NewServiceWithClock(repo, time.Now)
+func NewService(repo Repository, algorithmVersion string) *Service {
+	return NewServiceWithClock(repo, algorithmVersion, time.Now)
 }
 
-func NewServiceWithClock(repo Repository, now func() time.Time) *Service {
-	return &Service{repo: repo, now: now}
+func NewServiceWithClock(repo Repository, algorithmVersion string, now func() time.Time) *Service {
+	return &Service{repo: repo, algorithmVersion: strings.TrimSpace(algorithmVersion), now: now}
 }
 
 func (s *Service) CalculateCollectionRun(ctx context.Context, command CalculateCollectionRunCommand) error {
+	if s.algorithmVersion == "" {
+		return ErrInvalidAlgorithmVersion
+	}
 	neighborhood, err := s.repo.GetNeighborhood(ctx, command.NeighborhoodID)
 	if err != nil {
 		return err
@@ -43,6 +48,14 @@ func (s *Service) CalculateCollectionRun(ctx context.Context, command CalculateC
 	if err != nil {
 		return err
 	}
+	evidence := domainneighborhood.NewTransactionMomentumEvidence(
+		run.CollectedAt,
+		aggregate.LastThirtyDayTransactionCount,
+		aggregate.PrecedingSixtyDayTransactionCount,
+	)
+	if aggregate.TransactionSampleCount != evidence.SampleCount {
+		return ErrInconsistentTransactionEvidence
+	}
 
 	quality := domainneighborhood.AssessQuality(domainneighborhood.QualityInput{
 		Now:                    s.now(),
@@ -50,12 +63,13 @@ func (s *Service) CalculateCollectionRun(ctx context.Context, command CalculateC
 		LatestCoverage:         aggregate.Coverage,
 		HasFullInventory:       aggregate.InventoryCollectionRunID != nil,
 		ListingSampleCount:     aggregate.ListingSampleCount,
-		TransactionSampleCount: aggregate.TransactionSampleCount,
+		TransactionSampleCount: evidence.SampleCount,
 	})
 
 	snapshot := MetricSnapshot{
 		NeighborhoodID:           run.NeighborhoodID,
 		CollectionRunID:          run.ID,
+		AlgorithmVersion:         s.algorithmVersion,
 		InventoryCollectionRunID: aggregate.InventoryCollectionRunID,
 		SourceIDs:                aggregate.SourceIDs,
 		LatestObservedAt:         aggregate.LatestObservedAt,
@@ -66,10 +80,11 @@ func (s *Service) CalculateCollectionRun(ctx context.Context, command CalculateC
 		ListingPriceMax:          aggregate.ListingPriceMax,
 		TransactionPriceMin:      aggregate.TransactionPriceMin,
 		TransactionPriceMax:      aggregate.TransactionPriceMax,
-		TransactionMomentum:      calculateTransactionMomentum(aggregate.TransactionSampleCount, aggregate.LastThirtyDayTransactionCount, aggregate.PrecedingSixtyDayTransactionCount),
+		TransactionMomentum:      domainneighborhood.CalculateTransactionMomentum(evidence),
+		TransactionEvidence:      &evidence,
 		TargetLayoutSupply:       aggregate.TargetLayoutSupply,
 		ListingSampleCount:       aggregate.ListingSampleCount,
-		TransactionSampleCount:   aggregate.TransactionSampleCount,
+		TransactionSampleCount:   evidence.SampleCount,
 		Coverage:                 quality.Coverage,
 		Freshness:                quality.Freshness,
 		InventoryCollectedAt:     aggregate.InventoryCollectedAt,
@@ -97,18 +112,4 @@ func (s *Service) resolveCollectionRun(ctx context.Context, command CalculateCol
 		return CompletedCollectionRun{}, ErrCollectionRunNotFound
 	}
 	return run, err
-}
-
-func calculateTransactionMomentum(sampleCount, lastThirty, precedingSixty int) domainneighborhood.TransactionMomentum {
-	if sampleCount < 3 {
-		return domainneighborhood.TransactionMomentumUnknown
-	}
-	baseline := float64(precedingSixty) / 2
-	if float64(lastThirty) > baseline*1.2 {
-		return domainneighborhood.TransactionMomentumStrong
-	}
-	if float64(lastThirty) < baseline*0.8 {
-		return domainneighborhood.TransactionMomentumWeak
-	}
-	return domainneighborhood.TransactionMomentumStable
 }

@@ -261,7 +261,7 @@ func TestCollectionRepositoryConcurrentDuplicateImportsCreateOneRun(t *testing.T
 	assertCollectionRepositoryRowCount(t, ctx, db, &CollectionRunModel{}, "data_source_id = ? AND source_ref = ? AND content_checksum = ?", 1, source.ID, batch.Run.SourceRef, batch.Run.ContentChecksum)
 }
 
-func TestCollectionRepositoryListsOnlyStaleIncompleteMetricRuns(t *testing.T) {
+func TestCollectionRepositoryListsRunsMissingCurrentMetricVersionAndRetriesFailures(t *testing.T) {
 	ctx, db, repo := openCollectionRepositoryTest(t)
 	source, neighborhood := createCollectionRepositoryFixtures(t, ctx, repo, db)
 	batch := collectionRepositoryBatch(source.ID, neighborhood.ID)
@@ -274,7 +274,9 @@ func TestCollectionRepositoryListsOnlyStaleIncompleteMetricRuns(t *testing.T) {
 		t.Fatalf("age collection run: %v", err)
 	}
 
-	candidates, err := repo.ListMetricRefreshCandidates(ctx, staleAt.Add(time.Minute), 1)
+	const algorithmVersion = "market-metrics/test.1"
+	filter := appcollection.MetricRefreshCandidateFilter{AlgorithmVersion: algorithmVersion, UpdatedBefore: staleAt.Add(time.Minute), Limit: 1}
+	candidates, err := repo.ListMetricRefreshCandidates(ctx, filter)
 	if err != nil {
 		t.Fatalf("ListMetricRefreshCandidates() error = %v", err)
 	}
@@ -285,15 +287,57 @@ func TestCollectionRepositoryListsOnlyStaleIncompleteMetricRuns(t *testing.T) {
 	if err := repo.UpdateMetricStatus(ctx, result.Run.ID, appcollection.MetricStatusCompleted); err != nil {
 		t.Fatalf("UpdateMetricStatus() error = %v", err)
 	}
-	candidates, err = repo.ListMetricRefreshCandidates(ctx, time.Now().UTC().Add(time.Hour), 500)
+	filter.UpdatedBefore = time.Now().UTC().Add(time.Hour)
+	filter.Limit = 500
+	candidates, err = repo.ListMetricRefreshCandidates(ctx, filter)
 	if err != nil {
-		t.Fatalf("ListMetricRefreshCandidates(completed) error = %v", err)
+		t.Fatalf("ListMetricRefreshCandidates(missing version) error = %v", err)
 	}
+	if !containsMetricRefreshCandidate(candidates, result.Run.ID) {
+		t.Fatalf("completed run without current algorithm version was not selected: %#v", candidates)
+	}
+
+	if err := db.WithContext(ctx).Exec(`
+INSERT INTO neighborhood_metrics (
+  neighborhood_id, listed_homes, price_cut_homes, transaction_momentum,
+  target_layout_supply, collection_run_id, source_ids, listing_sample_count,
+  transaction_sample_count, coverage, freshness, quality_state, latest_observed_at,
+  algorithm_version, transaction_window_start, transaction_window_end,
+  recent_30_day_transaction_count, preceding_60_day_transaction_count,
+  recent_30_day_monthly_frequency, preceding_60_day_monthly_frequency
+) VALUES (?, 5, 1, 'stable', 2, ?, '[]'::jsonb, 5, 3, 'full', 'current',
+  'sufficient', ?, ?, '2026-04-15', '2026-07-14', 1, 2, 1, 1)`,
+		neighborhood.ID, result.Run.ID, result.Run.CollectedAt, algorithmVersion,
+	).Error; err != nil {
+		t.Fatalf("insert current metric: %v", err)
+	}
+	candidates, err = repo.ListMetricRefreshCandidates(ctx, filter)
+	if err != nil {
+		t.Fatalf("ListMetricRefreshCandidates(current complete) error = %v", err)
+	}
+	if containsMetricRefreshCandidate(candidates, result.Run.ID) {
+		t.Fatalf("completed run with current metric remained a candidate: %#v", candidates)
+	}
+
+	if err := repo.UpdateMetricStatus(ctx, result.Run.ID, appcollection.MetricStatusFailed); err != nil {
+		t.Fatalf("mark metric failed: %v", err)
+	}
+	candidates, err = repo.ListMetricRefreshCandidates(ctx, filter)
+	if err != nil {
+		t.Fatalf("ListMetricRefreshCandidates(failed) error = %v", err)
+	}
+	if !containsMetricRefreshCandidate(candidates, result.Run.ID) {
+		t.Fatalf("failed run was not retried: %#v", candidates)
+	}
+}
+
+func containsMetricRefreshCandidate(candidates []appcollection.MetricRefreshCandidate, runID string) bool {
 	for _, candidate := range candidates {
-		if candidate.CollectionRunID == result.Run.ID {
-			t.Fatalf("completed run remained a repair candidate: %#v", candidate)
+		if candidate.CollectionRunID == runID {
+			return true
 		}
 	}
+	return false
 }
 
 func openCollectionRepositoryTest(t *testing.T) (context.Context, *gorm.DB, *CollectionRepository) {

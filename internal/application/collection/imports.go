@@ -22,18 +22,19 @@ type Service struct {
 	repo             Repository
 	metricCalculator MetricCalculator
 	metricRepair     MetricRepairEnqueuer
+	algorithmVersion string
 	now              func() time.Time
 	newID            func() string
 }
 
-func NewService(repo Repository, now func() time.Time, newID func() string) *Service {
+func NewService(repo Repository, now func() time.Time, newID func() string, algorithmVersion string) *Service {
 	if now == nil {
 		now = time.Now
 	}
 	if newID == nil {
 		newID = uuid.NewString
 	}
-	return &Service{repo: repo, now: now, newID: newID}
+	return &Service{repo: repo, now: now, newID: newID, algorithmVersion: strings.TrimSpace(algorithmVersion)}
 }
 
 func NewServiceWithMetricRefresh(
@@ -42,8 +43,9 @@ func NewServiceWithMetricRefresh(
 	newID func() string,
 	calculator MetricCalculator,
 	repair MetricRepairEnqueuer,
+	algorithmVersion string,
 ) *Service {
-	service := NewService(repo, now, newID)
+	service := NewService(repo, now, newID, algorithmVersion)
 	service.metricCalculator = calculator
 	service.metricRepair = repair
 	return service
@@ -97,7 +99,14 @@ func (s *Service) ListMetricRefreshCandidates(ctx context.Context, query ListMet
 	if limit < 0 || limit > maxMetricRefreshCandidateLimit {
 		return nil, ErrInvalidRequest
 	}
-	return s.repo.ListMetricRefreshCandidates(ctx, updatedBefore, limit)
+	if s.algorithmVersion == "" {
+		return nil, ErrInvalidRequest
+	}
+	return s.repo.ListMetricRefreshCandidates(ctx, MetricRefreshCandidateFilter{
+		AlgorithmVersion: s.algorithmVersion,
+		UpdatedBefore:    updatedBefore,
+		Limit:            limit,
+	})
 }
 
 func (s *Service) ImportCollectionRun(ctx context.Context, command ImportCollectionRunCommand) (ImportCollectionRunResult, error) {

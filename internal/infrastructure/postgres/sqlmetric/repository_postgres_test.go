@@ -75,16 +75,54 @@ func TestRepositoryAggregateCollectionRunUsesTransactionsWithinNinetyDays(t *tes
 	neighborhoodID, sourceID := createMetricFixtures(t, ctx, db)
 	triggerAt := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
 	run := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, triggerAt, "full")
-	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-10", 500, triggerAt.AddDate(0, 0, -10))
-	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-45", 520, triggerAt.AddDate(0, 0, -45))
+	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-end", 500, triggerAt)
+	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-29", 510, triggerAt.AddDate(0, 0, -29))
+	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-30", 520, triggerAt.AddDate(0, 0, -30))
+	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-90", 530, triggerAt.AddDate(0, 0, -90))
 	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-91", 540, triggerAt.AddDate(0, 0, -91))
+	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-future", 550, triggerAt.AddDate(0, 0, 1))
 
 	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: run.id, TargetLayout: "三房"})
 	if err != nil {
 		t.Fatalf("AggregateMarketObservations() error = %v", err)
 	}
-	if got.TransactionSampleCount != 2 || got.LastThirtyDayTransactionCount != 1 || got.PrecedingSixtyDayTransactionCount != 1 {
-		t.Fatalf("transaction windows = sample %d last30 %d prev60 %d, want 2/1/1", got.TransactionSampleCount, got.LastThirtyDayTransactionCount, got.PrecedingSixtyDayTransactionCount)
+	if got.TransactionSampleCount != 4 || got.LastThirtyDayTransactionCount != 2 || got.PrecedingSixtyDayTransactionCount != 2 {
+		t.Fatalf("transaction windows = sample %d last30 %d prev60 %d, want 4/2/2", got.TransactionSampleCount, got.LastThirtyDayTransactionCount, got.PrecedingSixtyDayTransactionCount)
+	}
+}
+
+func TestRepositoryAggregateCollectionRunDeduplicatesTransactionsWithinSource(t *testing.T) {
+	ctx, db, repo := openSQLMetricPostgresTest(t)
+	neighborhoodID, sourceA := createMetricFixtures(t, ctx, db)
+	sourceB := insertMetricSource(t, ctx, db)
+	triggerAt := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
+	oldRun := insertMetricRun(t, ctx, db, sourceA, neighborhoodID, triggerAt.Add(-48*time.Hour), "full")
+	otherSourceRun := insertMetricRun(t, ctx, db, sourceB, neighborhoodID, triggerAt.Add(-24*time.Hour), "partial")
+	triggerRun := insertMetricRun(t, ctx, db, sourceA, neighborhoodID, triggerAt, "full")
+	insertMetricTransaction(t, ctx, db, oldRun, neighborhoodID, "same-record", 500, triggerAt.AddDate(0, 0, -20))
+	insertMetricTransaction(t, ctx, db, triggerRun, neighborhoodID, "same-record", 510, triggerAt.AddDate(0, 0, -10))
+	insertMetricTransaction(t, ctx, db, otherSourceRun, neighborhoodID, "same-record", 520, triggerAt.AddDate(0, 0, -5))
+
+	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: triggerRun.id, TargetLayout: "三房"})
+	if err != nil {
+		t.Fatalf("AggregateMarketObservations() error = %v", err)
+	}
+	if got.TransactionSampleCount != 2 || got.LastThirtyDayTransactionCount != 2 || got.TransactionPriceMin == nil || *got.TransactionPriceMin != 510 {
+		t.Fatalf("deduplicated transactions = %#v, want two latest source-scoped records", got)
+	}
+}
+
+func TestRepositoryAggregateCollectionRunReturnsZeroTransactionEvidence(t *testing.T) {
+	ctx, db, repo := openSQLMetricPostgresTest(t)
+	neighborhoodID, sourceID := createMetricFixtures(t, ctx, db)
+	run := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC), "full")
+
+	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: run.id, TargetLayout: "三房"})
+	if err != nil {
+		t.Fatalf("AggregateMarketObservations() error = %v", err)
+	}
+	if got.TransactionSampleCount != 0 || got.LastThirtyDayTransactionCount != 0 || got.PrecedingSixtyDayTransactionCount != 0 {
+		t.Fatalf("zero transaction evidence = %#v", got)
 	}
 }
 
@@ -96,10 +134,12 @@ func TestRepositoryUpsertNeighborhoodMetricPersistsProvenance(t *testing.T) {
 	minPrice := 500.0
 	maxPrice := 650.0
 	inventoryAt := run.collectedAt
+	evidence := domainneighborhood.NewTransactionMomentumEvidence(run.collectedAt, 1, 2)
 
 	got, err := repo.UpsertNeighborhoodMetric(ctx, appmetric.MetricSnapshot{
 		NeighborhoodID:           neighborhoodID,
 		CollectionRunID:          run.id,
+		AlgorithmVersion:         "market-metrics/test.1",
 		InventoryCollectionRunID: &run.id,
 		SourceIDs:                []string{sourceID},
 		LatestObservedAt:         run.collectedAt,
@@ -111,6 +151,7 @@ func TestRepositoryUpsertNeighborhoodMetricPersistsProvenance(t *testing.T) {
 		TransactionPriceMin:      &minPrice,
 		TransactionPriceMax:      &maxPrice,
 		TransactionMomentum:      domainneighborhood.TransactionMomentumStable,
+		TransactionEvidence:      &evidence,
 		TargetLayoutSupply:       2,
 		ListingSampleCount:       6,
 		TransactionSampleCount:   3,
@@ -125,6 +166,38 @@ func TestRepositoryUpsertNeighborhoodMetricPersistsProvenance(t *testing.T) {
 	if got.CollectionRunID != run.id || got.InventoryCollectionRunID == nil || *got.InventoryCollectionRunID != run.id || got.QualityState != domainneighborhood.MarketQualitySufficient {
 		t.Fatalf("persisted provenance = %#v", got)
 	}
+	if got.AlgorithmVersion != "market-metrics/test.1" || got.TransactionEvidence == nil || got.TransactionEvidence.PrecedingSixtyDayMonthlyFrequency != 1 {
+		t.Fatalf("persisted version/evidence = %#v", got)
+	}
+}
+
+func TestRepositoryMetricWriteIsIdempotentPerVersionAndPreservesHistory(t *testing.T) {
+	ctx, db, repo := openSQLMetricPostgresTest(t)
+	neighborhoodID, sourceID := createMetricFixtures(t, ctx, db)
+	run := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC), "full")
+	snapshot := minimalMetricSnapshot(neighborhoodID, run.id, sourceID, run.collectedAt, 5, "market-metrics/test.1")
+
+	first, err := repo.UpsertNeighborhoodMetric(ctx, snapshot)
+	if err != nil {
+		t.Fatalf("first UpsertNeighborhoodMetric() error = %v", err)
+	}
+	snapshot.ListedHomes = 999
+	retry, err := repo.UpsertNeighborhoodMetric(ctx, snapshot)
+	if err != nil {
+		t.Fatalf("retry UpsertNeighborhoodMetric() error = %v", err)
+	}
+	if retry.ID != first.ID || retry.ListedHomes != first.ListedHomes || !retry.CalculatedAt.Equal(first.CalculatedAt) {
+		t.Fatalf("same-version retry changed history: first=%#v retry=%#v", first, retry)
+	}
+
+	snapshot.AlgorithmVersion = "market-metrics/test.2"
+	upgraded, err := repo.UpsertNeighborhoodMetric(ctx, snapshot)
+	if err != nil {
+		t.Fatalf("upgraded UpsertNeighborhoodMetric() error = %v", err)
+	}
+	if upgraded.ID == first.ID || upgraded.AlgorithmVersion != "market-metrics/test.2" {
+		t.Fatalf("upgraded metric = %#v, first=%#v", upgraded, first)
+	}
 }
 
 func TestRepositoryLatestMetricMapsProvenance(t *testing.T) {
@@ -132,8 +205,8 @@ func TestRepositoryLatestMetricMapsProvenance(t *testing.T) {
 	neighborhoodID, sourceID := createMetricFixtures(t, ctx, db)
 	oldRun := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC), "full")
 	newRun := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC), "full")
-	upsertMinimalMetric(t, ctx, repo, neighborhoodID, oldRun.id, sourceID, 1)
-	upsertMinimalMetric(t, ctx, repo, neighborhoodID, newRun.id, sourceID, 2)
+	upsertMinimalMetric(t, ctx, repo, neighborhoodID, oldRun, sourceID, 1)
+	upsertMinimalMetric(t, ctx, repo, neighborhoodID, newRun, sourceID, 2)
 
 	got, err := repo.LatestMetric(ctx, neighborhoodID)
 	if err != nil {
@@ -142,6 +215,9 @@ func TestRepositoryLatestMetricMapsProvenance(t *testing.T) {
 	if got.CollectionRunID != newRun.id || got.ListedHomes != 2 || got.Coverage != domainneighborhood.CoverageFull {
 		t.Fatalf("LatestMetric() = %#v, want newest trigger run", got)
 	}
+	if got.AlgorithmVersion != "market-metrics/test.1" || got.TransactionEvidence == nil || got.TransactionEvidence.SampleCount != 3 {
+		t.Fatalf("LatestMetric() lost versioned transaction evidence: %#v", got)
+	}
 }
 
 func TestRepositoryMetricHistoryOrdersSnapshotsChronologically(t *testing.T) {
@@ -149,8 +225,8 @@ func TestRepositoryMetricHistoryOrdersSnapshotsChronologically(t *testing.T) {
 	neighborhoodID, sourceID := createMetricFixtures(t, ctx, db)
 	oldRun := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC), "full")
 	newRun := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC), "full")
-	upsertMinimalMetric(t, ctx, repo, neighborhoodID, newRun.id, sourceID, 2)
-	upsertMinimalMetric(t, ctx, repo, neighborhoodID, oldRun.id, sourceID, 1)
+	upsertMinimalMetric(t, ctx, repo, neighborhoodID, newRun, sourceID, 2)
+	upsertMinimalMetric(t, ctx, repo, neighborhoodID, oldRun, sourceID, 1)
 
 	got, err := repo.ListMetricHistory(ctx, neighborhoodID, time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -158,6 +234,11 @@ func TestRepositoryMetricHistoryOrdersSnapshotsChronologically(t *testing.T) {
 	}
 	if len(got) != 2 || got[0].CollectionRunID != oldRun.id || got[1].CollectionRunID != newRun.id {
 		t.Fatalf("history order = %#v", got)
+	}
+	for _, metric := range got {
+		if metric.AlgorithmVersion != "market-metrics/test.1" || metric.TransactionEvidence == nil {
+			t.Fatalf("history metric lost versioned evidence: %#v", metric)
+		}
 	}
 }
 
@@ -237,21 +318,29 @@ VALUES ($1,$2,$3,$4,1,'三房',89.5,$5,$6,$7)`,
 	}
 }
 
-func upsertMinimalMetric(t *testing.T, ctx context.Context, repo *Repository, neighborhoodID, runID, sourceID string, listedHomes int) {
+func upsertMinimalMetric(t *testing.T, ctx context.Context, repo *Repository, neighborhoodID string, run metricRunFixture, sourceID string, listedHomes int) {
 	t.Helper()
-	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-	if _, err := repo.UpsertNeighborhoodMetric(ctx, appmetric.MetricSnapshot{
+	if _, err := repo.UpsertNeighborhoodMetric(ctx, minimalMetricSnapshot(neighborhoodID, run.id, sourceID, run.collectedAt, listedHomes, "market-metrics/test.1")); err != nil {
+		t.Fatalf("UpsertNeighborhoodMetric() error = %v", err)
+	}
+}
+
+func minimalMetricSnapshot(neighborhoodID, runID, sourceID string, collectedAt time.Time, listedHomes int, algorithmVersion string) appmetric.MetricSnapshot {
+	evidence := domainneighborhood.NewTransactionMomentumEvidence(collectedAt, 1, 2)
+	return appmetric.MetricSnapshot{
 		NeighborhoodID:           neighborhoodID,
 		CollectionRunID:          runID,
+		AlgorithmVersion:         algorithmVersion,
 		InventoryCollectionRunID: &runID,
 		SourceIDs:                []string{sourceID},
-		LatestObservedAt:         now,
+		LatestObservedAt:         collectedAt,
 		ListedHomes:              listedHomes,
 		TransactionMomentum:      domainneighborhood.TransactionMomentumStable,
+		TransactionEvidence:      &evidence,
+		ListingSampleCount:       listedHomes,
+		TransactionSampleCount:   evidence.SampleCount,
 		Coverage:                 domainneighborhood.CoverageFull,
 		Freshness:                domainneighborhood.FreshnessCurrent,
 		QualityState:             domainneighborhood.MarketQualitySufficient,
-	}); err != nil {
-		t.Fatalf("UpsertNeighborhoodMetric() error = %v", err)
 	}
 }

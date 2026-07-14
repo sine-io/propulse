@@ -9,15 +9,17 @@ import (
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
+const testMetricAlgorithmVersion = "market-metrics/test.1"
+
 func TestCalculateCollectionRunUsesLatestRunForProvenance(t *testing.T) {
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	inventoryAt := now.Add(-time.Hour)
 	repo := newMetricMemoryRepository()
 	repo.neighborhood = Neighborhood{ID: "neighborhood_1", TargetLayout: "三房"}
 	repo.latestRun = CompletedCollectionRun{ID: "run_latest", DataSourceID: "source_a", NeighborhoodID: "neighborhood_1", CollectedAt: now, Coverage: domainneighborhood.CoveragePartial}
-	repo.marketAggregate = MarketAggregate{CollectionRunID: "run_latest", InventoryCollectionRunID: strPtr("run_full"), SourceIDs: []string{"source_a"}, LatestObservedAt: now, InventoryCollectedAt: &inventoryAt, Coverage: domainneighborhood.CoveragePartial, ListedHomes: 8, PriceCutHomes: 1, AvgDaysOnMarket: floatPtr(30), ListingPriceMin: floatPtr(500), ListingPriceMax: floatPtr(600), TransactionPriceMin: floatPtr(480), TransactionPriceMax: floatPtr(550), TargetLayoutSupply: 3, ListingSampleCount: 8, TransactionSampleCount: 3, LastThirtyDayTransactionCount: 2, PrecedingSixtyDayTransactionCount: 2}
+	repo.marketAggregate = MarketAggregate{CollectionRunID: "run_latest", InventoryCollectionRunID: strPtr("run_full"), SourceIDs: []string{"source_a"}, LatestObservedAt: now, InventoryCollectedAt: &inventoryAt, Coverage: domainneighborhood.CoveragePartial, ListedHomes: 8, PriceCutHomes: 1, AvgDaysOnMarket: floatPtr(30), ListingPriceMin: floatPtr(500), ListingPriceMax: floatPtr(600), TransactionPriceMin: floatPtr(480), TransactionPriceMax: floatPtr(550), TargetLayoutSupply: 3, ListingSampleCount: 8, TransactionSampleCount: 4, LastThirtyDayTransactionCount: 2, PrecedingSixtyDayTransactionCount: 2}
 
-	err := NewServiceWithClock(repo, func() time.Time { return now }).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1"})
+	err := NewServiceWithClock(repo, testMetricAlgorithmVersion, func() time.Time { return now }).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1"})
 	if err != nil {
 		t.Fatalf("CalculateCollectionRun() error = %v", err)
 	}
@@ -43,9 +45,9 @@ func TestCalculateCollectionRunUsesLatestFullRunForInventory(t *testing.T) {
 	repo := newMetricMemoryRepository()
 	repo.neighborhood = Neighborhood{ID: "neighborhood_1", TargetLayout: "三房"}
 	repo.completedRuns["partial_new"] = CompletedCollectionRun{ID: "partial_new", DataSourceID: "source_a", NeighborhoodID: "neighborhood_1", CollectedAt: now, Coverage: domainneighborhood.CoveragePartial}
-	repo.marketAggregate = MarketAggregate{CollectionRunID: "partial_new", InventoryCollectionRunID: strPtr("full_old"), SourceIDs: []string{"source_a"}, LatestObservedAt: now, InventoryCollectedAt: &fullAt, Coverage: domainneighborhood.CoveragePartial, ListedHomes: 11, PriceCutHomes: 2, AvgDaysOnMarket: floatPtr(41), ListingPriceMin: floatPtr(510), ListingPriceMax: floatPtr(650), TransactionPriceMin: floatPtr(500), TransactionPriceMax: floatPtr(620), TargetLayoutSupply: 6, ListingSampleCount: 11, TransactionSampleCount: 4, LastThirtyDayTransactionCount: 2, PrecedingSixtyDayTransactionCount: 3}
+	repo.marketAggregate = MarketAggregate{CollectionRunID: "partial_new", InventoryCollectionRunID: strPtr("full_old"), SourceIDs: []string{"source_a"}, LatestObservedAt: now, InventoryCollectedAt: &fullAt, Coverage: domainneighborhood.CoveragePartial, ListedHomes: 11, PriceCutHomes: 2, AvgDaysOnMarket: floatPtr(41), ListingPriceMin: floatPtr(510), ListingPriceMax: floatPtr(650), TransactionPriceMin: floatPtr(500), TransactionPriceMax: floatPtr(620), TargetLayoutSupply: 6, ListingSampleCount: 11, TransactionSampleCount: 5, LastThirtyDayTransactionCount: 2, PrecedingSixtyDayTransactionCount: 3}
 
-	if err := NewServiceWithClock(repo, func() time.Time { return now }).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "partial_new"}); err != nil {
+	if err := NewServiceWithClock(repo, testMetricAlgorithmVersion, func() time.Time { return now }).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "partial_new"}); err != nil {
 		t.Fatalf("CalculateCollectionRun() error = %v", err)
 	}
 
@@ -61,7 +63,7 @@ func TestCalculateCollectionRunUsesLatestFullRunForInventory(t *testing.T) {
 func TestCalculateCollectionRunDerivesPriceCutsFromPriorListingObservation(t *testing.T) {
 	repo := sufficientMetricRepo()
 	repo.marketAggregate.PriceCutHomes = 2
-	if err := NewServiceWithClock(repo, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
+	if err := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
 		t.Fatalf("CalculateCollectionRun() error = %v", err)
 	}
 	if repo.lastUpserted.PriceCutHomes != 2 {
@@ -71,14 +73,14 @@ func TestCalculateCollectionRunDerivesPriceCutsFromPriorListingObservation(t *te
 
 func TestCalculateCollectionRunUsesOnlyTransactionsWithinNinetyDays(t *testing.T) {
 	repo := sufficientMetricRepo()
-	repo.marketAggregate.TransactionSampleCount = 3
+	repo.marketAggregate.TransactionSampleCount = 5
 	repo.marketAggregate.LastThirtyDayTransactionCount = 1
 	repo.marketAggregate.PrecedingSixtyDayTransactionCount = 4
-	if err := NewServiceWithClock(repo, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
+	if err := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
 		t.Fatalf("CalculateCollectionRun() error = %v", err)
 	}
-	if repo.lastUpserted.TransactionSampleCount != 3 {
-		t.Fatalf("TransactionSampleCount = %d, want 3", repo.lastUpserted.TransactionSampleCount)
+	if repo.lastUpserted.TransactionSampleCount != 5 {
+		t.Fatalf("TransactionSampleCount = %d, want 5", repo.lastUpserted.TransactionSampleCount)
 	}
 	if repo.lastUpserted.TransactionMomentum != domainneighborhood.TransactionMomentumWeak {
 		t.Fatalf("TransactionMomentum = %q, want weak", repo.lastUpserted.TransactionMomentum)
@@ -89,7 +91,7 @@ func TestCalculateCollectionRunDoesNotCompareListingIDsAcrossSources(t *testing.
 	repo := sufficientMetricRepo()
 	repo.marketAggregate.SourceIDs = []string{"source_a", "source_b"}
 	repo.marketAggregate.PriceCutHomes = 0
-	if err := NewServiceWithClock(repo, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
+	if err := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
 		t.Fatalf("CalculateCollectionRun() error = %v", err)
 	}
 	if repo.lastUpserted.PriceCutHomes != 0 {
@@ -100,7 +102,7 @@ func TestCalculateCollectionRunDoesNotCompareListingIDsAcrossSources(t *testing.
 func TestCalculateCollectionRunUsesTriggerRunAsOfTime(t *testing.T) {
 	repo := sufficientMetricRepo()
 	repo.completedRuns["older_run"] = CompletedCollectionRun{ID: "older_run", DataSourceID: "source_a", NeighborhoodID: "neighborhood_1", CollectedAt: time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC), Coverage: domainneighborhood.CoverageFull}
-	if err := NewServiceWithClock(repo, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "older_run"}); err != nil {
+	if err := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "older_run"}); err != nil {
 		t.Fatalf("CalculateCollectionRun() error = %v", err)
 	}
 	if repo.aggregateParams.TriggerRunID != "older_run" {
@@ -111,9 +113,20 @@ func TestCalculateCollectionRunUsesTriggerRunAsOfTime(t *testing.T) {
 func TestCalculateCollectionRunRejectsRunFromAnotherNeighborhood(t *testing.T) {
 	repo := sufficientMetricRepo()
 	repo.completedRuns["run_other"] = CompletedCollectionRun{ID: "run_other", DataSourceID: "source_a", NeighborhoodID: "neighborhood_2", CollectedAt: fixedMetricClock(), Coverage: domainneighborhood.CoverageFull}
-	err := NewServiceWithClock(repo, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_other"})
+	err := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_other"})
 	if !errors.Is(err, ErrCollectionRunNeighborhoodMismatch) {
 		t.Fatalf("error = %v, want ErrCollectionRunNeighborhoodMismatch", err)
+	}
+	if repo.upsertCount != 0 {
+		t.Fatalf("upsertCount = %d, want 0", repo.upsertCount)
+	}
+}
+
+func TestCalculateCollectionRunRequiresInjectedAlgorithmVersion(t *testing.T) {
+	repo := sufficientMetricRepo()
+	err := NewServiceWithClock(repo, " ", fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"})
+	if !errors.Is(err, ErrInvalidAlgorithmVersion) {
+		t.Fatalf("error = %v, want ErrInvalidAlgorithmVersion", err)
 	}
 	if repo.upsertCount != 0 {
 		t.Fatalf("upsertCount = %d, want 0", repo.upsertCount)
@@ -126,7 +139,7 @@ func TestCalculateCollectionRunStoresLowConfidenceForPartialOrInsufficientData(t
 	repo.marketAggregate.TransactionSampleCount = 1
 	repo.marketAggregate.LastThirtyDayTransactionCount = 1
 	repo.marketAggregate.PrecedingSixtyDayTransactionCount = 0
-	if err := NewServiceWithClock(repo, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
+	if err := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
 		t.Fatalf("CalculateCollectionRun() error = %v", err)
 	}
 	if repo.lastUpserted.QualityState != domainneighborhood.MarketQualityLowConfidence {
@@ -137,27 +150,74 @@ func TestCalculateCollectionRunStoresLowConfidenceForPartialOrInsufficientData(t
 	}
 }
 
-func TestCalculateCollectionRunUpsertsOneMetricPerCollectionRun(t *testing.T) {
+func TestCalculateCollectionRunReturnsOriginalMetricForSameRunAndAlgorithmVersion(t *testing.T) {
 	repo := sufficientMetricRepo()
-	service := NewServiceWithClock(repo, fixedMetricClock)
+	service := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock)
 	if err := service.CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
 		t.Fatalf("first CalculateCollectionRun() error = %v", err)
 	}
+	first := repo.lastUpserted
+	repo.marketAggregate.ListedHomes = 999
 	if err := service.CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
 		t.Fatalf("second CalculateCollectionRun() error = %v", err)
 	}
 	if repo.upsertCount != 2 {
 		t.Fatalf("upsertCount = %d, want 2 retries through upsert", repo.upsertCount)
 	}
-	if repo.lastUpserted.CollectionRunID != "run_1" {
-		t.Fatalf("CollectionRunID = %q, want run_1", repo.lastUpserted.CollectionRunID)
+	if repo.createdMetricCount != 1 || repo.lastUpserted.ID != first.ID || !repo.lastUpserted.CalculatedAt.Equal(first.CalculatedAt) || repo.lastUpserted.ListedHomes != first.ListedHomes {
+		t.Fatalf("same-version retry changed metric: first=%#v retry=%#v", first, repo.lastUpserted)
+	}
+}
+
+func TestCalculateCollectionRunCreatesMetricForNewAlgorithmVersion(t *testing.T) {
+	repo := sufficientMetricRepo()
+	command := CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}
+	if err := NewServiceWithClock(repo, "market-metrics/test.1", fixedMetricClock).CalculateCollectionRun(context.Background(), command); err != nil {
+		t.Fatalf("version 1 CalculateCollectionRun() error = %v", err)
+	}
+	if err := NewServiceWithClock(repo, "market-metrics/test.2", fixedMetricClock).CalculateCollectionRun(context.Background(), command); err != nil {
+		t.Fatalf("version 2 CalculateCollectionRun() error = %v", err)
+	}
+	if repo.createdMetricCount != 2 || len(repo.metrics) != 2 || repo.lastUpserted.AlgorithmVersion != "market-metrics/test.2" {
+		t.Fatalf("versioned metrics = %#v, last=%#v", repo.metrics, repo.lastUpserted)
+	}
+}
+
+func TestCalculateCollectionRunRejectsInconsistentTransactionEvidence(t *testing.T) {
+	repo := sufficientMetricRepo()
+	repo.marketAggregate.TransactionSampleCount++
+	err := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"})
+	if !errors.Is(err, ErrInconsistentTransactionEvidence) {
+		t.Fatalf("error = %v, want ErrInconsistentTransactionEvidence", err)
+	}
+	if repo.upsertCount != 0 {
+		t.Fatalf("upsertCount = %d, want 0", repo.upsertCount)
+	}
+}
+
+func TestCalculateCollectionRunMomentumIgnoresListingAndPriceCutValues(t *testing.T) {
+	var momentum domainneighborhood.TransactionMomentum
+	for index, mutate := range []func(*MarketAggregate){
+		func(aggregate *MarketAggregate) { aggregate.ListedHomes, aggregate.PriceCutHomes = 5, 0 },
+		func(aggregate *MarketAggregate) { aggregate.ListedHomes, aggregate.PriceCutHomes = 500, 499 },
+	} {
+		repo := sufficientMetricRepo()
+		mutate(&repo.marketAggregate)
+		if err := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "run_1"}); err != nil {
+			t.Fatalf("case %d CalculateCollectionRun() error = %v", index, err)
+		}
+		if index == 0 {
+			momentum = repo.lastUpserted.TransactionMomentum
+		} else if repo.lastUpserted.TransactionMomentum != momentum {
+			t.Fatalf("momentum changed from %q to %q based on listing values", momentum, repo.lastUpserted.TransactionMomentum)
+		}
 	}
 }
 
 func TestCalculateCollectionRunMarksResolvedRunMetricCompleted(t *testing.T) {
 	repo := sufficientMetricRepo()
 	repo.latestRun = repo.completedRuns["run_1"]
-	if err := NewServiceWithClock(repo, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1"}); err != nil {
+	if err := NewServiceWithClock(repo, testMetricAlgorithmVersion, fixedMetricClock).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1"}); err != nil {
 		t.Fatalf("CalculateCollectionRun() error = %v", err)
 	}
 	if repo.markedRunID != "run_1" {
@@ -171,14 +231,16 @@ type memoryRepository struct {
 	latestRun       CompletedCollectionRun
 	marketAggregate MarketAggregate
 
-	aggregateParams AggregateMarketParams
-	lastUpserted    MetricSnapshot
-	upsertCount     int
-	markedRunID     string
+	aggregateParams    AggregateMarketParams
+	lastUpserted       MetricSnapshot
+	upsertCount        int
+	createdMetricCount int
+	metrics            map[string]MetricSnapshot
+	markedRunID        string
 }
 
 func newMetricMemoryRepository() *memoryRepository {
-	return &memoryRepository{completedRuns: map[string]CompletedCollectionRun{}}
+	return &memoryRepository{completedRuns: map[string]CompletedCollectionRun{}, metrics: map[string]MetricSnapshot{}}
 }
 
 func sufficientMetricRepo() *memoryRepository {
@@ -203,7 +265,7 @@ func sufficientMetricRepo() *memoryRepository {
 		TransactionPriceMax:               floatPtr(550),
 		TargetLayoutSupply:                3,
 		ListingSampleCount:                8,
-		TransactionSampleCount:            3,
+		TransactionSampleCount:            5,
 		LastThirtyDayTransactionCount:     2,
 		PrecedingSixtyDayTransactionCount: 3,
 	}
@@ -245,6 +307,15 @@ func (m *memoryRepository) AggregateMarketObservations(_ context.Context, params
 
 func (m *memoryRepository) UpsertNeighborhoodMetric(_ context.Context, snapshot MetricSnapshot) (MetricSnapshot, error) {
 	m.upsertCount++
+	key := snapshot.CollectionRunID + "\x00" + snapshot.AlgorithmVersion
+	if existing, ok := m.metrics[key]; ok {
+		m.lastUpserted = existing
+		return existing, nil
+	}
+	m.createdMetricCount++
+	snapshot.ID = "metric:" + snapshot.AlgorithmVersion
+	snapshot.CalculatedAt = fixedMetricClock().Add(time.Duration(m.createdMetricCount) * time.Minute)
+	m.metrics[key] = snapshot
 	m.lastUpserted = snapshot
 	return snapshot, nil
 }

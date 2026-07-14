@@ -3,7 +3,6 @@ package collection
 import (
 	"context"
 	"errors"
-	"time"
 
 	appmetric "github.com/sine-io/propulse/internal/application/metric"
 )
@@ -19,7 +18,7 @@ type Repository interface {
 	NeighborhoodExists(context.Context, string) (bool, error)
 	SaveCollectionRun(context.Context, ImportBatch) (SaveCollectionRunResult, error)
 	GetCollectionRun(context.Context, string) (CollectionRunDetail, error)
-	ListMetricRefreshCandidates(context.Context, time.Time, int) ([]MetricRefreshCandidate, error)
+	ListMetricRefreshCandidates(context.Context, MetricRefreshCandidateFilter) ([]MetricRefreshCandidate, error)
 	UpdateMetricStatus(context.Context, string, MetricStatus) error
 }
 

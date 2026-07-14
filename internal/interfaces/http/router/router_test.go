@@ -64,7 +64,7 @@ func newTestEngine(t *testing.T, deps Dependencies) http.Handler {
 		deps.NeighborhoodApplication = appneighborhood.NewService(neighborhoodRepo)
 	}
 	if deps.CollectionApplication == nil {
-		deps.CollectionApplication = appcollection.NewService(newInMemoryCollectionRepository(neighborhoodRepo, marketState), nil, nil)
+		deps.CollectionApplication = appcollection.NewService(newInMemoryCollectionRepository(neighborhoodRepo, marketState), nil, nil, "market-metrics/test.1")
 	}
 	if deps.DecisionApplication == nil {
 		deps.DecisionApplication = appdecision.NewService(deps.CapacityApplication, deps.NeighborhoodApplication, user.SingleUserID)
