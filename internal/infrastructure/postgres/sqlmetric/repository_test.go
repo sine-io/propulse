@@ -38,13 +38,16 @@ func TestRepositoryLatestMetricMapsSqlcRow(t *testing.T) {
 		},
 	}
 
-	got, err := NewRepository(db).LatestMetric(context.Background(), neighborhoodID.String())
+	got, err := NewRepository(db, "market-metrics/test.1").LatestMetric(context.Background(), neighborhoodID.String())
 	if err != nil {
 		t.Fatalf("LatestMetric() error = %v", err)
 	}
 
 	if db.neighborhoodID != uuidValue(neighborhoodID) {
 		t.Fatalf("query neighborhoodID = %#v, want %#v", db.neighborhoodID, uuidValue(neighborhoodID))
+	}
+	if db.algorithmVersion != "market-metrics/test.1" {
+		t.Fatalf("algorithmVersion = %q", db.algorithmVersion)
 	}
 	if got.ID != metricID.String() || got.NeighborhoodID != neighborhoodID.String() {
 		t.Fatalf("metric IDs = (%q, %q), want (%q, %q)", got.ID, got.NeighborhoodID, metricID.String(), neighborhoodID.String())
@@ -66,17 +69,17 @@ func TestRepositoryLatestMetricMapsSqlcRow(t *testing.T) {
 }
 
 func TestRepositoryLatestMetricMapsNoRows(t *testing.T) {
-	_, err := NewRepository(&latestMetricDB{row: latestMetricRow{err: pgx.ErrNoRows}}).LatestMetric(context.Background(), uuid.NewString())
+	_, err := NewRepository(&latestMetricDB{row: latestMetricRow{err: pgx.ErrNoRows}}, "market-metrics/test.1").LatestMetric(context.Background(), uuid.NewString())
 	if !errors.Is(err, appneighborhood.ErrMetricNotFound) {
 		t.Fatalf("LatestMetric() error = %v, want ErrMetricNotFound", err)
 	}
 }
 
 type latestMetricDB struct {
-	row            latestMetricRow
-	query          string
-	targetLayout   string
-	neighborhoodID pgtype.UUID
+	row              latestMetricRow
+	query            string
+	algorithmVersion string
+	neighborhoodID   pgtype.UUID
 }
 
 func (db *latestMetricDB) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
@@ -93,8 +96,8 @@ func (db *latestMetricDB) QueryRow(_ context.Context, query string, args ...inte
 		db.neighborhoodID = args[0].(pgtype.UUID)
 	}
 	if len(args) == 2 {
-		db.targetLayout = args[0].(string)
-		db.neighborhoodID = args[1].(pgtype.UUID)
+		db.neighborhoodID = args[0].(pgtype.UUID)
+		db.algorithmVersion = args[1].(string)
 	}
 	return db.row
 }

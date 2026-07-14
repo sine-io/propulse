@@ -36,16 +36,26 @@ type watchlistResponse struct {
 }
 
 type watchlistItemResponse struct {
-	ID                  string                                 `json:"id"`
-	NeighborhoodID      string                                 `json:"neighborhoodId"`
-	Name                string                                 `json:"name"`
-	Area                string                                 `json:"area"`
-	TargetLayout        string                                 `json:"targetLayout"`
-	Status              domainneighborhood.NeighborhoodStatus  `json:"status"`
-	ListedHomes         int                                    `json:"listedHomes"`
-	PriceCutHomes       int                                    `json:"priceCutHomes"`
-	TransactionMomentum domainneighborhood.TransactionMomentum `json:"transactionMomentum"`
-	Advice              string                                 `json:"advice"`
+	ID                     string                                 `json:"id"`
+	NeighborhoodID         string                                 `json:"neighborhoodId"`
+	Name                   string                                 `json:"name"`
+	Area                   string                                 `json:"area"`
+	TargetLayout           string                                 `json:"targetLayout"`
+	Status                 domainneighborhood.NeighborhoodStatus  `json:"status"`
+	ListedHomes            int                                    `json:"listedHomes"`
+	PriceCutHomes          int                                    `json:"priceCutHomes"`
+	TransactionMomentum    domainneighborhood.TransactionMomentum `json:"transactionMomentum"`
+	Advice                 string                                 `json:"advice"`
+	HasMetric              bool                                   `json:"hasMetric"`
+	CollectionRunID        string                                 `json:"collectionRunId,omitempty"`
+	AlgorithmVersion       string                                 `json:"algorithmVersion,omitempty"`
+	SourceIDs              []string                               `json:"sourceIds"`
+	CollectedAt            *string                                `json:"collectedAt"`
+	TransactionSampleCount int                                    `json:"transactionSampleCount"`
+	Coverage               domainneighborhood.Coverage            `json:"coverage"`
+	Freshness              domainneighborhood.Freshness           `json:"freshness"`
+	QualityState           domainneighborhood.MarketQualityState  `json:"qualityState"`
+	QualityWarnings        []domainneighborhood.QualityWarning    `json:"qualityWarnings"`
 }
 
 func (h Watchlist) AddItem(c *gin.Context) {
@@ -90,17 +100,32 @@ func (h Watchlist) List(c *gin.Context) {
 
 	response := watchlistResponse{Items: make([]watchlistItemResponse, 0, len(items))}
 	for _, item := range items {
+		var collectedAt *string
+		if item.CollectedAt != nil {
+			formatted := item.CollectedAt.UTC().Format(time.RFC3339)
+			collectedAt = &formatted
+		}
 		response.Items = append(response.Items, watchlistItemResponse{
-			ID:                  item.ID,
-			NeighborhoodID:      item.NeighborhoodID,
-			Name:                item.Name,
-			Area:                item.Area,
-			TargetLayout:        item.TargetLayout,
-			Status:              item.Status,
-			ListedHomes:         item.ListedHomes,
-			PriceCutHomes:       item.PriceCutHomes,
-			TransactionMomentum: item.TransactionMomentum,
-			Advice:              item.Advice,
+			ID:                     item.ID,
+			NeighborhoodID:         item.NeighborhoodID,
+			Name:                   item.Name,
+			Area:                   item.Area,
+			TargetLayout:           item.TargetLayout,
+			Status:                 item.Status,
+			ListedHomes:            item.ListedHomes,
+			PriceCutHomes:          item.PriceCutHomes,
+			TransactionMomentum:    item.TransactionMomentum,
+			Advice:                 item.Advice,
+			HasMetric:              item.HasMetric,
+			CollectionRunID:        item.CollectionRunID,
+			AlgorithmVersion:       item.AlgorithmVersion,
+			SourceIDs:              append([]string{}, item.SourceIDs...),
+			CollectedAt:            collectedAt,
+			TransactionSampleCount: item.TransactionSampleCount,
+			Coverage:               item.Coverage,
+			Freshness:              item.Freshness,
+			QualityState:           item.QualityState,
+			QualityWarnings:        append([]domainneighborhood.QualityWarning{}, item.QualityWarnings...),
 		})
 	}
 

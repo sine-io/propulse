@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	appmetric "github.com/sine-io/propulse/internal/application/metric"
+	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 	migraterunner "github.com/sine-io/propulse/internal/infrastructure/migrate"
 )
@@ -207,6 +208,10 @@ func TestRepositoryLatestMetricMapsProvenance(t *testing.T) {
 	newRun := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC), "full")
 	upsertMinimalMetric(t, ctx, repo, neighborhoodID, oldRun, sourceID, 1)
 	upsertMinimalMetric(t, ctx, repo, neighborhoodID, newRun, sourceID, 2)
+	legacy := minimalMetricSnapshot(neighborhoodID, newRun.id, sourceID, newRun.collectedAt, 999, "legacy_unversioned")
+	if _, err := repo.UpsertNeighborhoodMetric(ctx, legacy); err != nil {
+		t.Fatalf("insert legacy metric: %v", err)
+	}
 
 	got, err := repo.LatestMetric(ctx, neighborhoodID)
 	if err != nil {
@@ -218,6 +223,9 @@ func TestRepositoryLatestMetricMapsProvenance(t *testing.T) {
 	if got.AlgorithmVersion != "market-metrics/test.1" || got.TransactionEvidence == nil || got.TransactionEvidence.SampleCount != 3 {
 		t.Fatalf("LatestMetric() lost versioned transaction evidence: %#v", got)
 	}
+	if !got.CollectedAt.Equal(newRun.collectedAt) {
+		t.Fatalf("CollectedAt = %s, want %s", got.CollectedAt, newRun.collectedAt)
+	}
 }
 
 func TestRepositoryMetricHistoryOrdersSnapshotsChronologically(t *testing.T) {
@@ -227,17 +235,25 @@ func TestRepositoryMetricHistoryOrdersSnapshotsChronologically(t *testing.T) {
 	newRun := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC), "full")
 	upsertMinimalMetric(t, ctx, repo, neighborhoodID, newRun, sourceID, 2)
 	upsertMinimalMetric(t, ctx, repo, neighborhoodID, oldRun, sourceID, 1)
+	legacy := minimalMetricSnapshot(neighborhoodID, newRun.id, sourceID, newRun.collectedAt, 999, "legacy_unversioned")
+	if _, err := repo.UpsertNeighborhoodMetric(ctx, legacy); err != nil {
+		t.Fatalf("insert legacy metric: %v", err)
+	}
 
-	got, err := repo.ListMetricHistory(ctx, neighborhoodID, time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC))
+	got, err := repo.ListMetricHistory(ctx, appneighborhood.MetricHistoryRepositoryQuery{
+		NeighborhoodID: neighborhoodID,
+		From:           time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+		To:             time.Date(2026, 7, 3, 0, 0, 0, 0, time.UTC),
+	})
 	if err != nil {
 		t.Fatalf("ListMetricHistory() error = %v", err)
 	}
-	if len(got) != 2 || got[0].CollectionRunID != oldRun.id || got[1].CollectionRunID != newRun.id {
+	if len(got) != 2 || got[0].Metric.CollectionRunID != oldRun.id || got[1].Metric.CollectionRunID != newRun.id {
 		t.Fatalf("history order = %#v", got)
 	}
-	for _, metric := range got {
-		if metric.AlgorithmVersion != "market-metrics/test.1" || metric.TransactionEvidence == nil {
-			t.Fatalf("history metric lost versioned evidence: %#v", metric)
+	for _, record := range got {
+		if record.Metric.AlgorithmVersion != "market-metrics/test.1" || record.Metric.TransactionEvidence == nil || record.Batch.DataSourceID != sourceID || record.Batch.SourceRef == "" {
+			t.Fatalf("history metric lost versioned evidence/source: %#v", record)
 		}
 	}
 }
@@ -263,7 +279,7 @@ func openSQLMetricPostgresTest(t *testing.T) (context.Context, *pgxpool.Pool, *R
 		t.Fatalf("pgxpool.New() error = %v", err)
 	}
 	t.Cleanup(db.Close)
-	return ctx, db, NewRepository(db)
+	return ctx, db, NewRepository(db, "market-metrics/test.1")
 }
 
 func createMetricFixtures(t *testing.T, ctx context.Context, db *pgxpool.Pool) (string, string) {

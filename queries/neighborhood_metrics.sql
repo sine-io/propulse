@@ -1,8 +1,9 @@
 -- name: LatestNeighborhoodMetric :one
-SELECT nm.*
+SELECT nm.*, cr.collected_at AS collection_run_collected_at
 FROM neighborhood_metrics nm
 JOIN collection_runs cr ON cr.id = nm.collection_run_id
-WHERE nm.neighborhood_id = $1
+WHERE nm.neighborhood_id = sqlc.arg(neighborhood_id)
+  AND nm.algorithm_version = sqlc.arg(algorithm_version)
 ORDER BY cr.collected_at DESC, cr.id DESC
 LIMIT 1;
 
@@ -241,9 +242,16 @@ ON CONFLICT (collection_run_id, algorithm_version) DO UPDATE SET
 RETURNING *;
 
 -- name: ListNeighborhoodMetricHistory :many
-SELECT nm.*
+SELECT
+  nm.*,
+  cr.data_source_id,
+  cr.source_ref,
+  cr.collected_at AS collection_run_collected_at,
+  cr.coverage AS collection_run_coverage
 FROM neighborhood_metrics nm
 JOIN collection_runs cr ON cr.id = nm.collection_run_id
-WHERE nm.neighborhood_id = $1
-  AND cr.collected_at >= $2
+WHERE nm.neighborhood_id = sqlc.arg(neighborhood_id)
+  AND nm.algorithm_version = sqlc.arg(algorithm_version)
+  AND cr.collected_at >= sqlc.arg(collected_from)
+  AND cr.collected_at <= sqlc.arg(collected_to)
 ORDER BY cr.collected_at ASC, cr.id ASC;

@@ -37,6 +37,7 @@ const (
 	WarningInsufficientListings     QualityWarning = "insufficient_listing_samples"
 	WarningInsufficientTransactions QualityWarning = "insufficient_transaction_samples"
 	WarningMetricRefreshPending     QualityWarning = "metric_refresh_pending"
+	WarningMetricUnavailable        QualityWarning = "metric_unavailable"
 )
 
 type QualityInput struct {

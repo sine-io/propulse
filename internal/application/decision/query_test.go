@@ -30,9 +30,15 @@ func TestGetActionWindowComposesLatestCapacityFirstWatchlistMetricAndAlternative
 			{NeighborhoodID: "neighborhood_2"},
 		},
 		metric: appneighborhood.MetricWithSignal{
+			Metric: appneighborhood.MetricSnapshot{
+				TransactionMomentum: domainneighborhood.TransactionMomentumWeak,
+				Freshness:           domainneighborhood.FreshnessCurrent,
+				QualityState:        domainneighborhood.MarketQualitySufficient,
+			},
 			Signal: domainneighborhood.SignalResult{
 				Status:               domainneighborhood.NeighborhoodStatusBargain,
 				TargetLayoutScarcity: domainneighborhood.ScarcityMedium,
+				QualityState:         domainneighborhood.MarketQualitySufficient,
 			},
 		},
 	}
@@ -64,9 +70,15 @@ func TestGetActionWindowUsesRequestedNeighborhoodID(t *testing.T) {
 			{NeighborhoodID: requestedNeighborhoodID},
 		},
 		metric: appneighborhood.MetricWithSignal{
+			Metric: appneighborhood.MetricSnapshot{
+				TransactionMomentum: domainneighborhood.TransactionMomentumStrong,
+				Freshness:           domainneighborhood.FreshnessCurrent,
+				QualityState:        domainneighborhood.MarketQualitySufficient,
+			},
 			Signal: domainneighborhood.SignalResult{
 				Status:               domainneighborhood.NeighborhoodStatusFocus,
 				TargetLayoutScarcity: domainneighborhood.ScarcityHigh,
+				QualityState:         domainneighborhood.MarketQualitySufficient,
 			},
 		},
 	}
@@ -152,7 +164,7 @@ func TestGetActionWindowReturnsMetricRequiredWhenLatestMetricIsMissing(t *testin
 	}
 }
 
-func TestGetActionWindowWaitsWhenMarketQualityCannotSupportRecommendation(t *testing.T) {
+func TestGetActionWindowReturnsMetricInsufficientWithoutRecommendation(t *testing.T) {
 	for _, state := range []domainneighborhood.MarketQualityState{
 		domainneighborhood.MarketQualityLowConfidence,
 		domainneighborhood.MarketQualityInsufficientData,
@@ -162,17 +174,59 @@ func TestGetActionWindowWaitsWhenMarketQualityCannotSupportRecommendation(t *tes
 				Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
 			}}, &stubNeighborhoodReader{
 				watchlist: []appneighborhood.WatchlistItemSummary{{NeighborhoodID: "neighborhood_1"}},
-				metric: appneighborhood.MetricWithSignal{Signal: domainneighborhood.SignalResult{
-					Status: domainneighborhood.NeighborhoodStatusBargain, QualityState: state,
-				}},
+				metric: appneighborhood.MetricWithSignal{
+					Metric: appneighborhood.MetricSnapshot{Freshness: domainneighborhood.FreshnessCurrent, QualityState: state, TransactionMomentum: domainneighborhood.TransactionMomentumWeak},
+					Signal: domainneighborhood.SignalResult{Status: domainneighborhood.NeighborhoodStatusBargain, QualityState: state},
+				},
 			}, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{})
-			if err != nil {
-				t.Fatalf("GetActionWindow() error = %v", err)
+			if !errors.Is(err, ErrMetricInsufficient) {
+				t.Fatalf("error = %v, want ErrMetricInsufficient", err)
 			}
-			if result.Action != domaindecision.ActionWait || result.Confidence != domaindecision.ConfidenceLow {
-				t.Fatalf("result = %#v, want low-confidence wait", result)
-			}
+			assertEmptyActionWindow(t, result)
 		})
+	}
+}
+
+func TestGetActionWindowReturnsMetricInsufficientForUnknownMomentum(t *testing.T) {
+	result, err := NewService(&stubCapacityReader{record: appcapacity.CalculationRecord{
+		Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
+	}}, &stubNeighborhoodReader{
+		watchlist: []appneighborhood.WatchlistItemSummary{{NeighborhoodID: "neighborhood_1"}},
+		metric: appneighborhood.MetricWithSignal{
+			Metric: appneighborhood.MetricSnapshot{Freshness: domainneighborhood.FreshnessCurrent, QualityState: domainneighborhood.MarketQualitySufficient, TransactionMomentum: domainneighborhood.TransactionMomentumUnknown},
+			Signal: domainneighborhood.SignalResult{QualityState: domainneighborhood.MarketQualitySufficient},
+		},
+	}, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{})
+	if !errors.Is(err, ErrMetricInsufficient) {
+		t.Fatalf("result/error = %#v/%v", result, err)
+	}
+	assertEmptyActionWindow(t, result)
+}
+
+func TestGetActionWindowReturnsMetricStaleWithoutRecommendation(t *testing.T) {
+	for _, freshness := range []domainneighborhood.Freshness{domainneighborhood.FreshnessStale, domainneighborhood.FreshnessExpired} {
+		t.Run(string(freshness), func(t *testing.T) {
+			result, err := NewService(&stubCapacityReader{record: appcapacity.CalculationRecord{
+				Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
+			}}, &stubNeighborhoodReader{
+				watchlist: []appneighborhood.WatchlistItemSummary{{NeighborhoodID: "neighborhood_1"}},
+				metric: appneighborhood.MetricWithSignal{
+					Metric: appneighborhood.MetricSnapshot{Freshness: freshness, QualityState: domainneighborhood.MarketQualityLowConfidence, TransactionMomentum: domainneighborhood.TransactionMomentumWeak},
+					Signal: domainneighborhood.SignalResult{QualityState: domainneighborhood.MarketQualityLowConfidence},
+				},
+			}, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{})
+			if !errors.Is(err, ErrMetricStale) {
+				t.Fatalf("result/error = %#v/%v", result, err)
+			}
+			assertEmptyActionWindow(t, result)
+		})
+	}
+}
+
+func assertEmptyActionWindow(t *testing.T, result domaindecision.ActionWindowResult) {
+	t.Helper()
+	if result.Action != "" || result.Confidence != "" || result.Summary != "" || len(result.Checklist) != 0 || len(result.Risks) != 0 {
+		t.Fatalf("result = %#v, want no recommendation fields", result)
 	}
 }
 

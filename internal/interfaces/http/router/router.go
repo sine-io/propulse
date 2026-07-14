@@ -99,6 +99,7 @@ func New(deps Dependencies) (*gin.Engine, error) {
 	api.GET("/neighborhoods", neighborhoodHandler.SearchNeighborhoods)
 	api.GET("/neighborhoods/:id", neighborhoodHandler.GetNeighborhood)
 	api.GET("/neighborhoods/:id/metrics", neighborhoodHandler.GetMetrics)
+	api.GET("/neighborhoods/:id/metrics/history", neighborhoodHandler.GetMetricHistory)
 	protected.POST("/watchlist/items", watchlistHandler.AddItem)
 	protected.GET("/watchlist", watchlistHandler.List)
 

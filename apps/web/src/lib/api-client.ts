@@ -21,6 +21,11 @@ export type DataSource = components["schemas"]["DataSource"];
 export type CreateNeighborhoodRequest = components["schemas"]["CreateNeighborhoodRequest"];
 export type Neighborhood = components["schemas"]["NeighborhoodResponse"];
 export type NeighborhoodSearchResponse = components["schemas"]["NeighborhoodSearchResponse"];
+export type NeighborhoodMetricResponse = components["schemas"]["NeighborhoodMetricResponse"];
+export type MetricHistoryResponse = components["schemas"]["MetricHistoryResponse"];
+export type MetricHistoryPoint = components["schemas"]["MetricHistoryPoint"];
+export type MetricComparison = components["schemas"]["MetricComparison"];
+export type MetricChangeValue = components["schemas"]["MetricChangeValue"];
 export type ImportJSONRequest = components["schemas"]["ImportJSONRequest"];
 export type ImportJSONRecord = components["schemas"]["ImportJSONRecord"];
 export type ImportCollectionRunResponse = components["schemas"]["ImportCollectionRunResponse"];
@@ -77,6 +82,21 @@ export async function getActionWindow(
 ): Promise<ActionWindowResponse> {
   return request<ActionWindowResponse>(
     "/api/v1/decision/action-window",
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function getMetricHistory(
+  neighborhoodId: string,
+  window: { from?: string; to?: string } = {},
+  signal?: AbortSignal,
+): Promise<MetricHistoryResponse> {
+  const params = new URLSearchParams();
+  if (window.from) params.set("from", window.from);
+  if (window.to) params.set("to", window.to);
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  return request<MetricHistoryResponse>(
+    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/metrics/history${query}`,
     signal ? { signal } : undefined,
   );
 }

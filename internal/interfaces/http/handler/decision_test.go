@@ -99,6 +99,8 @@ func TestGetActionWindowMapsExpectedApplicationErrors(t *testing.T) {
 		{name: "watchlist required", appErr: appdecision.ErrWatchlistRequired, wantStatus: http.StatusBadRequest, wantCode: "watchlist_required"},
 		{name: "invalid neighborhood ID", appErr: appdecision.ErrInvalidNeighborhoodID, wantStatus: http.StatusBadRequest, wantCode: "invalid_neighborhood_id"},
 		{name: "metric required", appErr: appdecision.ErrMetricRequired, wantStatus: http.StatusNotFound, wantCode: "metric_required"},
+		{name: "metric stale", appErr: appdecision.ErrMetricStale, wantStatus: http.StatusConflict, wantCode: "metric_stale"},
+		{name: "metric insufficient", appErr: appdecision.ErrMetricInsufficient, wantStatus: http.StatusConflict, wantCode: "metric_insufficient"},
 	}
 
 	for _, tt := range tests {

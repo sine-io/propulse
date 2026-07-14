@@ -18,16 +18,18 @@ import (
 )
 
 type Repository struct {
-	db      sqlc.DBTX
-	queries *sqlc.Queries
+	db               sqlc.DBTX
+	queries          *sqlc.Queries
+	algorithmVersion string
 }
 
 var _ appmetric.Repository = (*Repository)(nil)
 
-func NewRepository(db sqlc.DBTX) *Repository {
+func NewRepository(db sqlc.DBTX, algorithmVersion string) *Repository {
 	return &Repository{
-		db:      db,
-		queries: sqlc.New(db),
+		db:               db,
+		queries:          sqlc.New(db),
+		algorithmVersion: algorithmVersion,
 	}
 }
 
@@ -195,7 +197,10 @@ func (r *Repository) LatestMetric(ctx context.Context, neighborhoodID string) (a
 		return appneighborhood.MetricSnapshot{}, err
 	}
 
-	row, err := r.queries.LatestNeighborhoodMetric(ctx, id)
+	row, err := r.queries.LatestNeighborhoodMetric(ctx, sqlc.LatestNeighborhoodMetricParams{
+		NeighborhoodID:   id,
+		AlgorithmVersion: r.algorithmVersion,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return appneighborhood.MetricSnapshot{}, appneighborhood.ErrMetricNotFound
@@ -203,24 +208,26 @@ func (r *Repository) LatestMetric(ctx context.Context, neighborhoodID string) (a
 		return appneighborhood.MetricSnapshot{}, err
 	}
 
-	return neighborhoodMetricFromRow(row), nil
+	return neighborhoodMetricFromLatestRow(row), nil
 }
 
-func (r *Repository) ListMetricHistory(ctx context.Context, neighborhoodID string, since time.Time) ([]appneighborhood.MetricSnapshot, error) {
-	id, err := uuidParam(neighborhoodID)
+func (r *Repository) ListMetricHistory(ctx context.Context, query appneighborhood.MetricHistoryRepositoryQuery) ([]appneighborhood.MetricHistoryRecord, error) {
+	id, err := uuidParam(query.NeighborhoodID)
 	if err != nil {
 		return nil, err
 	}
 	rows, err := r.queries.ListNeighborhoodMetricHistory(ctx, sqlc.ListNeighborhoodMetricHistoryParams{
-		NeighborhoodID: id,
-		CollectedAt:    pgtype.Timestamptz{Time: since, Valid: true},
+		NeighborhoodID:   id,
+		AlgorithmVersion: r.algorithmVersion,
+		CollectedFrom:    timeParam(query.From),
+		CollectedTo:      timeParam(query.To),
 	})
 	if err != nil {
 		return nil, err
 	}
-	metrics := make([]appneighborhood.MetricSnapshot, 0, len(rows))
+	metrics := make([]appneighborhood.MetricHistoryRecord, 0, len(rows))
 	for _, row := range rows {
-		metrics = append(metrics, neighborhoodMetricFromRow(row))
+		metrics = append(metrics, metricHistoryRecordFromRow(row))
 	}
 	return metrics, nil
 }
@@ -284,6 +291,91 @@ func neighborhoodMetricFromRow(row sqlc.NeighborhoodMetric) appneighborhood.Metr
 		QualityWarnings:          qualityWarnings(row.QualityWarnings),
 		QualityState:             domainneighborhood.MarketQualityState(row.QualityState),
 		CalculatedAt:             row.CalculatedAt.Time,
+	}
+}
+
+func neighborhoodMetricFromLatestRow(row sqlc.LatestNeighborhoodMetricRow) appneighborhood.MetricSnapshot {
+	metric := neighborhoodMetricFromRow(sqlc.NeighborhoodMetric{
+		ID:                             row.ID,
+		NeighborhoodID:                 row.NeighborhoodID,
+		ListedHomes:                    row.ListedHomes,
+		PriceCutHomes:                  row.PriceCutHomes,
+		AvgDaysOnMarket:                row.AvgDaysOnMarket,
+		ListingPriceMin:                row.ListingPriceMin,
+		ListingPriceMax:                row.ListingPriceMax,
+		TransactionPriceMin:            row.TransactionPriceMin,
+		TransactionPriceMax:            row.TransactionPriceMax,
+		TransactionMomentum:            row.TransactionMomentum,
+		TargetLayoutSupply:             row.TargetLayoutSupply,
+		CalculatedAt:                   row.CalculatedAt,
+		CollectionRunID:                row.CollectionRunID,
+		InventoryCollectionRunID:       row.InventoryCollectionRunID,
+		SourceIds:                      row.SourceIds,
+		ListingSampleCount:             row.ListingSampleCount,
+		TransactionSampleCount:         row.TransactionSampleCount,
+		ListedHomesChangePct:           row.ListedHomesChangePct,
+		Coverage:                       row.Coverage,
+		Freshness:                      row.Freshness,
+		QualityState:                   row.QualityState,
+		LatestObservedAt:               row.LatestObservedAt,
+		InventoryCollectedAt:           row.InventoryCollectedAt,
+		QualityWarnings:                row.QualityWarnings,
+		AlgorithmVersion:               row.AlgorithmVersion,
+		TransactionWindowStart:         row.TransactionWindowStart,
+		TransactionWindowEnd:           row.TransactionWindowEnd,
+		Recent30DayTransactionCount:    row.Recent30DayTransactionCount,
+		Preceding60DayTransactionCount: row.Preceding60DayTransactionCount,
+		Recent30DayMonthlyFrequency:    row.Recent30DayMonthlyFrequency,
+		Preceding60DayMonthlyFrequency: row.Preceding60DayMonthlyFrequency,
+	})
+	metric.CollectedAt = row.CollectionRunCollectedAt.Time
+	return metric
+}
+
+func metricHistoryRecordFromRow(row sqlc.ListNeighborhoodMetricHistoryRow) appneighborhood.MetricHistoryRecord {
+	metric := neighborhoodMetricFromRow(sqlc.NeighborhoodMetric{
+		ID:                             row.ID,
+		NeighborhoodID:                 row.NeighborhoodID,
+		ListedHomes:                    row.ListedHomes,
+		PriceCutHomes:                  row.PriceCutHomes,
+		AvgDaysOnMarket:                row.AvgDaysOnMarket,
+		ListingPriceMin:                row.ListingPriceMin,
+		ListingPriceMax:                row.ListingPriceMax,
+		TransactionPriceMin:            row.TransactionPriceMin,
+		TransactionPriceMax:            row.TransactionPriceMax,
+		TransactionMomentum:            row.TransactionMomentum,
+		TargetLayoutSupply:             row.TargetLayoutSupply,
+		CalculatedAt:                   row.CalculatedAt,
+		CollectionRunID:                row.CollectionRunID,
+		InventoryCollectionRunID:       row.InventoryCollectionRunID,
+		SourceIds:                      row.SourceIds,
+		ListingSampleCount:             row.ListingSampleCount,
+		TransactionSampleCount:         row.TransactionSampleCount,
+		ListedHomesChangePct:           row.ListedHomesChangePct,
+		Coverage:                       row.Coverage,
+		Freshness:                      row.Freshness,
+		QualityState:                   row.QualityState,
+		LatestObservedAt:               row.LatestObservedAt,
+		InventoryCollectedAt:           row.InventoryCollectedAt,
+		QualityWarnings:                row.QualityWarnings,
+		AlgorithmVersion:               row.AlgorithmVersion,
+		TransactionWindowStart:         row.TransactionWindowStart,
+		TransactionWindowEnd:           row.TransactionWindowEnd,
+		Recent30DayTransactionCount:    row.Recent30DayTransactionCount,
+		Preceding60DayTransactionCount: row.Preceding60DayTransactionCount,
+		Recent30DayMonthlyFrequency:    row.Recent30DayMonthlyFrequency,
+		Preceding60DayMonthlyFrequency: row.Preceding60DayMonthlyFrequency,
+	})
+	metric.CollectedAt = row.CollectionRunCollectedAt.Time
+	return appneighborhood.MetricHistoryRecord{
+		Metric: metric,
+		Batch: appneighborhood.CollectionRunReference{
+			CollectionRunID: uuidString(row.CollectionRunID),
+			DataSourceID:    uuidString(row.DataSourceID),
+			SourceRef:       row.SourceRef,
+			CollectedAt:     row.CollectionRunCollectedAt.Time,
+			Coverage:        domainneighborhood.Coverage(row.CollectionRunCoverage),
+		},
 	}
 }
 

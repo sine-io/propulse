@@ -165,3 +165,21 @@ func (r *inMemoryNeighborhoodRepository) LatestMetric(_ context.Context, neighbo
 	}
 	return metric, nil
 }
+
+func (r *inMemoryNeighborhoodRepository) ListMetricHistory(_ context.Context, query appneighborhood.MetricHistoryRepositoryQuery) ([]appneighborhood.MetricHistoryRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	metric, ok := r.metrics[query.NeighborhoodID]
+	if !ok || metric.CollectedAt.Before(query.From) || metric.CollectedAt.After(query.To) {
+		return []appneighborhood.MetricHistoryRecord{}, nil
+	}
+	return []appneighborhood.MetricHistoryRecord{{
+		Metric: metric,
+		Batch: appneighborhood.CollectionRunReference{
+			CollectionRunID: metric.CollectionRunID,
+			CollectedAt:     metric.CollectedAt,
+			Coverage:        metric.Coverage,
+		},
+	}}, nil
+}

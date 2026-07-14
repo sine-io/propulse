@@ -42,3 +42,7 @@ func (r *recordingMetricReader) LatestMetric(_ context.Context, neighborhoodID s
 	r.calledWith = neighborhoodID
 	return r.metric, r.err
 }
+
+func (r *recordingMetricReader) ListMetricHistory(_ context.Context, _ appneighborhood.MetricHistoryRepositoryQuery) ([]appneighborhood.MetricHistoryRecord, error) {
+	return []appneighborhood.MetricHistoryRecord{}, nil
+}

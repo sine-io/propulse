@@ -1,13 +1,26 @@
 package neighborhood
 
-import "context"
+import (
+	"context"
+	"strings"
+	"time"
+)
 
 type Service struct {
-	repo Repository
+	repo             Repository
+	algorithmVersion string
+	now              func() time.Time
 }
 
 func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+	return NewServiceWithMetricConfig(repo, "", time.Now)
+}
+
+func NewServiceWithMetricConfig(repo Repository, algorithmVersion string, now func() time.Time) *Service {
+	if now == nil {
+		now = time.Now
+	}
+	return &Service{repo: repo, algorithmVersion: strings.TrimSpace(algorithmVersion), now: now}
 }
 
 type CreateNeighborhoodCommand struct {

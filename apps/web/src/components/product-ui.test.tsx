@@ -4,13 +4,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import RootLayout, { metadata } from "@/app/layout";
+import { setAccessToken } from "@/lib/access-token";
 import {
+  ApiError,
   createCapacityCalculation,
   getActionWindow,
   getCapacityAssumptions,
   getWatchlist,
   type CalculationResponse,
   type CapacityAssumptionsResponse,
+  type WatchlistItem,
 } from "@/lib/api-client";
 import { AppHeader } from "./app-header";
 import { ActionWindowPage } from "./action-window-page";
@@ -34,6 +37,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
 });
 
 beforeEach(() => {
+	window.sessionStorage.clear();
   vi.mocked(createCapacityCalculation).mockReset();
   vi.mocked(getActionWindow).mockReset();
   vi.mocked(getCapacityAssumptions).mockReset();
@@ -419,15 +423,71 @@ describe("NeighborhoodsPage", () => {
 });
 
 describe("ActionWindowPage", () => {
-	it("does not invent a recommendation when the API is unavailable", async () => {
+	it("stays locked without requesting private decision data", async () => {
 		render(createElement(ActionWindowPage));
 
-		expect(await screen.findByText("暂时无法生成出手窗口")).toBeInTheDocument();
-		expect(screen.getByText("决策服务暂时不可用。")).toBeInTheDocument();
+		expect(await screen.findByText("出手窗口已锁定")).toBeInTheDocument();
+		expect(getActionWindow).not.toHaveBeenCalled();
 		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
-  });
+	});
+
+	it("renders a loading state without stale recommendation content", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getActionWindow).mockReturnValueOnce(new Promise(() => undefined));
+		render(createElement(ActionWindowPage));
+
+		expect(await screen.findByText("正在检查出手窗口")).toBeInTheDocument();
+		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
+	});
+
+	it("does not invent a recommendation when the API is unavailable", async () => {
+		setAccessToken("secret-token");
+		render(createElement(ActionWindowPage));
+
+		expect(await screen.findByText("决策服务不可用")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
+	});
+
+	it.each([
+		["capacity_required", "需要换房测算", "/calculator"],
+		["watchlist_required", "需要目标小区", "/neighborhoods"],
+		["metric_required", "需要市场数据", "/data"],
+		["metric_stale", "指标已经过期", "/data"],
+		["metric_insufficient", "市场数据不足", "/data"],
+	] as const)("renders %s as an independent prerequisite state", async (code, title, href) => {
+		setAccessToken("secret-token");
+		vi.mocked(getActionWindow).mockRejectedValueOnce(new ApiError(code, code, 409));
+		render(createElement(ActionWindowPage));
+
+		expect(await screen.findByText(title)).toBeInTheDocument();
+		expect(screen.getByRole("link")).toHaveAttribute("href", href);
+		expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
+		expect(screen.queryByText("行动清单")).not.toBeInTheDocument();
+		expect(screen.queryByText("风险警示")).not.toBeInTheDocument();
+	});
+
+	it("retries a failed request without retaining the failed state", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getActionWindow)
+			.mockRejectedValueOnce(new Error("offline"))
+			.mockResolvedValueOnce({
+				action: "等",
+				confidence: "中",
+				summary: "等待新增数据。",
+				checklist: ["复核数据。"],
+				risks: ["避免追价。"],
+			});
+		render(createElement(ActionWindowPage));
+		fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+
+		expect(await screen.findByText("建议等")).toBeInTheDocument();
+		expect(screen.queryByText("决策服务不可用")).not.toBeInTheDocument();
+	});
 
   it("renders API action window recommendations", async () => {
+	setAccessToken("secret-token");
     vi.mocked(getActionWindow).mockResolvedValueOnce({
       action: "出手",
       confidence: "高",
@@ -444,6 +504,7 @@ describe("ActionWindowPage", () => {
   });
 
   it("lets the user tick off checklist items (ACTION-005)", async () => {
+	setAccessToken("secret-token");
     vi.mocked(getActionWindow).mockResolvedValueOnce({
       action: "出手",
       confidence: "高",
@@ -501,23 +562,43 @@ describe("MethodsPage", () => {
 });
 
 describe("WatchlistPage", () => {
+	it("stays locked without requesting private watchlist data", async () => {
+		render(createElement(WatchlistPage));
+
+		expect(await screen.findByText("观察池已锁定")).toBeInTheDocument();
+		expect(getWatchlist).not.toHaveBeenCalled();
+		expect(screen.queryByText("观察小区")).not.toBeInTheDocument();
+	});
+
+	it("shows loading without cards or summary values", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getWatchlist).mockReturnValueOnce(new Promise(() => undefined));
+		render(createElement(WatchlistPage));
+
+		expect(await screen.findByText("正在加载观察池")).toBeInTheDocument();
+		expect(screen.queryByText("观察小区")).not.toBeInTheDocument();
+		expect(screen.queryByRole("article")).not.toBeInTheDocument();
+	});
+
 	it("does not fall back to sample communities when the API fails", async () => {
+		setAccessToken("secret-token");
 		render(createElement(WatchlistPage));
 
 		expect(screen.getByText("导出本周报表")).toBeInTheDocument();
-		expect(await screen.findByText("观察池暂时无法读取。")).toBeInTheDocument();
-		expect(screen.getAllByText("0")).toHaveLength(4);
-		expect(screen.getByText("小区动态 (本周变化)")).toBeInTheDocument();
+		expect(await screen.findByText("观察池读取失败")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+		expect(screen.queryByText("观察小区")).not.toBeInTheDocument();
 		expect(
 			screen.queryByRole("heading", { name: "青枫花园 滨江核心 · 三房" }),
 		).not.toBeInTheDocument();
-		expect(screen.getByText("保存复盘记录")).toBeInTheDocument();
-  });
+		expect(screen.queryByText(/星河湾/)).not.toBeInTheDocument();
+	});
 
   it("renders API watchlist items when available", async () => {
+    setAccessToken("secret-token");
     vi.mocked(getWatchlist).mockResolvedValueOnce({
       items: [
-        {
+        watchlistFixture({
           id: "watchlist_1",
           neighborhoodId: "neighborhood_api",
           name: "接口花园",
@@ -528,21 +609,20 @@ describe("WatchlistPage", () => {
           priceCutHomes: 6,
           transactionMomentum: "strong",
           advice: "API 返回的重点建议。",
-        },
+        }),
       ],
     });
     render(createElement(WatchlistPage));
 
-    expect(
-      await screen.findByRole("heading", { name: "接口花园 南城 · 两房" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("18套")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "接口花园" })).toBeInTheDocument();
+    expect(screen.getByText("18 套")).toBeInTheDocument();
     expect(
       screen.getByText((content) => content.includes("API 返回的重点建议。")),
     ).toBeInTheDocument();
   });
 
   it("renders an empty watchlist state for a successful empty API response", async () => {
+    setAccessToken("secret-token");
     vi.mocked(getWatchlist).mockResolvedValueOnce({ items: [] });
     render(createElement(WatchlistPage));
 
@@ -558,7 +638,89 @@ describe("WatchlistPage", () => {
       screen.queryByRole("heading", { name: "云澜府 城东新区 · 四房" }),
     ).not.toBeInTheDocument();
   });
+
+	it("renders stale metrics as stale without a buyer-window conclusion", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getWatchlist).mockResolvedValueOnce({
+			items: [
+				watchlistFixture({
+					name: "过期小区",
+					status: "数据不足",
+					freshness: "stale",
+					qualityState: "low_confidence",
+					qualityWarnings: ["stale_data"],
+					advice: "等待最新采集批次。",
+				}),
+			],
+		});
+		render(createElement(WatchlistPage));
+
+		expect(await screen.findByText("数据已过期")).toBeInTheDocument();
+		expect(screen.getByText("过期小区：市场数据已陈旧")).toBeInTheDocument();
+		expect(screen.queryByText("适合砍价")).not.toBeInTheDocument();
+	});
+
+	it("renders unknown momentum as transaction data insufficient", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getWatchlist).mockResolvedValueOnce({
+			items: [
+				watchlistFixture({
+					name: "样本不足小区",
+					status: "数据不足",
+					transactionMomentum: "unknown",
+					transactionSampleCount: 1,
+					qualityState: "low_confidence",
+					qualityWarnings: ["insufficient_transaction_samples"],
+					advice: "等待更多成交样本。",
+				}),
+			],
+		});
+		render(createElement(WatchlistPage));
+
+		expect(await screen.findByText("成交数据不足")).toBeInTheDocument();
+		expect(screen.getByText("样本不足小区：成交样本不足")).toBeInTheDocument();
+		expect(screen.queryByText("平稳")).not.toBeInTheDocument();
+		expect(screen.queryByText("偏弱")).not.toBeInTheDocument();
+	});
+
+	it("retries a failed watchlist request", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getWatchlist)
+			.mockRejectedValueOnce(new Error("offline"))
+			.mockResolvedValueOnce({ items: [] });
+		render(createElement(WatchlistPage));
+		fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+
+		expect(await screen.findByText("观察池暂无小区")).toBeInTheDocument();
+		expect(screen.queryByText("观察池读取失败")).not.toBeInTheDocument();
+	});
 });
+
+function watchlistFixture(overrides: Partial<WatchlistItem> = {}): WatchlistItem {
+	return {
+		id: "watchlist_1",
+		neighborhoodId: "neighborhood_1",
+		name: "接口花园",
+		area: "南城",
+		targetLayout: "两房",
+		status: "继续观察",
+		listedHomes: 18,
+		priceCutHomes: 2,
+		transactionMomentum: "stable",
+		advice: "继续观察真实数据。",
+		hasMetric: true,
+		collectionRunId: "11111111-1111-1111-1111-111111111111",
+		algorithmVersion: "market-metrics/test.1",
+		sourceIds: ["22222222-2222-2222-2222-222222222222"],
+		collectedAt: "2026-07-14T08:00:00Z",
+		transactionSampleCount: 4,
+		coverage: "full",
+		freshness: "current",
+		qualityState: "sufficient",
+		qualityWarnings: [],
+		...overrides,
+	};
+}
 
 describe("TemplatesPage", () => {
   it("lists every MVP off-site decision template", () => {

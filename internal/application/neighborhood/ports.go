@@ -18,6 +18,7 @@ type Repository interface {
 	AddWatchlistItem(ctx context.Context, userID string, neighborhoodID string) (WatchlistItem, error)
 	ListWatchlist(ctx context.Context, userID string) ([]WatchlistSummary, error)
 	LatestMetric(ctx context.Context, neighborhoodID string) (MetricSnapshot, error)
+	ListMetricHistory(ctx context.Context, query MetricHistoryRepositoryQuery) ([]MetricHistoryRecord, error)
 }
 
 // SearchNeighborhoodsInput 是 repository 层的搜索/分页入参（limit/offset 已由 service 归一）。
@@ -68,16 +69,26 @@ type WatchlistSummary struct {
 }
 
 type WatchlistItemSummary struct {
-	ID                  string
-	NeighborhoodID      string
-	Name                string
-	Area                string
-	TargetLayout        string
-	Status              domainneighborhood.NeighborhoodStatus
-	ListedHomes         int
-	PriceCutHomes       int
-	TransactionMomentum domainneighborhood.TransactionMomentum
-	Advice              string
+	ID                     string
+	NeighborhoodID         string
+	Name                   string
+	Area                   string
+	TargetLayout           string
+	Status                 domainneighborhood.NeighborhoodStatus
+	ListedHomes            int
+	PriceCutHomes          int
+	TransactionMomentum    domainneighborhood.TransactionMomentum
+	Advice                 string
+	HasMetric              bool
+	CollectionRunID        string
+	AlgorithmVersion       string
+	SourceIDs              []string
+	CollectedAt            *time.Time
+	TransactionSampleCount int
+	Coverage               domainneighborhood.Coverage
+	Freshness              domainneighborhood.Freshness
+	QualityState           domainneighborhood.MarketQualityState
+	QualityWarnings        []domainneighborhood.QualityWarning
 }
 
 type MetricSnapshot struct {
@@ -88,6 +99,7 @@ type MetricSnapshot struct {
 	InventoryCollectionRunID *string
 	SourceIDs                []string
 	LatestObservedAt         time.Time
+	CollectedAt              time.Time
 	ListedHomes              int
 	PriceCutHomes            int
 	AvgDaysOnMarket          *float64
@@ -107,6 +119,58 @@ type MetricSnapshot struct {
 	QualityWarnings          []domainneighborhood.QualityWarning
 	QualityState             domainneighborhood.MarketQualityState
 	CalculatedAt             time.Time
+}
+
+type MetricHistoryRepositoryQuery struct {
+	NeighborhoodID string
+	From           time.Time
+	To             time.Time
+}
+
+type CollectionRunReference struct {
+	CollectionRunID string
+	DataSourceID    string
+	SourceRef       string
+	CollectedAt     time.Time
+	Coverage        domainneighborhood.Coverage
+}
+
+type MetricHistoryRecord struct {
+	Metric MetricSnapshot
+	Batch  CollectionRunReference
+}
+
+type MetricComparison struct {
+	Status                      domainneighborhood.MetricComparisonStatus
+	Reason                      domainneighborhood.MetricComparisonReason
+	CurrentBatch                CollectionRunReference
+	BaselineBatch               *CollectionRunReference
+	ListedHomes                 *domainneighborhood.MetricChangeValue
+	PriceCutHomes               *domainneighborhood.MetricChangeValue
+	RecentThirtyDayTransactions *domainneighborhood.MetricChangeValue
+}
+
+type MetricHistoryPoint struct {
+	Metric            MetricSnapshot
+	Batch             CollectionRunReference
+	WeeklyComparison  MetricComparison
+	MonthlyComparison MetricComparison
+}
+
+type MetricHistoryStatus string
+
+const (
+	MetricHistoryReady MetricHistoryStatus = "ready"
+	MetricHistoryEmpty MetricHistoryStatus = "empty"
+)
+
+type MetricHistoryResult struct {
+	Status           MetricHistoryStatus
+	NeighborhoodID   string
+	AlgorithmVersion string
+	From             time.Time
+	To               time.Time
+	Items            []MetricHistoryPoint
 }
 
 type MetricWithSignal struct {

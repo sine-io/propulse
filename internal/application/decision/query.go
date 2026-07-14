@@ -15,6 +15,8 @@ import (
 var ErrCapacityRequired = errors.New("capacity required")
 var ErrWatchlistRequired = errors.New("watchlist required")
 var ErrMetricRequired = errors.New("metric required")
+var ErrMetricStale = errors.New("metric stale")
+var ErrMetricInsufficient = errors.New("metric insufficient")
 var ErrInvalidNeighborhoodID = errors.New("invalid neighborhood id")
 
 type CapacityReader interface {
@@ -80,15 +82,13 @@ func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuer
 		}
 		return domaindecision.ActionWindowResult{}, err
 	}
-	if metric.Signal.QualityState == domainneighborhood.MarketQualityLowConfidence ||
-		metric.Signal.QualityState == domainneighborhood.MarketQualityInsufficientData {
-		return domaindecision.ActionWindowResult{
-			Action:     domaindecision.ActionWait,
-			Confidence: domaindecision.ConfidenceLow,
-			Summary:    "目标小区的市场数据尚不足以支持买入或议价建议，先补充完整且新鲜的数据。",
-			Checklist:  []string{"补充最新完整挂牌和近 90 天成交记录。", "核对数据来源、覆盖范围和采集时间。"},
-			Risks:      []string{"不完整或过期样本会放大单套房源对判断的影响。"},
-		}, nil
+	if metric.Metric.Freshness == domainneighborhood.FreshnessStale || metric.Metric.Freshness == domainneighborhood.FreshnessExpired {
+		return domaindecision.ActionWindowResult{}, ErrMetricStale
+	}
+	if metric.Metric.QualityState != domainneighborhood.MarketQualitySufficient ||
+		metric.Metric.TransactionMomentum == domainneighborhood.TransactionMomentumUnknown ||
+		metric.Signal.QualityState != domainneighborhood.MarketQualitySufficient {
+		return domaindecision.ActionWindowResult{}, ErrMetricInsufficient
 	}
 
 	return domaindecision.RecommendActionWindow(domaindecision.ActionWindowInput{

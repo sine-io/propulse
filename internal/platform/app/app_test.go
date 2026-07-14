@@ -911,6 +911,10 @@ func (s *stubAppNeighborhoodApplication) LatestMetric(_ context.Context, _ appne
 	return appneighborhood.MetricWithSignal{}, appneighborhood.ErrMetricNotFound
 }
 
+func (s *stubAppNeighborhoodApplication) MetricHistory(_ context.Context, _ appneighborhood.MetricHistoryQuery) (appneighborhood.MetricHistoryResult, error) {
+	return appneighborhood.MetricHistoryResult{Items: []appneighborhood.MetricHistoryPoint{}}, nil
+}
+
 func (s *stubAppNeighborhoodApplication) AddWatchlistItem(_ context.Context, _ appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error) {
 	return appneighborhood.WatchlistItem{}, nil
 }

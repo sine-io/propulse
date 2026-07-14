@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -187,11 +188,15 @@ func TestGetNeighborhoodReturnsNotFound(t *testing.T) {
 
 func TestGetNeighborhoodMetricsReturnsLatestSignal(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
+	evidence := domainneighborhood.NewTransactionMomentumEvidence(time.Date(2026, 7, 9, 0, 0, 0, 0, time.UTC), 1, 2)
 	service := &stubNeighborhoodApplication{
 		latestMetric: appneighborhood.MetricWithSignal{
 			Metric: appneighborhood.MetricSnapshot{
 				ID:                  "metric_1",
 				NeighborhoodID:      "neighborhood_1",
+				CollectionRunID:     "11111111-1111-1111-1111-111111111111",
+				AlgorithmVersion:    "market-metrics/test.1",
+				CollectedAt:         time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 				ListedHomes:         42,
 				PriceCutHomes:       11,
 				AvgDaysOnMarket:     handlerFloatPtr(78),
@@ -200,6 +205,7 @@ func TestGetNeighborhoodMetricsReturnsLatestSignal(t *testing.T) {
 				TransactionPriceMin: handlerFloatPtr(495),
 				TransactionPriceMax: handlerFloatPtr(545),
 				TransactionMomentum: domainneighborhood.TransactionMomentumWeak,
+				TransactionEvidence: &evidence,
 				TargetLayoutSupply:  12,
 				CalculatedAt:        time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 			},
@@ -221,15 +227,117 @@ func TestGetNeighborhoodMetricsReturnsLatestSignal(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	var response struct {
-		Status         string `json:"status"`
-		SupplyPressure string `json:"supplyPressure"`
-		Advice         string `json:"advice"`
+		Status              string `json:"status"`
+		SupplyPressure      string `json:"supplyPressure"`
+		Advice              string `json:"advice"`
+		CollectedAt         string `json:"collectedAt"`
+		AlgorithmVersion    string `json:"algorithmVersion"`
+		TransactionEvidence struct {
+			WindowStart                     string  `json:"windowStart"`
+			RecentThirtyDayMonthlyFrequency float64 `json:"recent30DayMonthlyFrequency"`
+		} `json:"transactionEvidence"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 	if response.Status != "适合砍价" || response.SupplyPressure != "high" {
 		t.Fatalf("response = %#v", response)
+	}
+	if response.CollectedAt != "2026-07-09T12:00:00Z" || response.AlgorithmVersion != "market-metrics/test.1" || response.TransactionEvidence.WindowStart != "2026-04-10" || response.TransactionEvidence.RecentThirtyDayMonthlyFrequency != 1 {
+		t.Fatalf("versioned evidence response = %#v", response)
+	}
+}
+
+func TestGetMetricHistoryReturnsWindowSourcesAndComparisons(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	collectedAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	evidence := domainneighborhood.NewTransactionMomentumEvidence(collectedAt, 2, 2)
+	currentBatch := appneighborhood.CollectionRunReference{
+		CollectionRunID: "11111111-1111-1111-1111-111111111111",
+		DataSourceID:    "22222222-2222-2222-2222-222222222222",
+		SourceRef:       "weekly-2026-07-14",
+		CollectedAt:     collectedAt,
+		Coverage:        domainneighborhood.CoverageFull,
+	}
+	baselineBatch := appneighborhood.CollectionRunReference{
+		CollectionRunID: "33333333-3333-3333-3333-333333333333",
+		DataSourceID:    currentBatch.DataSourceID,
+		SourceRef:       "weekly-2026-07-07",
+		CollectedAt:     collectedAt.Add(-7 * 24 * time.Hour),
+		Coverage:        domainneighborhood.CoverageFull,
+	}
+	listedChange := domainneighborhood.CalculateMetricChange(12, 10)
+	service := &stubNeighborhoodApplication{metricHistory: appneighborhood.MetricHistoryResult{
+		Status:           appneighborhood.MetricHistoryReady,
+		NeighborhoodID:   "neighborhood_1",
+		AlgorithmVersion: "market-metrics/test.1",
+		From:             collectedAt.Add(-8 * 7 * 24 * time.Hour),
+		To:               collectedAt,
+		Items: []appneighborhood.MetricHistoryPoint{{
+			Metric: appneighborhood.MetricSnapshot{
+				ID: "metric_1", NeighborhoodID: "neighborhood_1", AlgorithmVersion: "market-metrics/test.1",
+				CollectedAt: collectedAt, LatestObservedAt: collectedAt, CalculatedAt: collectedAt.Add(time.Minute),
+				SourceIDs: []string{currentBatch.DataSourceID}, ListedHomes: 12, PriceCutHomes: 3,
+				TransactionMomentum: domainneighborhood.TransactionMomentumStable, TransactionEvidence: &evidence,
+				ListingSampleCount: 12, TransactionSampleCount: 4, Coverage: domainneighborhood.CoverageFull,
+				Freshness: domainneighborhood.FreshnessCurrent, QualityState: domainneighborhood.MarketQualitySufficient,
+				QualityWarnings: []domainneighborhood.QualityWarning{},
+			},
+			Batch: currentBatch,
+			WeeklyComparison: appneighborhood.MetricComparison{
+				Status: domainneighborhood.MetricComparisonAvailable, CurrentBatch: currentBatch, BaselineBatch: &baselineBatch, ListedHomes: &listedChange,
+			},
+			MonthlyComparison: appneighborhood.MetricComparison{
+				Status: domainneighborhood.MetricComparisonUnavailable, Reason: domainneighborhood.ComparisonReasonFullBaselineNotFound, CurrentBatch: currentBatch,
+			},
+		}},
+	}}
+	engine := gin.New()
+	engine.GET("/api/v1/neighborhoods/:id/metrics/history", NewNeighborhood(service).GetMetricHistory)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/neighborhoods/neighborhood_1/metrics/history?from=2026-05-19T12%3A00%3A00Z&to=2026-07-14T12%3A00%3A00Z", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Status           string `json:"status"`
+		AlgorithmVersion string `json:"algorithmVersion"`
+		Items            []struct {
+			Batch struct {
+				SourceRef string `json:"sourceRef"`
+			} `json:"batch"`
+			WeeklyComparison struct {
+				BaselineBatch *struct {
+					CollectionRunID string `json:"collectionRunId"`
+				} `json:"baselineBatch"`
+				ListedHomes *struct {
+					AbsoluteChange int `json:"absoluteChange"`
+				} `json:"listedHomes"`
+			} `json:"weeklyComparison"`
+			MonthlyComparison struct {
+				Status string `json:"status"`
+				Reason string `json:"reason"`
+			} `json:"monthlyComparison"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if response.Status != "ready" || response.AlgorithmVersion != "market-metrics/test.1" || len(response.Items) != 1 || response.Items[0].Batch.SourceRef != "weekly-2026-07-14" || response.Items[0].WeeklyComparison.BaselineBatch == nil || response.Items[0].WeeklyComparison.BaselineBatch.CollectionRunID != baselineBatch.CollectionRunID || response.Items[0].WeeklyComparison.ListedHomes == nil || response.Items[0].WeeklyComparison.ListedHomes.AbsoluteChange != 2 || response.Items[0].MonthlyComparison.Status != "unavailable" || response.Items[0].MonthlyComparison.Reason != "full_baseline_not_found" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestGetMetricHistoryRejectsInvalidTimeQuery(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	engine := gin.New()
+	engine.GET("/api/v1/neighborhoods/:id/metrics/history", NewNeighborhood(&stubNeighborhoodApplication{}).GetMetricHistory)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/neighborhoods/neighborhood_1/metrics/history?from=not-a-time", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_time_window") {
+		t.Fatalf("status/body = %d/%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -298,16 +406,26 @@ func TestListWatchlistReturnsBriefShape(t *testing.T) {
 	service := &stubNeighborhoodApplication{
 		watchlist: []appneighborhood.WatchlistItemSummary{
 			{
-				ID:                  "watch_1",
-				NeighborhoodID:      "neighborhood_1",
-				Name:                "青枫花园",
-				Area:                "滨江核心",
-				TargetLayout:        "三房",
-				Status:              domainneighborhood.NeighborhoodStatusBargain,
-				ListedHomes:         42,
-				PriceCutHomes:       11,
-				TransactionMomentum: domainneighborhood.TransactionMomentumWeak,
-				Advice:              "约看 500-530 万三房，尝试砍价，窗口期已打开。",
+				ID:                     "watch_1",
+				NeighborhoodID:         "neighborhood_1",
+				Name:                   "青枫花园",
+				Area:                   "滨江核心",
+				TargetLayout:           "三房",
+				Status:                 domainneighborhood.NeighborhoodStatusBargain,
+				ListedHomes:            42,
+				PriceCutHomes:          11,
+				TransactionMomentum:    domainneighborhood.TransactionMomentumWeak,
+				Advice:                 "约看 500-530 万三房，尝试砍价，窗口期已打开。",
+				HasMetric:              true,
+				CollectionRunID:        "11111111-1111-1111-1111-111111111111",
+				AlgorithmVersion:       "market-metrics/test.1",
+				SourceIDs:              []string{"22222222-2222-2222-2222-222222222222"},
+				CollectedAt:            handlerTimePtr(time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)),
+				TransactionSampleCount: 3,
+				Coverage:               domainneighborhood.CoverageFull,
+				Freshness:              domainneighborhood.FreshnessCurrent,
+				QualityState:           domainneighborhood.MarketQualitySufficient,
+				QualityWarnings:        []domainneighborhood.QualityWarning{},
 			},
 		},
 	}
@@ -323,16 +441,21 @@ func TestListWatchlistReturnsBriefShape(t *testing.T) {
 	}
 	var response struct {
 		Items []struct {
-			ID                  string `json:"id"`
-			NeighborhoodID      string `json:"neighborhoodId"`
-			Name                string `json:"name"`
-			Area                string `json:"area"`
-			TargetLayout        string `json:"targetLayout"`
-			Status              string `json:"status"`
-			ListedHomes         int    `json:"listedHomes"`
-			PriceCutHomes       int    `json:"priceCutHomes"`
-			TransactionMomentum string `json:"transactionMomentum"`
-			Advice              string `json:"advice"`
+			ID                     string  `json:"id"`
+			NeighborhoodID         string  `json:"neighborhoodId"`
+			Name                   string  `json:"name"`
+			Area                   string  `json:"area"`
+			TargetLayout           string  `json:"targetLayout"`
+			Status                 string  `json:"status"`
+			ListedHomes            int     `json:"listedHomes"`
+			PriceCutHomes          int     `json:"priceCutHomes"`
+			TransactionMomentum    string  `json:"transactionMomentum"`
+			Advice                 string  `json:"advice"`
+			HasMetric              bool    `json:"hasMetric"`
+			AlgorithmVersion       string  `json:"algorithmVersion"`
+			CollectedAt            *string `json:"collectedAt"`
+			TransactionSampleCount int     `json:"transactionSampleCount"`
+			QualityState           string  `json:"qualityState"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
@@ -341,7 +464,7 @@ func TestListWatchlistReturnsBriefShape(t *testing.T) {
 	if len(response.Items) != 1 {
 		t.Fatalf("items = %d, want 1", len(response.Items))
 	}
-	if response.Items[0].NeighborhoodID != "neighborhood_1" || response.Items[0].Status != "适合砍价" {
+	if response.Items[0].NeighborhoodID != "neighborhood_1" || response.Items[0].Status != "适合砍价" || !response.Items[0].HasMetric || response.Items[0].AlgorithmVersion != "market-metrics/test.1" || response.Items[0].CollectedAt == nil || response.Items[0].TransactionSampleCount != 3 || response.Items[0].QualityState != "sufficient" {
 		t.Fatalf("item = %#v", response.Items[0])
 	}
 }
@@ -351,13 +474,20 @@ func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
 	service := &stubNeighborhoodApplication{
 		watchlist: []appneighborhood.WatchlistItemSummary{
 			{
-				ID:             "watch_1",
-				NeighborhoodID: "neighborhood_1",
-				Name:           "青枫花园",
-				Area:           "滨江核心",
-				TargetLayout:   "三房",
-				Status:         domainneighborhood.NeighborhoodStatusObserve,
-				Advice:         "暂无指标数据，等待导入或计算后再判断。",
+				ID:                  "watch_1",
+				NeighborhoodID:      "neighborhood_1",
+				Name:                "青枫花园",
+				Area:                "滨江核心",
+				TargetLayout:        "三房",
+				Status:              domainneighborhood.NeighborhoodStatusInsufficientData,
+				TransactionMomentum: domainneighborhood.TransactionMomentumUnknown,
+				Advice:              "暂无指标数据，等待导入或计算后再判断。",
+				HasMetric:           false,
+				SourceIDs:           []string{},
+				Coverage:            domainneighborhood.CoverageUnknown,
+				Freshness:           domainneighborhood.FreshnessUnknown,
+				QualityState:        domainneighborhood.MarketQualityInsufficientData,
+				QualityWarnings:     []domainneighborhood.QualityWarning{domainneighborhood.WarningMetricUnavailable},
 			},
 		},
 	}
@@ -387,13 +517,15 @@ func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
 		t.Fatalf("items = %d, want 1", len(response.Items))
 	}
 	item := response.Items[0]
-	if item.Status != "继续观察" || item.Advice != "暂无指标数据，等待导入或计算后再判断。" {
+	if item.Status != "数据不足" || item.Advice != "暂无指标数据，等待导入或计算后再判断。" {
 		t.Fatalf("item = %#v", item)
 	}
-	if item.ListedHomes != 0 || item.PriceCutHomes != 0 || item.TransactionMomentum != "" {
+	if item.ListedHomes != 0 || item.PriceCutHomes != 0 || item.TransactionMomentum != "unknown" {
 		t.Fatalf("metric fields = listed %d, price cuts %d, momentum %q", item.ListedHomes, item.PriceCutHomes, item.TransactionMomentum)
 	}
 }
+
+func handlerTimePtr(value time.Time) *time.Time { return &value }
 
 type stubNeighborhoodApplication struct {
 	createNeighborhood    appneighborhood.Neighborhood
@@ -412,6 +544,9 @@ type stubNeighborhoodApplication struct {
 	searchPage            appneighborhood.SearchNeighborhoodsPage
 	searchErr             error
 	searchQuery           appneighborhood.SearchNeighborhoodsQuery
+	metricHistory         appneighborhood.MetricHistoryResult
+	metricHistoryErr      error
+	metricHistoryQuery    appneighborhood.MetricHistoryQuery
 }
 
 func (s *stubNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
@@ -439,6 +574,17 @@ func (s *stubNeighborhoodApplication) LatestMetric(_ context.Context, _ appneigh
 		return appneighborhood.MetricWithSignal{}, s.latestMetricErr
 	}
 	return s.latestMetric, nil
+}
+
+func (s *stubNeighborhoodApplication) MetricHistory(_ context.Context, query appneighborhood.MetricHistoryQuery) (appneighborhood.MetricHistoryResult, error) {
+	s.metricHistoryQuery = query
+	if s.metricHistoryErr != nil {
+		return appneighborhood.MetricHistoryResult{}, s.metricHistoryErr
+	}
+	if s.metricHistory.Items == nil {
+		s.metricHistory.Items = []appneighborhood.MetricHistoryPoint{}
+	}
+	return s.metricHistory, nil
 }
 
 func (s *stubNeighborhoodApplication) AddWatchlistItem(_ context.Context, command appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error) {
