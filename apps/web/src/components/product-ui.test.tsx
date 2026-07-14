@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,8 @@ import {
   getActionWindow,
   getCapacityAssumptions,
   getWatchlist,
+  type CalculationResponse,
+  type CapacityAssumptionsResponse,
 } from "@/lib/api-client";
 import { AppHeader } from "./app-header";
 import { ActionWindowPage } from "./action-window-page";
@@ -145,70 +147,154 @@ describe("HomePage", () => {
 });
 
 describe("CalculatorPanel", () => {
-  const fillCoreInput = (targetTotalPrice: string, monthlyIncome = "3.5") => {
-    fireEvent.change(screen.getByLabelText("家庭月收入 (万)"), {
-      target: { value: monthlyIncome },
-    });
-    fireEvent.change(screen.getByLabelText("目标总价（万）"), {
-      target: { value: targetTotalPrice },
-    });
+  const assumptionsFixture = {
+    ruleVersion: "2026.07.14",
+    effectiveDate: "2026-07-14",
+    ruleSource: "房脉测算规则",
+    downPaymentRate: 0.35,
+    loan: {
+      annualInterestRate: 0.039,
+      loanTermMonths: 360,
+      repaymentMethod: "equal_installment",
+    },
+    loanSource: "贷款配置来源",
+    loanOrigin: "configured_default",
+    cityPolicy: {
+      city: "测试市",
+      policyName: "测试首付政策",
+      downPaymentRate: 0.35,
+      effectiveDate: "2026-07-14",
+      source: "测试政策来源",
+      origin: "configured_default",
+    },
+    reserveMonths: 6,
+    pressureThresholds: {
+      safeRatio: 0.35,
+      strainedRatio: 0.45,
+      dangerRatio: 0.55,
+      dangerMultiplier: 1.15,
+    },
+    oldHomeShareThreshold: 0.5,
+  } satisfies CapacityAssumptionsResponse;
+
+  const reportFixture = {
+    id: "calculation_1",
+    input: {
+      cashOnHand: 150,
+      oldHomeValue: 320,
+      oldLoanBalance: 80,
+      monthlyIncome: 3.5,
+      currentMonthlyMortgage: 0,
+      acceptableMonthlyMortgage: 1.5,
+      targetTotalPrice: 500,
+      renovationBudget: 40,
+      transactionCosts: 18,
+      transitionRentCost: 5,
+      loanOverride: assumptionsFixture.loan,
+      cityPolicyOverride: {
+        city: "测试市",
+        policyName: "测试首付政策",
+        downPaymentRate: 0.35,
+        effectiveDate: "2026-07-14",
+        source: "测试政策来源",
+      },
+    },
+    result: {
+      netOldHomeProceeds: 240,
+      deployableCash: 306,
+      safeTotalPrice: 520,
+      strainedTotalPrice: 610,
+      dangerTotalPrice: 700,
+      downPaymentGap: 0,
+      monthlyPayment: 1.27,
+      monthlyPaymentRatio: 0.42,
+      pressureLevel: "strained",
+      minimumSafeOldHomeSalePrice: 290,
+      strategy: "先卖后买或同步推进",
+      reasons: ["后端返回的完整诊断原因。"],
+      ruleVersion: "2026.07.14",
+      effectiveDate: "2026-07-14",
+      traceabilityStatus: "complete",
+      appliedAssumptions: assumptionsFixture,
+    },
+    createdAt: "2026-07-14T12:00:00Z",
+  } satisfies CalculationResponse;
+
+  const fillAllFamilyFields = (targetTotalPrice = "500") => {
+    for (const [label, value] of [
+      ["当前可用现金 (万)", "150"],
+      ["预期售出底价 (万)", "320"],
+      ["剩余贷款 (万)", "80"],
+      ["家庭月收入 (万)", "3.5"],
+      ["当前月供（元）", "0"],
+      ["可接受极限月供 (元)", "15000"],
+      ["目标总价（万）", targetTotalPrice],
+      ["装修及杂费预算 (万)", "40"],
+      ["交易税费（万）", "18"],
+      ["过渡租房成本 (万)", "5"],
+    ]) {
+      fireEvent.change(screen.getByLabelText(label, { exact: false }), { target: { value } });
+    }
   };
 
-  it("starts with an empty form and no personal numbers until core input is provided", () => {
+  beforeEach(() => {
+    vi.mocked(getCapacityAssumptions).mockResolvedValue(assumptionsFixture);
+  });
+
+  it("starts empty and never renders a local preview", async () => {
     render(createElement(CalculatorPanel));
 
-    // 不再预填任何虚构家庭财务数据（CALC-001）。
     expect(screen.getByLabelText("目标总价（万）")).toHaveValue("");
     expect(screen.getByLabelText("家庭月收入 (万)")).toHaveValue("");
-    expect(
-      screen.getByText(/填写左侧.*生成你的换房压力诊断/),
-    ).toBeInTheDocument();
-    // 无固定个人结论（CALC-005）。
-    expect(screen.queryByText(/占比超 60%/)).not.toBeInTheDocument();
+    expect(screen.getByText(/填写全部家庭、贷款与城市政策参数并提交/)).toBeInTheDocument();
+    await screen.findByLabelText("年利率（%）");
+    fireEvent.change(screen.getByLabelText("目标总价（万）"), { target: { value: "720" } });
+    expect(screen.queryByText("暂缓改善")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pressure-pointer")).not.toBeInTheDocument();
   });
 
-  it("updates the diagnosis when target price becomes unsafe", () => {
+  it("blocks submission when assumptions fail and retries successfully", async () => {
+    vi.mocked(getCapacityAssumptions)
+      .mockReset()
+      .mockRejectedValueOnce(new Error("unavailable"))
+      .mockResolvedValueOnce(assumptionsFixture);
     render(createElement(CalculatorPanel));
 
-    fillCoreInput("720");
-
-    expect(screen.getByText("危险")).toBeInTheDocument();
-    expect(screen.getByText("暂缓改善")).toBeInTheDocument();
+    expect(await screen.findByText("当前测算假设加载失败。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成诊断报告" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "重试加载" }));
+    expect(await screen.findByLabelText("年利率（%）")).toHaveValue("3.9");
+    expect(screen.getByRole("button", { name: "生成诊断报告" })).toBeEnabled();
   });
 
-  it("uses one formula for 550 with no reference-scenario override", () => {
-    // CALC-003：549 / 550 / 551 万不得存在特殊代码路径。
-    const readMetrics = () => {
-      const metrics = screen
-        .getAllByText(/^\d+(?:\.\d+)?$/)
-        .map((node) => node.textContent);
-      return metrics.join("|");
-    };
-
+  it("requires all ten family fields while accepting explicit zero", async () => {
     render(createElement(CalculatorPanel));
-    fillCoreInput("549");
-    const at549 = readMetrics();
-    fillCoreInput("550");
-    const at550 = readMetrics();
-    fillCoreInput("551");
-    const at551 = readMetrics();
+    await screen.findByLabelText("年利率（%）");
+    fireEvent.click(screen.getByRole("button", { name: "生成诊断报告" }));
 
-    // 550 不再触发 520/约35/42% 的固定覆盖，与相邻取值连续。
-    expect(new Set([at549, at550, at551]).size).toBe(3);
-    expect(screen.queryByText("约 35")).not.toBeInTheDocument();
+    expect(screen.getAllByText("请填写此项")).toHaveLength(10);
+    expect(createCapacityCalculation).not.toHaveBeenCalled();
+
+    fillAllFamilyFields();
+    vi.mocked(createCapacityCalculation).mockResolvedValueOnce(reportFixture);
+    fireEvent.click(screen.getByRole("button", { name: "生成诊断报告" }));
+    await waitFor(() => expect(createCapacityCalculation).toHaveBeenCalled());
+    expect(vi.mocked(createCapacityCalculation).mock.calls[0]?.[0].currentMonthlyMortgage).toBe(0);
   });
 
-  it("exposes the previously hidden mortgage and transaction-cost fields", () => {
+  it("exposes the previously hidden mortgage and transaction-cost fields", async () => {
     // CALC-002：两个参与计算的字段必须可见可编辑。
     render(createElement(CalculatorPanel));
+	await screen.findByLabelText("年利率（%）");
 
     expect(screen.getByLabelText("当前月供（元）")).toBeInTheDocument();
     expect(screen.getByLabelText("交易税费（万）")).toBeInTheDocument();
   });
 
-  it("links the method cards to a real, keyboard-reachable page", () => {
+  it("links the method cards to a real, keyboard-reachable page", async () => {
     // CALC-007：方法卡片是真实链接而非假 <article>。
     render(createElement(CalculatorPanel));
+	await screen.findByLabelText("年利率（%）");
 
     const link = screen.getByRole("link", {
       name: /为什么月供安全线比总价更重要/,
@@ -216,37 +302,17 @@ describe("CalculatorPanel", () => {
     expect(link).toHaveAttribute("href", "/methods");
   });
 
-  it("pre-fills editable loan params from assumptions and submits them (CALC-006.2)", async () => {
-    vi.mocked(getCapacityAssumptions).mockResolvedValueOnce({
-      ruleVersion: "2026.07.14",
-      effectiveDate: "2026-07-14",
-      downPaymentRate: 0.35,
-      loan: {
-        annualInterestRate: 0.039,
-        loanTermMonths: 360,
-        repaymentMethod: "equal_installment",
-      },
-    });
-    vi.mocked(createCapacityCalculation).mockResolvedValueOnce({
-      id: "calc_1",
-      result: {
-        pressureLevel: "safe",
-        strategy: "可以同步推进",
-        ruleVersion: "2026.07.14",
-        effectiveDate: "2026-07-14",
-      },
-    });
+  it("submits current loan and city policy parameters on every calculation", async () => {
+    vi.mocked(createCapacityCalculation).mockResolvedValueOnce(reportFixture);
     render(createElement(CalculatorPanel));
 
-    // 默认值来自 assumptions，且标注来源。
     const rate = await screen.findByLabelText("年利率（%）");
     expect(rate).toHaveValue("3.9");
-    expect(screen.getByText(/默认取自规则版本 2026.07.14/)).toBeInTheDocument();
-
-    // 用户调整利率并提交，payload 携带 loanOverride。
+    expect(screen.getByDisplayValue("测试市")).toBeInTheDocument();
     fireEvent.change(rate, { target: { value: "4.9" } });
-    fillCoreInput("500");
-    fireEvent.click(screen.getByRole("button", { name: "重新生成诊断报告" }));
+    fireEvent.change(screen.getByLabelText("首付比例（%）"), { target: { value: "40" } });
+    fillAllFamilyFields();
+    fireEvent.click(screen.getByRole("button", { name: "生成诊断报告" }));
 
     await waitFor(() => {
       expect(createCapacityCalculation).toHaveBeenCalledWith(
@@ -256,50 +322,79 @@ describe("CalculatorPanel", () => {
             loanTermMonths: 360,
             repaymentMethod: "equal_installment",
           }),
+          cityPolicyOverride: expect.objectContaining({
+            city: "测试市",
+            policyName: "测试首付政策",
+            downPaymentRate: 0.4,
+            effectiveDate: "2026-07-14",
+            source: "测试政策来源",
+          }),
         }),
         expect.any(AbortSignal),
       );
     });
   });
 
-  it("posts current input and displays the API diagnosis when regenerated", async () => {
-    vi.mocked(createCapacityCalculation).mockResolvedValueOnce({
-      id: "calculation_1",
-      result: {
-        pressureLevel: "safe",
-        strategy: "可以同步推进",
-        ruleVersion: "2026.07.14",
-        effectiveDate: "2026-07-14",
-      },
-    });
+  it("renders only the complete saved API report and positions pressure continuously", async () => {
+    vi.mocked(createCapacityCalculation).mockResolvedValueOnce(reportFixture);
     render(createElement(CalculatorPanel));
+    await screen.findByLabelText("年利率（%）");
+    fillAllFamilyFields();
+    fireEvent.click(screen.getByRole("button", { name: "生成诊断报告" }));
 
-    fillCoreInput("500");
-    fireEvent.click(screen.getByRole("button", { name: "重新生成诊断报告" }));
+    expect(await screen.findByText("后端返回的完整诊断原因。")).toBeInTheDocument();
+    expect(screen.getByText(/报告 ID：calculation_1/)).toBeInTheDocument();
+    expect(screen.getByText(/生成时间：2026-07-14T12:00:00Z/)).toBeInTheDocument();
+    expect(screen.getByText("最终输入")).toBeInTheDocument();
+    expect(screen.getByText("应用假设")).toBeInTheDocument();
+    expect(screen.getByText("房脉测算规则")).toBeInTheDocument();
+    expect(screen.getByText(/测试政策来源/)).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(createCapacityCalculation).toHaveBeenCalledWith(
-        expect.objectContaining({ targetTotalPrice: 500 }),
-        expect.any(AbortSignal),
-      );
-    });
-    expect(
-      await screen.findByText((content) => content.includes("可以同步推进")),
-    ).toBeInTheDocument();
-    expect(screen.getByText("安全")).toBeInTheDocument();
+    const pointer = screen.getByTestId("pressure-pointer");
+    const expectedLeft = (0.42 / (0.55 * 1.1)) * 100;
+    expect(pointer).toHaveStyle({ left: `${expectedLeft}%` });
   });
 
-  it("shows an inline API error while preserving the local preview", async () => {
-    vi.mocked(createCapacityCalculation).mockRejectedValueOnce(
-      new Error("api unavailable"),
+  it("clears a saved report as soon as any input changes", async () => {
+    vi.mocked(createCapacityCalculation).mockResolvedValueOnce(reportFixture);
+    render(createElement(CalculatorPanel));
+    await screen.findByLabelText("年利率（%）");
+    fillAllFamilyFields();
+    fireEvent.click(screen.getByRole("button", { name: "生成诊断报告" }));
+    expect(await screen.findByText("后端返回的完整诊断原因。")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("交易税费（万）"), { target: { value: "19" } });
+    expect(screen.queryByText("后端返回的完整诊断原因。")).not.toBeInTheDocument();
+    expect(screen.getByText(/填写全部家庭、贷款与城市政策参数并提交/)).toBeInTheDocument();
+  });
+
+  it("shows an API error without retaining or inventing a conclusion", async () => {
+    vi.mocked(createCapacityCalculation).mockRejectedValueOnce(new Error("api unavailable"));
+    render(createElement(CalculatorPanel));
+    await screen.findByLabelText("年利率（%）");
+    fillAllFamilyFields("720");
+    fireEvent.click(screen.getByRole("button", { name: "生成诊断报告" }));
+
+    expect(await screen.findByText("诊断报告生成失败，请稍后重试。")).toBeInTheDocument();
+    expect(screen.queryByText("危险")).not.toBeInTheDocument();
+    expect(screen.queryByText("暂缓改善")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pressure-pointer")).not.toBeInTheDocument();
+  });
+
+  it("ignores an in-flight response after an input changes", async () => {
+    let resolveRequest: (value: CalculationResponse) => void = () => undefined;
+    vi.mocked(createCapacityCalculation).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRequest = resolve; }),
     );
     render(createElement(CalculatorPanel));
+    await screen.findByLabelText("年利率（%）");
+    fillAllFamilyFields();
+    fireEvent.click(screen.getByRole("button", { name: "生成诊断报告" }));
+    await waitFor(() => expect(createCapacityCalculation).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText("目标总价（万）"), { target: { value: "510" } });
+    await act(async () => resolveRequest(reportFixture));
 
-    fillCoreInput("720");
-    fireEvent.click(screen.getByRole("button", { name: "重新生成诊断报告" }));
-
-    expect(await screen.findByText("诊断报告暂时无法更新，请稍后重试。")).toBeInTheDocument();
-    expect(screen.getByText("危险")).toBeInTheDocument();
+    expect(screen.queryByText("后端返回的完整诊断原因。")).not.toBeInTheDocument();
   });
 });
 

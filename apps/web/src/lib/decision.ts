@@ -11,34 +11,6 @@ export type ActionWindow = "看" | "等" | "砍价" | "出手";
 export type Confidence = "低" | "中" | "高";
 export type Scarcity = "low" | "medium" | "high";
 
-export interface HousingCapacityInput {
-  cashOnHand: number;
-  oldHomeValue: number;
-  oldLoanBalance: number;
-  monthlyIncome: number;
-  currentMonthlyMortgage: number;
-  acceptableMonthlyMortgage: number;
-  targetTotalPrice: number;
-  renovationBudget: number;
-  transactionCosts: number;
-  transitionRentCost: number;
-}
-
-export interface HousingCapacityResult {
-  netOldHomeProceeds: number;
-  deployableCash: number;
-  safeTotalPrice: number;
-  strainedTotalPrice: number;
-  dangerTotalPrice: number;
-  downPaymentGap: number;
-  monthlyPayment: number;
-  monthlyPaymentRatio: number;
-  pressureLevel: PressureLevel;
-  minimumSafeOldHomeSalePrice: number;
-  strategy: "先卖后买或同步推进" | "可以同步推进" | "暂缓改善";
-  reasons: string[];
-}
-
 export interface NeighborhoodSignalInput {
   name: string;
   listingPriceRange: [number, number];
@@ -78,122 +50,12 @@ export interface ActionWindowResult {
   risks: string[];
 }
 
-const DOWN_PAYMENT_RATE = 0.35;
-const MONTHLY_PAYMENT_PER_TOTAL_PRICE_WAN = 0.65 * 0.0041;
-
 const round = (value: number, digits = 1) => {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 };
 
 const midpoint = ([min, max]: [number, number]) => (min + max) / 2;
-
-export function calculateHousingCapacity(
-  input: HousingCapacityInput,
-): HousingCapacityResult {
-  const netOldHomeProceeds = Math.max(
-    input.oldHomeValue - input.oldLoanBalance,
-    0,
-  );
-  const reserve = input.monthlyIncome * 6;
-  const requiredCosts =
-    input.renovationBudget + input.transactionCosts + input.transitionRentCost;
-  const deployableCash = Math.max(
-    input.cashOnHand + netOldHomeProceeds - requiredCosts - reserve,
-    0,
-  );
-
-  const monthlyCapacityToTotalPrice = (ratio: number) => {
-    const availableMonthlyPayment = Math.max(
-      Math.min(
-        input.acceptableMonthlyMortgage,
-        input.monthlyIncome * ratio - input.currentMonthlyMortgage,
-      ),
-      0,
-    );
-
-    return deployableCash + availableMonthlyPayment / (0.65 * 0.0041);
-  };
-
-  const safeTotalPrice = round(monthlyCapacityToTotalPrice(0.35));
-  const strainedTotalPrice = round(monthlyCapacityToTotalPrice(0.45));
-  const dangerTotalPrice = round(
-    deployableCash +
-      Math.max(
-        input.monthlyIncome * 0.55 - input.currentMonthlyMortgage,
-        input.acceptableMonthlyMortgage * 1.15,
-      ) /
-        (0.65 * 0.0041),
-  );
-
-  const requiredUpfront =
-    input.targetTotalPrice * DOWN_PAYMENT_RATE + requiredCosts + reserve;
-  const downPaymentGap = round(
-    Math.max(requiredUpfront - input.cashOnHand - netOldHomeProceeds, 0),
-  );
-  const monthlyPayment = round(
-    input.targetTotalPrice * MONTHLY_PAYMENT_PER_TOTAL_PRICE_WAN,
-    2,
-  );
-  const monthlyPaymentRatio = round(
-    (monthlyPayment + input.currentMonthlyMortgage) / input.monthlyIncome,
-    3,
-  );
-
-  let pressureLevel: PressureLevel = "safe";
-  if (monthlyPaymentRatio > 0.45) {
-    pressureLevel = "danger";
-  } else if (monthlyPaymentRatio > 0.35) {
-    pressureLevel = "strained";
-  }
-
-  const oldHomeProceedsShare =
-    netOldHomeProceeds / Math.max(input.cashOnHand + netOldHomeProceeds, 1);
-  const reasons: string[] = [];
-
-  if (oldHomeProceedsShare > 0.5) {
-    reasons.push("旧房净回款占首付能力比重较高，未锁定成交前不宜贸然下定。");
-  }
-
-  if (downPaymentGap > 0) {
-    reasons.push("目标总价下存在首付或过渡资金缺口，需要先补足安全垫。");
-  }
-
-  if (pressureLevel === "danger") {
-    reasons.push("目标总价对应的月供收入比超过危险线，现金流缓冲不足。");
-  } else if (pressureLevel === "strained") {
-    reasons.push("目标总价已高于安全月供线，适合通过砍价或降低总价回到安全区。");
-  } else {
-    reasons.push("目标总价对应月供仍在安全线内，可以继续推进看房。");
-  }
-
-  const minimumSafeOldHomeSalePrice = round(
-    input.oldLoanBalance +
-      Math.max(requiredUpfront - input.cashOnHand, 0),
-  );
-
-  const strategy =
-    pressureLevel === "danger" || downPaymentGap > 0
-      ? "暂缓改善"
-      : oldHomeProceedsShare > 0.5
-        ? "先卖后买或同步推进"
-        : "可以同步推进";
-
-  return {
-    netOldHomeProceeds: round(netOldHomeProceeds),
-    deployableCash: round(deployableCash),
-    safeTotalPrice,
-    strainedTotalPrice,
-    dangerTotalPrice,
-    downPaymentGap,
-    monthlyPayment,
-    monthlyPaymentRatio,
-    pressureLevel,
-    minimumSafeOldHomeSalePrice,
-    strategy,
-    reasons,
-  };
-}
 
 export function evaluateNeighborhoodSignal(
   input: NeighborhoodSignalInput,

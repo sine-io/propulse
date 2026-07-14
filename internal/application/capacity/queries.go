@@ -1,6 +1,16 @@
 package capacity
 
-import "context"
+import (
+	"context"
+
+	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
+)
+
+type GetAssumptionsQuery struct{}
+
+func (s *Service) GetAssumptions(_ context.Context, _ GetAssumptionsQuery) (domaincapacity.Assumptions, error) {
+	return s.assumptions, nil
+}
 
 type GetCalculationQuery struct {
 	ID string

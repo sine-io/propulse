@@ -5,7 +5,17 @@ import (
 	"testing"
 )
 
+func setValidCapacityPolicyEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("PROPULSE_CAPACITY_POLICY_CITY", "测试市")
+	t.Setenv("PROPULSE_CAPACITY_POLICY_NAME", "测试首付政策")
+	t.Setenv("PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE", "0.35")
+	t.Setenv("PROPULSE_CAPACITY_POLICY_EFFECTIVE_DATE", "2026-07-14")
+	t.Setenv("PROPULSE_CAPACITY_POLICY_SOURCE", "测试政策来源")
+}
+
 func TestLoadUsesDocumentedDefaults(t *testing.T) {
+	setValidCapacityPolicyEnv(t)
 	t.Setenv("PROPULSE_HTTP_ADDR", "")
 	t.Setenv("PROPULSE_DATABASE_URL", "")
 	t.Setenv("PROPULSE_REDIS_ADDR", "")
@@ -48,6 +58,7 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 }
 
 func TestLoadReadsAccessToken(t *testing.T) {
+	setValidCapacityPolicyEnv(t)
 	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_ACCESS_TOKEN", "secret-token")
 	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "legacy-token")
@@ -62,6 +73,7 @@ func TestLoadReadsAccessToken(t *testing.T) {
 }
 
 func TestLoadDoesNotAcceptLegacyAdminToken(t *testing.T) {
+	setValidCapacityPolicyEnv(t)
 	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_ACCESS_TOKEN", "")
 	t.Setenv("PROPULSE_ADMIN_API_TOKEN", "legacy-token")
@@ -76,6 +88,7 @@ func TestLoadDoesNotAcceptLegacyAdminToken(t *testing.T) {
 }
 
 func TestLoadParsesSchedulerInterval(t *testing.T) {
+	setValidCapacityPolicyEnv(t)
 	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "10s")
 
@@ -90,6 +103,7 @@ func TestLoadParsesSchedulerInterval(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidSchedulerInterval(t *testing.T) {
+	setValidCapacityPolicyEnv(t)
 	t.Setenv("PROPULSE_USER_ID", "propulse-user")
 	t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "sometimes")
 
@@ -102,6 +116,7 @@ func TestLoadRejectsInvalidSchedulerInterval(t *testing.T) {
 func TestLoadRequiresUserIDForRuntimeModes(t *testing.T) {
 	for _, mode := range []string{"serve", "api", "worker", "scheduler"} {
 		t.Run(mode, func(t *testing.T) {
+			setValidCapacityPolicyEnv(t)
 			t.Setenv("PROPULSE_USER_ID", "")
 
 			_, err := Load(mode)
@@ -118,6 +133,8 @@ func TestLoadMigrationsOnlyRequireDatabaseConfiguration(t *testing.T) {
 			t.Setenv("PROPULSE_DATABASE_URL", "postgres://migration-db")
 			t.Setenv("PROPULSE_USER_ID", "")
 			t.Setenv("PROPULSE_SCHEDULER_INTERVAL", "not-a-duration")
+			t.Setenv("PROPULSE_CAPACITY_POLICY_CITY", "")
+			t.Setenv("PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE", "not-a-number")
 
 			cfg, err := Load(mode)
 			if err != nil {
@@ -131,6 +148,77 @@ func TestLoadMigrationsOnlyRequireDatabaseConfiguration(t *testing.T) {
 			}
 			if cfg.UserID != "" {
 				t.Fatalf("UserID = %q, want empty for migration mode", cfg.UserID)
+			}
+		})
+	}
+}
+
+func TestLoadMapsCapacityAssumptions(t *testing.T) {
+	setValidCapacityPolicyEnv(t)
+	t.Setenv("PROPULSE_USER_ID", "propulse-user")
+
+	cfg, err := Load("api")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	assumptions := cfg.CapacityAssumptions
+	if assumptions.RuleVersion != "2026.07.14" || assumptions.EffectiveDate != "2026-07-14" {
+		t.Fatalf("rule metadata = %q/%q", assumptions.RuleVersion, assumptions.EffectiveDate)
+	}
+	if assumptions.CityPolicy.City != "测试市" || assumptions.CityPolicy.PolicyName != "测试首付政策" ||
+		assumptions.CityPolicy.DownPaymentRate != 0.35 || assumptions.CityPolicy.Source != "测试政策来源" {
+		t.Fatalf("CityPolicy = %#v", assumptions.CityPolicy)
+	}
+	if assumptions.Loan.AnnualInterestRate != 0.039 || assumptions.Loan.LoanTermMonths != 360 ||
+		assumptions.Loan.RepaymentMethod != "equal_installment" {
+		t.Fatalf("Loan = %#v", assumptions.Loan)
+	}
+}
+
+func TestLoadRequiresEveryCapacityPolicySetting(t *testing.T) {
+	keys := []string{
+		"PROPULSE_CAPACITY_POLICY_CITY",
+		"PROPULSE_CAPACITY_POLICY_NAME",
+		"PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE",
+		"PROPULSE_CAPACITY_POLICY_EFFECTIVE_DATE",
+		"PROPULSE_CAPACITY_POLICY_SOURCE",
+	}
+	for _, key := range keys {
+		t.Run(key, func(t *testing.T) {
+			setValidCapacityPolicyEnv(t)
+			t.Setenv("PROPULSE_USER_ID", "propulse-user")
+			t.Setenv(key, " ")
+
+			_, err := Load("serve")
+			if !errors.Is(err, ErrMissingCapacityPolicy) {
+				t.Fatalf("Load() error = %v, want ErrMissingCapacityPolicy", err)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsInvalidCapacityPolicy(t *testing.T) {
+	tests := map[string]struct {
+		key   string
+		value string
+	}{
+		"non numeric rate": {key: "PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE", value: "many"},
+		"zero rate":        {key: "PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE", value: "0"},
+		"rate one":         {key: "PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE", value: "1"},
+		"negative rate":    {key: "PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE", value: "-0.1"},
+		"invalid date":     {key: "PROPULSE_CAPACITY_POLICY_EFFECTIVE_DATE", value: "2026/07/14"},
+		"future date":      {key: "PROPULSE_CAPACITY_POLICY_EFFECTIVE_DATE", value: "2999-01-01"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			setValidCapacityPolicyEnv(t)
+			t.Setenv("PROPULSE_USER_ID", "propulse-user")
+			t.Setenv(test.key, test.value)
+
+			_, err := Load("api")
+			if !errors.Is(err, ErrInvalidCapacityPolicy) {
+				t.Fatalf("Load() error = %v, want ErrInvalidCapacityPolicy", err)
 			}
 		})
 	}

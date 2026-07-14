@@ -99,7 +99,7 @@ func openRuntime(ctx context.Context, cfg config.Config, _ zerolog.Logger) (*run
 	neighborhoodRepo := postgresgorm.NewNeighborhoodRepositoryWithMetricReader(gormDB, metricRepo)
 	collectionRepo := postgresgorm.NewCollectionRepository(gormDB)
 
-	rt.capacity = appcapacity.NewService(capacityRepo, time.Now, nil)
+	rt.capacity = appcapacity.NewService(capacityRepo, cfg.CapacityAssumptions, time.Now, nil)
 	rt.metric = appmetric.NewService(metricRepo)
 	rt.neighborhood = appneighborhood.NewService(neighborhoodRepo)
 	rt.collection = appcollection.NewServiceWithMetricRefresh(collectionRepo, time.Now, nil, rt.metric, rt.enqueuer)

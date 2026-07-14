@@ -93,6 +93,60 @@ func TestAccessProtectionContract(t *testing.T) {
 	}
 }
 
+func TestCapacityCalculationContract(t *testing.T) {
+	spec := loadOpenAPI(t)
+	components := requiredMap(t, spec, "components")
+	schemas := requiredMap(t, components, "schemas")
+	paths := requiredMap(t, spec, "paths")
+
+	input := requiredMap(t, schemas, "HousingCapacityInput")
+	assertRequiredFields(t, input, []string{
+		"cashOnHand", "oldHomeValue", "oldLoanBalance", "monthlyIncome", "currentMonthlyMortgage",
+		"acceptableMonthlyMortgage", "targetTotalPrice", "renovationBudget", "transactionCosts", "transitionRentCost",
+	})
+	inputProperties := requiredMap(t, input, "properties")
+	if got := requiredString(t, requiredMap(t, inputProperties, "cityPolicyOverride"), "$ref"); got != "#/components/schemas/CityPolicyOverride" {
+		t.Fatalf("cityPolicyOverride $ref = %q", got)
+	}
+
+	policy := requiredMap(t, schemas, "CityPolicyOverride")
+	assertRequiredFields(t, policy, []string{"city", "policyName", "downPaymentRate", "effectiveDate", "source"})
+	loan := requiredMap(t, schemas, "LoanParams")
+	assertRequiredFields(t, loan, []string{"annualInterestRate", "loanTermMonths", "repaymentMethod"})
+
+	result := requiredMap(t, schemas, "HousingCapacityResult")
+	assertRequiredFields(t, result, []string{"traceabilityStatus", "appliedAssumptions", "ruleVersion", "effectiveDate"})
+	resultProperties := requiredMap(t, result, "properties")
+	applied := requiredMap(t, resultProperties, "appliedAssumptions")
+	if nullable, ok := applied["nullable"].(bool); !ok || !nullable {
+		t.Fatalf("appliedAssumptions nullable = %#v, want true", applied["nullable"])
+	}
+
+	createSchema := responseJSONSchema(t, requiredMap(t, requiredMap(t, paths, "/api/v1/capacity/calculations"), "post"), "201")
+	if got := requiredString(t, createSchema, "$ref"); got != "#/components/schemas/CreateCalculationResponse" {
+		t.Fatalf("POST response schema = %q", got)
+	}
+	createResponse := requiredMap(t, schemas, "CreateCalculationResponse")
+	allOf, ok := createResponse["allOf"].([]interface{})
+	if !ok || len(allOf) != 1 {
+		t.Fatalf("CreateCalculationResponse allOf = %#v", createResponse["allOf"])
+	}
+	createRef, ok := allOf[0].(map[string]interface{})
+	if !ok || requiredString(t, createRef, "$ref") != "#/components/schemas/CalculationResponse" {
+		t.Fatalf("CreateCalculationResponse = %#v, want CalculationResponse alias", createResponse)
+	}
+
+	getSchema := responseJSONSchema(t, requiredMap(t, requiredMap(t, paths, "/api/v1/capacity/calculations/{id}"), "get"), "200")
+	if got := requiredString(t, getSchema, "$ref"); got != "#/components/schemas/CalculationResponse" {
+		t.Fatalf("GET response schema = %q", got)
+	}
+	assertRequiredFields(t, requiredMap(t, schemas, "CalculationResponse"), []string{"id", "input", "result", "createdAt"})
+	assertRequiredFields(t, requiredMap(t, schemas, "AppliedAssumptions"), []string{
+		"ruleVersion", "effectiveDate", "ruleSource", "loan", "loanSource", "loanOrigin", "cityPolicy",
+		"reserveMonths", "pressureThresholds", "oldHomeShareThreshold",
+	})
+}
+
 func loadOpenAPI(t *testing.T) map[string]interface{} {
 	t.Helper()
 	contents, err := os.ReadFile("openapi.yaml")
@@ -184,6 +238,36 @@ func assertAccessRequiredResponse(t *testing.T, response map[string]interface{})
 	if got := requiredString(t, challengeSchema, "example"); got != "Bearer" {
 		t.Fatalf("WWW-Authenticate schema example = %q, want Bearer", got)
 	}
+}
+
+func assertRequiredFields(t *testing.T, schema map[string]interface{}, fields []string) {
+	t.Helper()
+	raw, ok := schema["required"].([]interface{})
+	if !ok {
+		t.Fatalf("schema required = %#v, want list", schema["required"])
+	}
+	required := make(map[string]struct{}, len(raw))
+	for _, item := range raw {
+		field, ok := item.(string)
+		if !ok {
+			t.Fatalf("required item = %#v, want string", item)
+		}
+		required[field] = struct{}{}
+	}
+	for _, field := range fields {
+		if _, ok := required[field]; !ok {
+			t.Fatalf("required fields = %v, missing %q", sortedKeys(required), field)
+		}
+	}
+}
+
+func responseJSONSchema(t *testing.T, operation map[string]interface{}, status string) map[string]interface{} {
+	t.Helper()
+	responses := requiredMap(t, operation, "responses")
+	response := requiredMap(t, responses, status)
+	content := requiredMap(t, response, "content")
+	jsonContent := requiredMap(t, content, "application/json")
+	return requiredMap(t, jsonContent, "schema")
 }
 
 func requiredHTTPMethods(t *testing.T, rawPathItem interface{}) map[string]interface{} {

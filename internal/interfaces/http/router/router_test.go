@@ -19,9 +19,38 @@ import (
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	"github.com/sine-io/propulse/internal/application/user"
+	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
+
+func testCapacityAssumptions() domaincapacity.Assumptions {
+	return domaincapacity.Assumptions{
+		RuleVersion:   "2026.07.14",
+		EffectiveDate: "2026-07-14",
+		RuleSource:    "test rules",
+		Loan: domaincapacity.LoanParams{
+			AnnualInterestRate: 0.039,
+			LoanTermMonths:     360,
+			RepaymentMethod:    domaincapacity.RepaymentEqualInstallment,
+		},
+		LoanSource: "test loan defaults",
+		LoanOrigin: domaincapacity.OriginConfiguredDefault,
+		CityPolicy: domaincapacity.CityPolicy{
+			City:            "测试市",
+			PolicyName:      "测试政策",
+			DownPaymentRate: 0.35,
+			EffectiveDate:   "2026-07-14",
+			Source:          "测试来源",
+			Origin:          domaincapacity.OriginConfiguredDefault,
+		},
+		ReserveMonths: 6,
+		PressureThresholds: domaincapacity.PressureThresholds{
+			SafeRatio: 0.35, StrainedRatio: 0.45, DangerRatio: 0.55, DangerMultiplier: 1.15,
+		},
+		OldHomeShareThreshold: 0.5,
+	}
+}
 
 func newTestEngine(t *testing.T, deps Dependencies) http.Handler {
 	t.Helper()
@@ -29,7 +58,7 @@ func newTestEngine(t *testing.T, deps Dependencies) http.Handler {
 	marketState := newInMemoryMarketState()
 	neighborhoodRepo := newInMemoryNeighborhoodRepository(marketState)
 	if deps.CapacityApplication == nil {
-		deps.CapacityApplication = appcapacity.NewService(newInMemoryCalculationRepository(), nil, nil)
+		deps.CapacityApplication = appcapacity.NewService(newInMemoryCalculationRepository(), testCapacityAssumptions(), nil, nil)
 	}
 	if deps.NeighborhoodApplication == nil {
 		deps.NeighborhoodApplication = appneighborhood.NewService(neighborhoodRepo)
@@ -687,6 +716,11 @@ func TestPublicNeighborhoodReadsDoNotRequireAccessToken(t *testing.T) {
 
 type stubCapacityApplication struct {
 	calls int
+}
+
+func (s *stubCapacityApplication) GetAssumptions(_ context.Context, _ appcapacity.GetAssumptionsQuery) (domaincapacity.Assumptions, error) {
+	s.calls++
+	return testCapacityAssumptions(), nil
 }
 
 func (s *stubCapacityApplication) CreateCalculation(_ context.Context, _ appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error) {

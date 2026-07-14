@@ -20,7 +20,7 @@ paths:
   /api/v1/capacity/assumptions:
     get:
       summary: Get default calculation assumptions
-      description: Public. Returns the current default loan params and rule version for pre-filling the calculator.
+      description: Public. Returns the complete currently effective rule set used to pre-fill reproducible calculations.
       responses:
         '200':
           description: Default assumptions
@@ -510,49 +510,187 @@ components:
       properties:
         cashOnHand:
           type: number
+          minimum: 0
+          description: Available cash, in ten-thousand CNY.
         oldHomeValue:
           type: number
+          minimum: 0
+          description: Expected old-home sale price, in ten-thousand CNY.
         oldLoanBalance:
           type: number
+          minimum: 0
+          description: Outstanding old-home loan, in ten-thousand CNY.
         monthlyIncome:
           type: number
+          minimum: 0
+          exclusiveMinimum: true
+          description: Monthly household income, in ten-thousand CNY.
         currentMonthlyMortgage:
           type: number
+          minimum: 0
+          description: Existing monthly mortgage, in ten-thousand CNY.
         acceptableMonthlyMortgage:
           type: number
+          minimum: 0
+          description: Maximum acceptable new monthly mortgage, in ten-thousand CNY.
         targetTotalPrice:
           type: number
+          minimum: 0
+          exclusiveMinimum: true
+          description: Target home total price, in ten-thousand CNY.
         renovationBudget:
           type: number
+          minimum: 0
+          description: Renovation budget, in ten-thousand CNY.
         transactionCosts:
           type: number
+          minimum: 0
+          description: Taxes and transaction costs, in ten-thousand CNY.
         transitionRentCost:
           type: number
+          minimum: 0
+          description: Transition rent and moving costs, in ten-thousand CNY.
         loanOverride:
           $ref: '#/components/schemas/LoanParams'
+        cityPolicyOverride:
+          $ref: '#/components/schemas/CityPolicyOverride'
     LoanParams:
       type: object
       required: [annualInterestRate, loanTermMonths, repaymentMethod]
       properties:
         annualInterestRate:
           type: number
+          minimum: 0
+          maximum: 1
         loanTermMonths:
           type: integer
+          minimum: 1
+          maximum: 600
         repaymentMethod:
           type: string
           enum: [equal_installment, equal_principal]
-    CapacityAssumptionsResponse:
+    CityPolicyOverride:
       type: object
-      required: [ruleVersion, effectiveDate, downPaymentRate, loan]
+      required: [city, policyName, downPaymentRate, effectiveDate, source]
+      properties:
+        city:
+          type: string
+          minLength: 1
+        policyName:
+          type: string
+          minLength: 1
+        downPaymentRate:
+          type: number
+          minimum: 0
+          maximum: 1
+          exclusiveMinimum: true
+          exclusiveMaximum: true
+        effectiveDate:
+          type: string
+          format: date
+        source:
+          type: string
+          minLength: 1
+    AssumptionOrigin:
+      type: string
+      enum: [configured_default, user_override]
+    CityPolicy:
+      allOf:
+        - $ref: '#/components/schemas/CityPolicyOverride'
+        - type: object
+          required: [origin]
+          properties:
+            origin:
+              $ref: '#/components/schemas/AssumptionOrigin'
+    PressureThresholds:
+      type: object
+      required: [safeRatio, strainedRatio, dangerRatio, dangerMultiplier]
+      properties:
+        safeRatio:
+          type: number
+        strainedRatio:
+          type: number
+        dangerRatio:
+          type: number
+        dangerMultiplier:
+          type: number
+    AppliedAssumptions:
+      type: object
+      required:
+        - ruleVersion
+        - effectiveDate
+        - ruleSource
+        - loan
+        - loanSource
+        - loanOrigin
+        - cityPolicy
+        - reserveMonths
+        - pressureThresholds
+        - oldHomeShareThreshold
       properties:
         ruleVersion:
           type: string
         effectiveDate:
           type: string
-        downPaymentRate:
-          type: number
+          format: date
+        ruleSource:
+          type: string
         loan:
           $ref: '#/components/schemas/LoanParams'
+        loanSource:
+          type: string
+        loanOrigin:
+          $ref: '#/components/schemas/AssumptionOrigin'
+        cityPolicy:
+          $ref: '#/components/schemas/CityPolicy'
+        reserveMonths:
+          type: number
+          minimum: 0
+        pressureThresholds:
+          $ref: '#/components/schemas/PressureThresholds'
+        oldHomeShareThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+    CapacityAssumptionsResponse:
+      type: object
+      required:
+        - ruleVersion
+        - effectiveDate
+        - ruleSource
+        - downPaymentRate
+        - loan
+        - loanSource
+        - loanOrigin
+        - cityPolicy
+        - reserveMonths
+        - pressureThresholds
+        - oldHomeShareThreshold
+      properties:
+        ruleVersion:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+        ruleSource:
+          type: string
+        downPaymentRate:
+          type: number
+          description: Compatibility alias for cityPolicy.downPaymentRate.
+        loan:
+          $ref: '#/components/schemas/LoanParams'
+        loanSource:
+          type: string
+        loanOrigin:
+          $ref: '#/components/schemas/AssumptionOrigin'
+        cityPolicy:
+          $ref: '#/components/schemas/CityPolicy'
+        reserveMonths:
+          type: number
+        pressureThresholds:
+          $ref: '#/components/schemas/PressureThresholds'
+        oldHomeShareThreshold:
+          type: number
     HousingCapacityResult:
       type: object
       required:
@@ -570,6 +708,8 @@ components:
         - reasons
         - ruleVersion
         - effectiveDate
+        - traceabilityStatus
+        - appliedAssumptions
       properties:
         netOldHomeProceeds:
           type: number
@@ -603,26 +743,16 @@ components:
           type: string
         effectiveDate:
           type: string
-    CreateCalculationResponse:
-      type: object
-      required: [id, result]
-      properties:
-        id:
+        traceabilityStatus:
           type: string
-        result:
-          type: object
-          required: [pressureLevel, strategy, ruleVersion, effectiveDate]
-          properties:
-            pressureLevel:
-              type: string
-              enum: [safe, strained, danger]
-            strategy:
-              type: string
-              enum: ["先卖后买或同步推进", "可以同步推进", "暂缓改善"]
-            ruleVersion:
-              type: string
-            effectiveDate:
-              type: string
+          enum: [complete, legacy_unversioned]
+        appliedAssumptions:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AppliedAssumptions'
+    CreateCalculationResponse:
+      allOf:
+        - $ref: '#/components/schemas/CalculationResponse'
     CalculationResponse:
       type: object
       required: [id, input, result, createdAt]

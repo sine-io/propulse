@@ -878,6 +878,10 @@ func (s *stubAppCapacityApplication) CreateCalculation(_ context.Context, _ appc
 	return s.createRecord, nil
 }
 
+func (s *stubAppCapacityApplication) GetAssumptions(_ context.Context, _ appcapacity.GetAssumptionsQuery) (domaincapacity.Assumptions, error) {
+	return domaincapacity.Assumptions{}, nil
+}
+
 func (s *stubAppCapacityApplication) GetCalculation(_ context.Context, _ appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error) {
 	return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
 }

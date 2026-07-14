@@ -62,6 +62,18 @@
 
 复制 `.env.example` 中需要的配置到本地环境，并至少替换 `PROPULSE_ACCESS_TOKEN`。`PROPULSE_USER_ID` 为必填项，未设置时服务会启动失败（fail-fast），不会静默回退到默认账号。
 
+`serve`、`api`、`worker`、`scheduler` 还要求同时设置以下城市政策变量；缺失、首付比例不在 `(0,1)`、日期不是 ISO 日期或生效日期晚于当前日期时，进程会直接拒绝启动：
+
+```text
+PROPULSE_CAPACITY_POLICY_CITY
+PROPULSE_CAPACITY_POLICY_NAME
+PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE
+PROPULSE_CAPACITY_POLICY_EFFECTIVE_DATE
+PROPULSE_CAPACITY_POLICY_SOURCE
+```
+
+`migrate up` 和 `migrate down` 只依赖数据库配置，不要求用户身份、访问令牌或测算政策。
+
 安装前端依赖并运行完整前端校验：
 
 ```bash
