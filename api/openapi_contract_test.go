@@ -119,10 +119,16 @@ func TestMetricHistoryAndQualityContracts(t *testing.T) {
 	assertRequiredFields(t, requiredMap(t, schemas, "MetricChangeValue"), []string{"absoluteChange", "percentageChange", "percentageStatus"})
 
 	watchlist := requiredMap(t, schemas, "WatchlistItem")
-	assertRequiredFields(t, watchlist, []string{"hasMetric", "collectedAt", "transactionSampleCount", "coverage", "freshness", "qualityState", "qualityWarnings", "sourceIds"})
+	assertRequiredFields(t, watchlist, []string{"hasMetric", "collectedAt", "transactionSampleCount", "coverage", "freshness", "qualityState", "qualityWarnings", "sourceIds", "weeklyComparison"})
 	watchlistProperties := requiredMap(t, watchlist, "properties")
 	assertStringEnumContains(t, requiredMap(t, watchlistProperties, "transactionMomentum"), "unknown")
 	assertStringEnumContains(t, requiredMap(t, watchlistProperties, "status"), "数据不足")
+	for _, field := range []string{"listedHomes", "priceCutHomes", "transactionMomentum", "transactionSampleCount", "weeklyComparison"} {
+		property := requiredMap(t, watchlistProperties, field)
+		if nullable, ok := property["nullable"].(bool); !ok || !nullable {
+			t.Fatalf("WatchlistItem.%s nullable = %#v, want true", field, property["nullable"])
+		}
+	}
 
 	actionResponses := requiredMap(t, requiredMap(t, requiredMap(t, paths, "/api/v1/decision/action-window"), "get"), "responses")
 	if _, ok := actionResponses["409"]; !ok {

@@ -22,6 +22,7 @@ type CommunityView = {
   advice: string;
   collectedAt?: string;
   cuts: string;
+  id: string;
   icon: "check" | "eye" | "warning";
   listed: string;
   meta: string;
@@ -32,6 +33,12 @@ type CommunityView = {
   transaction: string;
   transactionSamples: number;
   warnings: string[];
+  weeklyBaselineRunId?: string;
+  weeklyCurrentRunId?: string;
+  weeklyCuts: string;
+  weeklyListed: string;
+  weeklyStatus: string;
+  weeklyTransactions: string;
 };
 
 export function WatchlistPage() {
@@ -79,15 +86,19 @@ export function WatchlistPage() {
   const communities = useMemo(() => items.map(toCommunityView), [items]);
   const stats = useMemo(
     () => ({
-      bargain: items.filter((item) => ["重点看", "适合砍价"].includes(item.status)).length,
-      hard: items.filter((item) => item.status === "价格偏硬").length,
-      insufficient: items.filter(
-        (item) =>
-          !item.hasMetric ||
-          item.qualityState !== "sufficient" ||
-          item.transactionMomentum === "unknown",
+      comparableUnavailable: items.filter(
+        (item) => item.hasMetric && item.weeklyComparison?.status !== "available",
+      ).length,
+      currentPriceCuts: items.filter(
+        (item) => item.hasMetric && (item.priceCutHomes ?? 0) > 0,
       ).length,
       total: items.length,
+      weeklyPriceCutIncrease: items.filter(
+        (item) =>
+          item.weeklyComparison?.status === "available" &&
+          (item.weeklyComparison.priceCutHomes?.absoluteChange ?? 0) > 0,
+      ).length,
+      withMetric: items.filter((item) => item.hasMetric).length,
     }),
     [items],
   );
@@ -143,12 +154,13 @@ export function WatchlistPage() {
 
       {pageState === "ready" ? (
         <>
-          <section className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <section className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-5">
             {[
               ["观察小区", stats.total, "text-slate-900"],
-              ["可关注窗口", stats.bargain, "text-emerald-700"],
-              ["价格偏硬", stats.hard, "text-slate-700"],
-              ["数据不足", stats.insufficient, "text-amber-700"],
+              ["已有指标", stats.withMetric, "text-blue-700"],
+              ["当前存在降价", stats.currentPriceCuts, "text-slate-700"],
+              ["本周降价增加", stats.weeklyPriceCutIncrease, "text-emerald-700"],
+              ["周对比不可用", stats.comparableUnavailable, "text-amber-700"],
             ].map(([label, value, color]) => (
               <div key={label} className="rounded-lg border border-slate-200 bg-white p-4">
                 <p className="text-xs text-slate-500">{label}</p>
@@ -169,7 +181,7 @@ export function WatchlistPage() {
               <div className="space-y-4">
                 <h2 className="font-bold text-slate-800">小区状态</h2>
                 {communities.map((community) => (
-                  <CommunityCard key={community.name + community.meta} {...community} />
+                  <CommunityCard key={community.id} {...community} />
                 ))}
               </div>
 
@@ -209,21 +221,30 @@ function toCommunityView(item: WatchlistItem): CommunityView {
   return {
     advice: item.advice,
     collectedAt: item.collectedAt ? formatCollectedAt(item.collectedAt) : undefined,
-    cuts: item.hasMetric ? `${item.priceCutHomes} 套` : "暂无",
+    cuts: item.hasMetric && item.priceCutHomes != null ? `${item.priceCutHomes} 套` : "暂无",
+    id: item.id,
     icon: insufficient || stale ? "warning" : canBargain ? "check" : "eye",
-    listed: item.hasMetric ? `${item.listedHomes} 套` : "暂无",
+    listed: item.hasMetric && item.listedHomes != null ? `${item.listedHomes} 套` : "暂无",
     meta: `${item.area} · ${item.targetLayout}`,
     name: item.name,
-    qualityLabel: stale ? "数据已过期" : insufficient ? "数据不足" : undefined,
+    qualityLabel: stale
+      ? item.freshness === "expired" ? "数据已过期" : "数据已陈旧"
+      : insufficient ? "数据不足" : undefined,
     status: item.status,
     statusTone: insufficient || stale ? "amber" : canBargain ? "emerald" : "slate",
-    transaction: momentumCopy[item.transactionMomentum],
-    transactionSamples: item.transactionSampleCount,
+    transaction: item.transactionMomentum ? momentumCopy[item.transactionMomentum] : "暂无",
+    transactionSamples: item.transactionSampleCount ?? 0,
     warnings: item.qualityWarnings.map((warning) => warningCopy[warning] ?? warning),
+    weeklyBaselineRunId: item.weeklyComparison?.baselineBatch?.collectionRunId,
+    weeklyCurrentRunId: item.weeklyComparison?.currentBatch.collectionRunId,
+    weeklyCuts: formatMetricChange(item.weeklyComparison?.priceCutHomes),
+    weeklyListed: formatMetricChange(item.weeklyComparison?.listedHomes),
+    weeklyStatus: weeklyComparisonStatus(item),
+    weeklyTransactions: formatMetricChange(item.weeklyComparison?.recent30DayTransactions),
   };
 }
 
-const momentumCopy: Record<WatchlistItem["transactionMomentum"], string> = {
+const momentumCopy: Record<NonNullable<WatchlistItem["transactionMomentum"]>, string> = {
   unknown: "成交数据不足",
   stable: "平稳",
   strong: "活跃",
@@ -248,6 +269,27 @@ function formatCollectedAt(value: string): string {
     timeZone: "Asia/Shanghai",
   }).format(new Date(value));
 }
+
+function formatMetricChange(change: NonNullable<WatchlistItem["weeklyComparison"]>["listedHomes"]): string {
+  if (!change) return "暂无";
+  const absolute = change.absoluteChange > 0 ? `+${change.absoluteChange}` : `${change.absoluteChange}`;
+  if (change.percentageStatus === "zero_baseline") return `${absolute}（基线为 0）`;
+  const percentage = change.percentageChange == null ? "暂无" : `${change.percentageChange > 0 ? "+" : ""}${change.percentageChange.toFixed(1)}%`;
+  return `${absolute}（${percentage}）`;
+}
+
+function weeklyComparisonStatus(item: WatchlistItem): string {
+  if (!item.hasMetric) return "无指标，暂无本周对比";
+  if (!item.weeklyComparison) return "暂无本周对比";
+  if (item.weeklyComparison.status === "available") return "可用";
+  return comparisonReasonCopy[item.weeklyComparison.reason ?? ""] ?? "本周对比不可用";
+}
+
+const comparisonReasonCopy: Record<string, string> = {
+  current_partial_coverage: "暂无本周对比：当前批次为部分覆盖",
+  full_baseline_not_found: "暂无本周对比：基准窗口内没有完整批次",
+  transaction_evidence_missing: "暂无本周对比：成交证据缺失",
+};
 
 function StateBand({
   action,
@@ -310,6 +352,24 @@ function CommunityCard(community: CommunityView) {
           <dd className="mt-1 font-medium text-slate-900">{community.transaction}</dd>
         </div>
       </dl>
+
+      <div className="border-b border-slate-100 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-slate-700">周对比 · 基准窗口 T-14 至 T-7 天</p>
+          <span className="text-xs text-slate-500">{community.weeklyStatus}</span>
+        </div>
+        <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
+          <div><dt className="text-xs text-slate-500">挂牌变化</dt><dd className="mt-1 font-medium text-slate-900">{community.weeklyListed}</dd></div>
+          <div><dt className="text-xs text-slate-500">降价变化</dt><dd className="mt-1 font-medium text-slate-900">{community.weeklyCuts}</dd></div>
+          <div><dt className="text-xs text-slate-500">近 30 天成交变化</dt><dd className="mt-1 font-medium text-slate-900">{community.weeklyTransactions}</dd></div>
+        </dl>
+        {community.weeklyCurrentRunId ? (
+          <p className="mt-3 text-xs text-slate-500">
+            <Link href={`/data/imports/${community.weeklyCurrentRunId}`} className="text-blue-700 hover:underline">当前批次</Link>
+            {community.weeklyBaselineRunId ? <><span> · </span><Link href={`/data/imports/${community.weeklyBaselineRunId}`} className="text-blue-700 hover:underline">基准批次</Link></> : null}
+          </p>
+        ) : null}
+      </div>
 
       <div className="mt-4 flex items-start gap-2 text-sm text-slate-700">
         <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-slate-500" />

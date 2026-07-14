@@ -132,3 +132,22 @@ func latestFullBaseline(candidates []MetricHistoryRecord, from, to time.Time) *M
 func metricChangePtr(value domainneighborhood.MetricChangeValue) *domainneighborhood.MetricChangeValue {
 	return &value
 }
+
+func (s *Service) weeklyComparisonForMetric(ctx context.Context, metric MetricSnapshot) (*MetricComparison, error) {
+	records, err := s.repo.ListMetricHistory(ctx, MetricHistoryRepositoryQuery{
+		NeighborhoodID: metric.NeighborhoodID,
+		From:           metric.CollectedAt.Add(-14 * 24 * time.Hour),
+		To:             metric.CollectedAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for index, record := range records {
+		if record.Metric.CollectionRunID != metric.CollectionRunID {
+			continue
+		}
+		comparison := buildMetricComparison(record, records[:index], 14*24*time.Hour, 7*24*time.Hour)
+		return &comparison, nil
+	}
+	return nil, nil
+}

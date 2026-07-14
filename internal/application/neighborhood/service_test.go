@@ -213,6 +213,37 @@ func TestListWatchlistRefreshesStaleMetricQualityBeforeEvaluatingSignal(t *testi
 	}
 }
 
+func TestListWatchlistIncludesWeeklyComparisonFromRealHistory(t *testing.T) {
+	currentAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	baseline := historyRecord("baseline", currentAt.Add(-7*24*time.Hour), domainneighborhood.CoverageFull, 10, 2, 2)
+	current := historyRecord("current", currentAt, domainneighborhood.CoverageFull, 15, 5, 4)
+	repo := newMemoryRepository()
+	repo.history = []MetricHistoryRecord{baseline, current}
+	repo.watchlist = []WatchlistSummary{{
+		ID:             "watch_1",
+		NeighborhoodID: "neighborhood_1",
+		Name:           "青枫花园",
+		HasMetric:      true,
+		Metric:         current.Metric,
+	}}
+
+	got, err := NewServiceWithMetricConfig(repo, historyTestAlgorithmVersion, func() time.Time { return currentAt }).
+		ListWatchlist(context.Background(), ListWatchlistQuery{UserID: user.SingleUserID})
+	if err != nil {
+		t.Fatalf("ListWatchlist() error = %v", err)
+	}
+	if len(got) != 1 || got[0].WeeklyComparison == nil {
+		t.Fatalf("items = %#v", got)
+	}
+	comparison := got[0].WeeklyComparison
+	if comparison.Status != domainneighborhood.MetricComparisonAvailable || comparison.BaselineBatch == nil || comparison.BaselineBatch.CollectionRunID != "baseline" {
+		t.Fatalf("comparison = %#v", comparison)
+	}
+	if comparison.PriceCutHomes == nil || comparison.PriceCutHomes.AbsoluteChange != 3 {
+		t.Fatalf("price cut change = %#v", comparison.PriceCutHomes)
+	}
+}
+
 func TestLatestMetricEvaluatesSignal(t *testing.T) {
 	repo := newMemoryRepository()
 	repo.metrics["neighborhood_1"] = MetricSnapshot{
