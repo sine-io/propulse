@@ -10,6 +10,8 @@ import {
   listDataSources,
   createCapacityCalculation,
   getActionWindow,
+	getNeighborhood,
+	getNeighborhoodMetrics,
 	getMetricHistory,
   getWatchlist,
   verifyAccessToken,
@@ -112,6 +114,27 @@ describe("api-client", () => {
 		expect(fetchMock).toHaveBeenCalledWith(
 			"/api/v1/neighborhoods/neighborhood%2F1/metrics/history?from=2026-05-19T00%3A00%3A00Z&to=2026-07-14T00%3A00%3A00Z",
 			undefined,
+		);
+	});
+
+	it("reads neighborhood identity and latest metrics with encoded IDs", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch")
+			.mockResolvedValueOnce(jsonResponse({ id: "neighborhood/1", name: "接口花园", area: "南城", targetLayout: "两房" }))
+			.mockResolvedValueOnce(jsonResponse({ id: "metric-1", neighborhoodId: "neighborhood/1" }));
+		const signal = new AbortController().signal;
+
+		await getNeighborhood("neighborhood/1", signal);
+		await getNeighborhoodMetrics("neighborhood/1", signal);
+
+		expect(fetchMock).toHaveBeenNthCalledWith(
+			1,
+			"/api/v1/neighborhoods/neighborhood%2F1",
+			{ signal },
+		);
+		expect(fetchMock).toHaveBeenNthCalledWith(
+			2,
+			"/api/v1/neighborhoods/neighborhood%2F1/metrics",
+			{ signal },
 		);
 	});
 

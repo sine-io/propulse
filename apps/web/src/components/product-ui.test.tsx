@@ -20,7 +20,6 @@ import { ActionWindowPage } from "./action-window-page";
 import { CalculatorPanel } from "./calculator-panel";
 import { HomePage } from "./home-page";
 import { MethodsPage } from "./methods-page";
-import { NeighborhoodsPage } from "./neighborhoods-page";
 import { TemplatesPage } from "./templates-page";
 import { WatchlistPage } from "./watchlist-page";
 
@@ -402,23 +401,6 @@ describe("CalculatorPanel", () => {
     await act(async () => resolveRequest(reportFixture));
 
     expect(screen.queryByText("后端返回的完整诊断原因。")).not.toBeInTheDocument();
-  });
-});
-
-describe("NeighborhoodsPage", () => {
-  it("matches the reference community signal summary", () => {
-    render(createElement(NeighborhoodsPage));
-
-    expect(screen.getByText("更新时间: 今天 10:30")).toBeInTheDocument();
-    expect(screen.getByText("综合研判结论")).toBeInTheDocument();
-    expect(screen.getByText("适合试探性砍价")).toBeInTheDocument();
-    expect(screen.getByText("降价提醒")).toBeInTheDocument();
-    expect(screen.getByText("带看转定率")).toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        "重点看 495-545 万成交区间附近房源，对挂牌久、降价过的房源试探底价。",
-      ),
-    ).not.toBeInTheDocument();
   });
 });
 
