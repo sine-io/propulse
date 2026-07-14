@@ -10,12 +10,43 @@ import (
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 )
 
+func testAssumptions() domaincapacity.Assumptions {
+	return domaincapacity.Assumptions{
+		RuleVersion:   "2026.07.14",
+		EffectiveDate: "2026-07-14",
+		RuleSource:    "test capacity rules",
+		Loan: domaincapacity.LoanParams{
+			AnnualInterestRate: 0.039,
+			LoanTermMonths:     360,
+			RepaymentMethod:    domaincapacity.RepaymentEqualInstallment,
+		},
+		LoanSource: "test loan defaults",
+		LoanOrigin: domaincapacity.OriginConfiguredDefault,
+		CityPolicy: domaincapacity.CityPolicy{
+			City:            "测试市",
+			PolicyName:      "测试首付政策",
+			DownPaymentRate: 0.35,
+			EffectiveDate:   "2026-07-14",
+			Source:          "测试政策来源",
+			Origin:          domaincapacity.OriginConfiguredDefault,
+		},
+		ReserveMonths: 6,
+		PressureThresholds: domaincapacity.PressureThresholds{
+			SafeRatio:        0.35,
+			StrainedRatio:    0.45,
+			DangerRatio:      0.55,
+			DangerMultiplier: 1.15,
+		},
+		OldHomeShareThreshold: 0.5,
+	}
+}
+
 func TestCreateCalculationPersistsComputedResult(t *testing.T) {
 	repo := &memoryCalculationRepository{
 		nextID:    "calc_123",
-		createdAt: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+		createdAt: time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC),
 	}
-	service := NewService(repo, repo.now, repo.newID)
+	service := NewService(repo, testAssumptions(), repo.now, repo.newID)
 
 	record, err := service.CreateCalculation(context.Background(), CreateCalculationCommand{
 		Input: domaincapacity.HousingCapacityInput{
@@ -44,6 +75,9 @@ func TestCreateCalculationPersistsComputedResult(t *testing.T) {
 	if record.Result.Strategy != "先卖后买或同步推进" {
 		t.Fatalf("record.Result.Strategy = %q", record.Result.Strategy)
 	}
+	if record.Result.TraceabilityStatus != domaincapacity.TraceabilityComplete || record.Result.AppliedAssumptions == nil {
+		t.Fatalf("traceability = %q/%#v", record.Result.TraceabilityStatus, record.Result.AppliedAssumptions)
+	}
 	if len(repo.records) != 1 {
 		t.Fatalf("saved records = %d, want 1", len(repo.records))
 	}
@@ -51,7 +85,7 @@ func TestCreateCalculationPersistsComputedResult(t *testing.T) {
 
 func TestCreateCalculationRejectsInvalidDomainInputBeforePersistence(t *testing.T) {
 	repo := &memoryCalculationRepository{}
-	service := NewService(repo, time.Now, func() string { return "unused" })
+	service := NewService(repo, testAssumptions(), time.Now, func() string { return "unused" })
 
 	_, err := service.CreateCalculation(context.Background(), CreateCalculationCommand{
 		Input: domaincapacity.HousingCapacityInput{MonthlyIncome: 0, TargetTotalPrice: 550},
@@ -61,6 +95,20 @@ func TestCreateCalculationRejectsInvalidDomainInputBeforePersistence(t *testing.
 	}
 	if len(repo.records) != 0 {
 		t.Fatalf("saved records = %d, want 0", len(repo.records))
+	}
+}
+
+func TestGetAssumptionsReturnsInjectedRuleSet(t *testing.T) {
+	repo := &memoryCalculationRepository{}
+	want := testAssumptions()
+	service := NewService(repo, want, time.Now, func() string { return "unused" })
+
+	got, err := service.GetAssumptions(context.Background(), GetAssumptionsQuery{})
+	if err != nil {
+		t.Fatalf("GetAssumptions() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("GetAssumptions() = %#v, want %#v", got, want)
 	}
 }
 
@@ -79,7 +127,7 @@ func TestGetCalculationReturnsStoredRecord(t *testing.T) {
 			},
 		},
 	}
-	service := NewService(repo, time.Now, func() string { return "unused" })
+	service := NewService(repo, testAssumptions(), time.Now, func() string { return "unused" })
 
 	record, err := service.GetCalculation(context.Background(), GetCalculationQuery{ID: "calc_123"})
 	if err != nil {
@@ -95,7 +143,7 @@ func TestGetCalculationReturnsStoredRecord(t *testing.T) {
 
 func TestGetCalculationReturnsNotFound(t *testing.T) {
 	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{}}
-	service := NewService(repo, time.Now, func() string { return "unused" })
+	service := NewService(repo, testAssumptions(), time.Now, func() string { return "unused" })
 
 	_, err := service.GetCalculation(context.Background(), GetCalculationQuery{ID: "missing"})
 	if !errors.Is(err, ErrCalculationNotFound) {
@@ -123,7 +171,7 @@ func TestLatestCalculationReturnsNewestRecordForUser(t *testing.T) {
 			},
 		},
 	}
-	service := NewService(repo, time.Now, func() string { return "unused" })
+	service := NewService(repo, testAssumptions(), time.Now, func() string { return "unused" })
 
 	record, err := service.LatestCalculation(context.Background(), LatestCalculationQuery{UserID: user.SingleUserID})
 	if err != nil {
@@ -136,7 +184,7 @@ func TestLatestCalculationReturnsNewestRecordForUser(t *testing.T) {
 
 func TestLatestCalculationReturnsNotFound(t *testing.T) {
 	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{}}
-	service := NewService(repo, time.Now, func() string { return "unused" })
+	service := NewService(repo, testAssumptions(), time.Now, func() string { return "unused" })
 
 	_, err := service.LatestCalculation(context.Background(), LatestCalculationQuery{UserID: user.SingleUserID})
 	if !errors.Is(err, ErrCalculationNotFound) {

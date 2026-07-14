@@ -14,12 +14,18 @@ type CreateCalculationCommand struct {
 }
 
 type Service struct {
-	repo  CalculationRepository
-	now   func() time.Time
-	newID func() string
+	repo        CalculationRepository
+	assumptions domaincapacity.Assumptions
+	now         func() time.Time
+	newID       func() string
 }
 
-func NewService(repo CalculationRepository, now func() time.Time, newID func() string) *Service {
+func NewService(
+	repo CalculationRepository,
+	assumptions domaincapacity.Assumptions,
+	now func() time.Time,
+	newID func() string,
+) *Service {
 	if now == nil {
 		now = time.Now
 	}
@@ -27,22 +33,25 @@ func NewService(repo CalculationRepository, now func() time.Time, newID func() s
 		newID = uuid.NewString
 	}
 	return &Service{
-		repo:  repo,
-		now:   now,
-		newID: newID,
+		repo:        repo,
+		assumptions: assumptions,
+		now:         now,
+		newID:       newID,
 	}
 }
 
 func (s *Service) CreateCalculation(ctx context.Context, command CreateCalculationCommand) (CalculationRecord, error) {
-	if err := command.Input.Validate(); err != nil {
+	now := s.now()
+	result, err := domaincapacity.Calculate(command.Input, s.assumptions, now)
+	if err != nil {
 		return CalculationRecord{}, err
 	}
 	record := CalculationRecord{
 		ID:        s.newID(),
 		UserID:    command.UserID,
 		Input:     command.Input,
-		Result:    domaincapacity.Calculate(command.Input),
-		CreatedAt: s.now().UTC(),
+		Result:    result,
+		CreatedAt: now.UTC(),
 	}
 	return s.repo.Save(ctx, record)
 }

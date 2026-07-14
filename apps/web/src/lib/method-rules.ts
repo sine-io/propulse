@@ -1,7 +1,7 @@
 // 方法规则的版本与来源元数据（METHOD-002 / #33）。
 //
 // 方法规则与产品测算规则共用同一版本方案：此处的 version / effectiveDate
-// 对应后端 capacity.DefaultAssumptions() 的 RuleVersion / EffectiveDate（#66），
+// 对应后端运行时注入假设的 RuleVersion / EffectiveDate（#66），
 // 二者应保持同步，避免出现两套并存的版本说明。
 export interface MethodRuleMeta {
   version: string;

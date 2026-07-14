@@ -50,7 +50,7 @@ export interface paths {
         };
         /**
          * Get default calculation assumptions
-         * @description Public. Returns the current default loan params and rule version for pre-filling the calculator.
+         * @description Public. Returns the complete currently effective rule set used to pre-fill reproducible calculations.
          */
         get: {
             parameters: {
@@ -815,17 +815,28 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         HousingCapacityInput: {
+            /** @description Available cash, in ten-thousand CNY. */
             cashOnHand: number;
+            /** @description Expected old-home sale price, in ten-thousand CNY. */
             oldHomeValue: number;
+            /** @description Outstanding old-home loan, in ten-thousand CNY. */
             oldLoanBalance: number;
+            /** @description Monthly household income, in ten-thousand CNY. */
             monthlyIncome: number;
+            /** @description Existing monthly mortgage, in ten-thousand CNY. */
             currentMonthlyMortgage: number;
+            /** @description Maximum acceptable new monthly mortgage, in ten-thousand CNY. */
             acceptableMonthlyMortgage: number;
+            /** @description Target home total price, in ten-thousand CNY. */
             targetTotalPrice: number;
+            /** @description Renovation budget, in ten-thousand CNY. */
             renovationBudget: number;
+            /** @description Taxes and transaction costs, in ten-thousand CNY. */
             transactionCosts: number;
+            /** @description Transition rent and moving costs, in ten-thousand CNY. */
             transitionRentCost: number;
             loanOverride?: components["schemas"]["LoanParams"];
+            cityPolicyOverride?: components["schemas"]["CityPolicyOverride"];
         };
         LoanParams: {
             annualInterestRate: number;
@@ -833,11 +844,52 @@ export interface components {
             /** @enum {string} */
             repaymentMethod: "equal_installment" | "equal_principal";
         };
+        CityPolicyOverride: {
+            city: string;
+            policyName: string;
+            downPaymentRate: number;
+            /** Format: date */
+            effectiveDate: string;
+            source: string;
+        };
+        /** @enum {string} */
+        AssumptionOrigin: "configured_default" | "user_override";
+        CityPolicy: components["schemas"]["CityPolicyOverride"] & {
+            origin: components["schemas"]["AssumptionOrigin"];
+        };
+        PressureThresholds: {
+            safeRatio: number;
+            strainedRatio: number;
+            dangerRatio: number;
+            dangerMultiplier: number;
+        };
+        AppliedAssumptions: {
+            ruleVersion: string;
+            /** Format: date */
+            effectiveDate: string;
+            ruleSource: string;
+            loan: components["schemas"]["LoanParams"];
+            loanSource: string;
+            loanOrigin: components["schemas"]["AssumptionOrigin"];
+            cityPolicy: components["schemas"]["CityPolicy"];
+            reserveMonths: number;
+            pressureThresholds: components["schemas"]["PressureThresholds"];
+            oldHomeShareThreshold: number;
+        };
         CapacityAssumptionsResponse: {
             ruleVersion: string;
+            /** Format: date */
             effectiveDate: string;
+            ruleSource: string;
+            /** @description Compatibility alias for cityPolicy.downPaymentRate. */
             downPaymentRate: number;
             loan: components["schemas"]["LoanParams"];
+            loanSource: string;
+            loanOrigin: components["schemas"]["AssumptionOrigin"];
+            cityPolicy: components["schemas"]["CityPolicy"];
+            reserveMonths: number;
+            pressureThresholds: components["schemas"]["PressureThresholds"];
+            oldHomeShareThreshold: number;
         };
         HousingCapacityResult: {
             netOldHomeProceeds: number;
@@ -856,18 +908,11 @@ export interface components {
             reasons: string[];
             ruleVersion: string;
             effectiveDate: string;
+            /** @enum {string} */
+            traceabilityStatus: "complete" | "legacy_unversioned";
+            appliedAssumptions: components["schemas"]["AppliedAssumptions"] | null;
         };
-        CreateCalculationResponse: {
-            id: string;
-            result: {
-                /** @enum {string} */
-                pressureLevel: "safe" | "strained" | "danger";
-                /** @enum {string} */
-                strategy: "先卖后买或同步推进" | "可以同步推进" | "暂缓改善";
-                ruleVersion: string;
-                effectiveDate: string;
-            };
-        };
+        CreateCalculationResponse: components["schemas"]["CalculationResponse"];
         CalculationResponse: {
             id: string;
             input: components["schemas"]["HousingCapacityInput"];

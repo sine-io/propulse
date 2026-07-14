@@ -3,10 +3,13 @@ import { clearAccessToken, getAccessToken } from "./access-token";
 
 export type HousingCapacityInput = components["schemas"]["HousingCapacityInput"];
 export type LoanParams = components["schemas"]["LoanParams"];
+export type CityPolicyOverride = components["schemas"]["CityPolicyOverride"];
+export type AppliedAssumptions = components["schemas"]["AppliedAssumptions"];
+export type HousingCapacityResult = components["schemas"]["HousingCapacityResult"];
 export type CapacityAssumptionsResponse =
   components["schemas"]["CapacityAssumptionsResponse"];
-export type CapacityCalculationResponse =
-  components["schemas"]["CreateCalculationResponse"];
+export type CalculationResponse = components["schemas"]["CalculationResponse"];
+export type CapacityCalculationResponse = CalculationResponse;
 export type WatchlistResponse = components["schemas"]["WatchlistResponse"];
 export type WatchlistItem = components["schemas"]["WatchlistItem"];
 export type ActionWindowResponse =

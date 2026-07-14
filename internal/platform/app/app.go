@@ -15,6 +15,7 @@ import (
 	appmetric "github.com/sine-io/propulse/internal/application/metric"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	appqueue "github.com/sine-io/propulse/internal/application/queue"
+	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 	migraterunner "github.com/sine-io/propulse/internal/infrastructure/migrate"
@@ -29,6 +30,7 @@ const schedulerMetricRepairBatchSize = 100
 
 type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
+	GetAssumptions(ctx context.Context, query appcapacity.GetAssumptionsQuery) (domaincapacity.Assumptions, error)
 	GetCalculation(ctx context.Context, query appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error)
 	LatestCalculation(ctx context.Context, query appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error)
 }

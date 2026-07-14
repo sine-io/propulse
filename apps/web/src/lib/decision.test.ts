@@ -1,57 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  calculateHousingCapacity,
   evaluateNeighborhoodSignal,
   recommendActionWindow,
 } from "./decision";
-
-describe("calculateHousingCapacity", () => {
-  it("classifies a target price as strained when monthly pressure is above the safe line but still serviceable", () => {
-    const result = calculateHousingCapacity({
-      cashOnHand: 150,
-      oldHomeValue: 320,
-      oldLoanBalance: 80,
-      monthlyIncome: 3.5,
-      currentMonthlyMortgage: 0,
-      acceptableMonthlyMortgage: 1.5,
-      targetTotalPrice: 550,
-      renovationBudget: 40,
-      transactionCosts: 18,
-      transitionRentCost: 5,
-    });
-
-    expect(result.netOldHomeProceeds).toBe(240);
-    expect(result.pressureLevel).toBe("strained");
-    expect(result.safeTotalPrice).toBeGreaterThan(500);
-    expect(result.safeTotalPrice).toBeLessThan(result.strainedTotalPrice);
-    expect(result.dangerTotalPrice).toBeGreaterThan(result.strainedTotalPrice);
-    expect(result.monthlyPaymentRatio).toBeGreaterThan(0.35);
-    expect(result.monthlyPaymentRatio).toBeLessThanOrEqual(0.45);
-    expect(result.strategy).toBe("先卖后买或同步推进");
-    expect(result.reasons).toContain("旧房净回款占首付能力比重较高，未锁定成交前不宜贸然下定。");
-  });
-
-  it("marks the plan dangerous when the target monthly payment would exceed the cash-flow danger line", () => {
-    const result = calculateHousingCapacity({
-      cashOnHand: 80,
-      oldHomeValue: 260,
-      oldLoanBalance: 140,
-      monthlyIncome: 2.4,
-      currentMonthlyMortgage: 0.35,
-      acceptableMonthlyMortgage: 1.4,
-      targetTotalPrice: 650,
-      renovationBudget: 35,
-      transactionCosts: 22,
-      transitionRentCost: 8,
-    });
-
-    expect(result.pressureLevel).toBe("danger");
-    expect(result.downPaymentGap).toBeGreaterThan(0);
-    expect(result.strategy).toBe("暂缓改善");
-    expect(result.reasons).toContain("目标总价对应的月供收入比超过危险线，现金流缓冲不足。");
-  });
-});
 
 describe("evaluateNeighborhoodSignal", () => {
   it("opens a bargaining window when supply and price cuts rise while transactions stay weak", () => {

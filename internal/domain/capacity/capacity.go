@@ -3,9 +3,14 @@ package capacity
 import (
 	"errors"
 	"math"
+	"strings"
+	"time"
 )
 
-var ErrInvalidInput = errors.New("invalid housing capacity input")
+var (
+	ErrInvalidInput       = errors.New("invalid housing capacity input")
+	ErrInvalidAssumptions = errors.New("invalid housing capacity assumptions")
+)
 
 type PressureLevel string
 
@@ -15,84 +20,62 @@ const (
 	PressureDanger   PressureLevel = "danger"
 )
 
-// RepaymentMethod 是还款方式。
+type TraceabilityStatus string
+
+const (
+	TraceabilityComplete          TraceabilityStatus = "complete"
+	TraceabilityLegacyUnversioned TraceabilityStatus = "legacy_unversioned"
+)
+
+type AssumptionOrigin string
+
+const (
+	OriginConfiguredDefault AssumptionOrigin = "configured_default"
+	OriginUserOverride      AssumptionOrigin = "user_override"
+)
+
 type RepaymentMethod string
 
 const (
-	// RepaymentEqualInstallment 等额本息：每月还款额固定。
 	RepaymentEqualInstallment RepaymentMethod = "equal_installment"
-	// RepaymentEqualPrincipal 等额本金：本金均摊、利息递减，首月月供最高。
-	RepaymentEqualPrincipal RepaymentMethod = "equal_principal"
+	RepaymentEqualPrincipal   RepaymentMethod = "equal_principal"
 )
 
-// LoanParams 是可由用户在测算时调整的贷款参数（CALC-006.2 / #67）。
 type LoanParams struct {
-	AnnualInterestRate float64         // 年利率，如 0.039
-	LoanTermMonths     int             // 贷款期限（月），如 360
-	RepaymentMethod    RepaymentMethod // 还款方式
+	AnnualInterestRate float64
+	LoanTermMonths     int
+	RepaymentMethod    RepaymentMethod
 }
 
-// Assumptions 收纳换房测算使用的全部规则参数，并带版本与生效日期，
-// 使结果可追溯到一组明确、有出处的假设（CALC-006.1 / #66、CALC-006.2 / #67）。
+type CityPolicy struct {
+	City            string
+	PolicyName      string
+	DownPaymentRate float64
+	EffectiveDate   string
+	Source          string
+	Origin          AssumptionOrigin
+}
+
+type PressureThresholds struct {
+	SafeRatio        float64
+	StrainedRatio    float64
+	DangerRatio      float64
+	DangerMultiplier float64
+}
+
+// Assumptions is the complete, reproducible rule set injected into a
+// calculation. Runtime defaults are assembled outside the domain layer.
 type Assumptions struct {
 	RuleVersion           string
-	EffectiveDate         string // ISO 日期，如 2026-07-01
-	DownPaymentRate       float64
-	Loan                  LoanParams // 默认贷款参数，可被单次测算覆盖
+	EffectiveDate         string
+	RuleSource            string
+	Loan                  LoanParams
+	LoanSource            string
+	LoanOrigin            AssumptionOrigin
+	CityPolicy            CityPolicy
 	ReserveMonths         float64
-	SafeRatio             float64 // 安全月供收入比上限
-	StrainedRatio         float64 // 偏高月供收入比上限
-	DangerRatio           float64 // 危险线月供收入比
-	DangerMultiplier      float64 // 危险总价对可接受月供的放大系数
-	OldHomeShareThreshold float64 // 旧房回款占首付能力的高占比阈值
-}
-
-// DefaultAssumptions 返回当前生效的规则参数。
-// 调整参数或阈值时应递增 RuleVersion 并更新 EffectiveDate。
-func DefaultAssumptions() Assumptions {
-	return Assumptions{
-		RuleVersion:     "2026.07.14",
-		EffectiveDate:   "2026-07-14",
-		DownPaymentRate: 0.35,
-		Loan: LoanParams{
-			AnnualInterestRate: 0.039,
-			LoanTermMonths:     360,
-			RepaymentMethod:    RepaymentEqualInstallment,
-		},
-		ReserveMonths:         6,
-		SafeRatio:             0.35,
-		StrainedRatio:         0.45,
-		DangerRatio:           0.55,
-		DangerMultiplier:      1.15,
-		OldHomeShareThreshold: 0.5,
-	}
-}
-
-// monthlyPaymentCoefficient 返回「每万总价对应月供（万）」。
-// = 贷款成数(1-首付比例) × 每万本金月供因子（按还款方式与利率/期限推导）。
-func (a Assumptions) monthlyPaymentCoefficient() float64 {
-	ltv := 1 - a.DownPaymentRate
-	return ltv * a.Loan.perPrincipalMonthlyFactor()
-}
-
-// perPrincipalMonthlyFactor 返回每单位本金的月供峰值因子。
-// 等额本息取固定月供；等额本金取首月（最高）月供，作为月供压力的保守口径。
-func (l LoanParams) perPrincipalMonthlyFactor() float64 {
-	n := l.LoanTermMonths
-	if n <= 0 {
-		return 0
-	}
-	r := l.AnnualInterestRate / 12
-	if r <= 0 {
-		return 1 / float64(n)
-	}
-	if l.RepaymentMethod == RepaymentEqualPrincipal {
-		// 首月月供 = 本金/期数 + 全额本金利息。
-		return 1/float64(n) + r
-	}
-	// 等额本息：r(1+r)^n / ((1+r)^n - 1)。
-	pow := math.Pow(1+r, float64(n))
-	return r * pow / (pow - 1)
+	PressureThresholds    PressureThresholds
+	OldHomeShareThreshold float64
 }
 
 type HousingCapacityInput struct {
@@ -106,8 +89,8 @@ type HousingCapacityInput struct {
 	RenovationBudget          float64
 	TransactionCosts          float64
 	TransitionRentCost        float64
-	// LoanOverride 可选：用户在本次测算中调整的贷款参数；nil 时用默认假设（#67）。
-	LoanOverride *LoanParams
+	LoanOverride              *LoanParams
+	CityPolicyOverride        *CityPolicy
 }
 
 type HousingCapacityResult struct {
@@ -125,9 +108,11 @@ type HousingCapacityResult struct {
 	Reasons                     []string
 	RuleVersion                 string
 	EffectiveDate               string
+	TraceabilityStatus          TraceabilityStatus
+	AppliedAssumptions          *Assumptions
 }
 
-func (input HousingCapacityInput) Validate() error {
+func (input HousingCapacityInput) ValidateAt(asOf time.Time) error {
 	values := []float64{
 		input.CashOnHand,
 		input.OldHomeValue,
@@ -141,7 +126,7 @@ func (input HousingCapacityInput) Validate() error {
 		input.TransitionRentCost,
 	}
 	for _, value := range values {
-		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		if !isFinite(value) || value < 0 {
 			return ErrInvalidInput
 		}
 	}
@@ -150,42 +135,111 @@ func (input HousingCapacityInput) Validate() error {
 	}
 	if input.LoanOverride != nil {
 		if err := input.LoanOverride.Validate(); err != nil {
-			return err
+			return ErrInvalidInput
+		}
+	}
+	if input.CityPolicyOverride != nil {
+		if err := input.CityPolicyOverride.ValidateAt(asOf); err != nil {
+			return ErrInvalidInput
 		}
 	}
 	return nil
 }
 
-// Validate 校验用户提交的贷款参数：利率非负、期限为正、还款方式合法。
-func (l LoanParams) Validate() error {
-	if math.IsNaN(l.AnnualInterestRate) || math.IsInf(l.AnnualInterestRate, 0) ||
-		l.AnnualInterestRate < 0 || l.AnnualInterestRate > 1 {
+func (loan LoanParams) Validate() error {
+	if !isFinite(loan.AnnualInterestRate) || loan.AnnualInterestRate < 0 || loan.AnnualInterestRate > 1 {
 		return ErrInvalidInput
 	}
-	if l.LoanTermMonths <= 0 || l.LoanTermMonths > 600 {
+	if loan.LoanTermMonths < 1 || loan.LoanTermMonths > 600 {
 		return ErrInvalidInput
 	}
-	if l.RepaymentMethod != RepaymentEqualInstallment && l.RepaymentMethod != RepaymentEqualPrincipal {
+	if loan.RepaymentMethod != RepaymentEqualInstallment && loan.RepaymentMethod != RepaymentEqualPrincipal {
 		return ErrInvalidInput
 	}
 	return nil
 }
 
-// Calculate 使用当前默认规则参数计算换房能力。
-func Calculate(input HousingCapacityInput) HousingCapacityResult {
-	return CalculateWith(input, DefaultAssumptions())
+func (policy CityPolicy) ValidateAt(asOf time.Time) error {
+	if strings.TrimSpace(policy.City) == "" || strings.TrimSpace(policy.PolicyName) == "" || strings.TrimSpace(policy.Source) == "" {
+		return ErrInvalidInput
+	}
+	if !isFinite(policy.DownPaymentRate) || policy.DownPaymentRate <= 0 || policy.DownPaymentRate >= 1 {
+		return ErrInvalidInput
+	}
+	if policy.Origin != "" && policy.Origin != OriginConfiguredDefault && policy.Origin != OriginUserOverride {
+		return ErrInvalidInput
+	}
+	if !isEffectiveDateValid(policy.EffectiveDate, asOf) {
+		return ErrInvalidInput
+	}
+	return nil
 }
 
-// CalculateWith 使用给定规则参数计算，结果回带规则版本与生效日期。
-// 若 input.LoanOverride 非空，则以用户调整的贷款参数覆盖默认假设。
-func CalculateWith(input HousingCapacityInput, a Assumptions) HousingCapacityResult {
-	if input.LoanOverride != nil {
-		a.Loan = *input.LoanOverride
+func (assumptions Assumptions) ValidateAt(asOf time.Time) error {
+	if strings.TrimSpace(assumptions.RuleVersion) == "" || strings.TrimSpace(assumptions.RuleSource) == "" ||
+		strings.TrimSpace(assumptions.LoanSource) == "" {
+		return ErrInvalidAssumptions
 	}
-	coefficient := a.monthlyPaymentCoefficient()
+	if !isEffectiveDateValid(assumptions.EffectiveDate, asOf) {
+		return ErrInvalidAssumptions
+	}
+	if err := assumptions.Loan.Validate(); err != nil {
+		return ErrInvalidAssumptions
+	}
+	if assumptions.LoanOrigin != OriginConfiguredDefault && assumptions.LoanOrigin != OriginUserOverride {
+		return ErrInvalidAssumptions
+	}
+	if err := assumptions.CityPolicy.ValidateAt(asOf); err != nil ||
+		(assumptions.CityPolicy.Origin != OriginConfiguredDefault && assumptions.CityPolicy.Origin != OriginUserOverride) {
+		return ErrInvalidAssumptions
+	}
+	if !isFinite(assumptions.ReserveMonths) || assumptions.ReserveMonths < 0 {
+		return ErrInvalidAssumptions
+	}
+	thresholds := assumptions.PressureThresholds
+	if !isFinite(thresholds.SafeRatio) || !isFinite(thresholds.StrainedRatio) ||
+		!isFinite(thresholds.DangerRatio) || !isFinite(thresholds.DangerMultiplier) ||
+		thresholds.SafeRatio <= 0 || thresholds.SafeRatio >= thresholds.StrainedRatio ||
+		thresholds.StrainedRatio >= thresholds.DangerRatio || thresholds.DangerRatio >= 1 ||
+		thresholds.DangerMultiplier <= 0 {
+		return ErrInvalidAssumptions
+	}
+	if !isFinite(assumptions.OldHomeShareThreshold) || assumptions.OldHomeShareThreshold < 0 || assumptions.OldHomeShareThreshold > 1 {
+		return ErrInvalidAssumptions
+	}
+	return nil
+}
 
+// ApplyOverrides resolves the exact assumptions used for one calculation.
+// Submitting unchanged defaults preserves configured_default provenance.
+func (assumptions Assumptions) ApplyOverrides(input HousingCapacityInput) Assumptions {
+	if input.LoanOverride != nil && *input.LoanOverride != assumptions.Loan {
+		assumptions.Loan = *input.LoanOverride
+		assumptions.LoanSource = "user_input"
+		assumptions.LoanOrigin = OriginUserOverride
+	}
+	if input.CityPolicyOverride != nil {
+		override := normalizeCityPolicy(*input.CityPolicyOverride)
+		if !sameCityPolicyValues(override, assumptions.CityPolicy) {
+			override.Origin = OriginUserOverride
+			assumptions.CityPolicy = override
+		}
+	}
+	return assumptions
+}
+
+func Calculate(input HousingCapacityInput, assumptions Assumptions, asOf time.Time) (HousingCapacityResult, error) {
+	if err := input.ValidateAt(asOf); err != nil {
+		return HousingCapacityResult{}, err
+	}
+	applied := assumptions.ApplyOverrides(input)
+	if err := applied.ValidateAt(asOf); err != nil {
+		return HousingCapacityResult{}, err
+	}
+
+	coefficient := applied.monthlyPaymentCoefficient()
 	netOldHomeProceeds := math.Max(input.OldHomeValue-input.OldLoanBalance, 0)
-	reserve := input.MonthlyIncome * a.ReserveMonths
+	reserve := input.MonthlyIncome * applied.ReserveMonths
 	requiredCosts := input.RenovationBudget + input.TransactionCosts + input.TransitionRentCost
 	deployableCash := math.Max(input.CashOnHand+netOldHomeProceeds-requiredCosts-reserve, 0)
 
@@ -194,36 +248,35 @@ func CalculateWith(input HousingCapacityInput, a Assumptions) HousingCapacityRes
 			input.AcceptableMonthlyMortgage,
 			input.MonthlyIncome*ratio-input.CurrentMonthlyMortgage,
 		), 0)
-
 		return deployableCash + availableMonthlyPayment/coefficient
 	}
 
-	safeTotalPrice := round(monthlyCapacityToTotalPrice(a.SafeRatio), 1)
-	strainedTotalPrice := round(monthlyCapacityToTotalPrice(a.StrainedRatio), 1)
+	thresholds := applied.PressureThresholds
+	safeTotalPrice := round(monthlyCapacityToTotalPrice(thresholds.SafeRatio), 1)
+	strainedTotalPrice := round(monthlyCapacityToTotalPrice(thresholds.StrainedRatio), 1)
 	dangerTotalPrice := round(
 		deployableCash+math.Max(
-			input.MonthlyIncome*a.DangerRatio-input.CurrentMonthlyMortgage,
-			input.AcceptableMonthlyMortgage*a.DangerMultiplier,
+			input.MonthlyIncome*thresholds.DangerRatio-input.CurrentMonthlyMortgage,
+			input.AcceptableMonthlyMortgage*thresholds.DangerMultiplier,
 		)/coefficient,
 		1,
 	)
 
-	requiredUpfront := input.TargetTotalPrice*a.DownPaymentRate + requiredCosts + reserve
+	requiredUpfront := input.TargetTotalPrice*applied.CityPolicy.DownPaymentRate + requiredCosts + reserve
 	downPaymentGap := round(math.Max(requiredUpfront-input.CashOnHand-netOldHomeProceeds, 0), 1)
 	monthlyPayment := round(input.TargetTotalPrice*coefficient, 2)
 	monthlyPaymentRatio := round((monthlyPayment+input.CurrentMonthlyMortgage)/input.MonthlyIncome, 3)
 
 	pressureLevel := PressureSafe
-	if monthlyPaymentRatio > a.StrainedRatio {
+	if monthlyPaymentRatio > thresholds.StrainedRatio {
 		pressureLevel = PressureDanger
-	} else if monthlyPaymentRatio > a.SafeRatio {
+	} else if monthlyPaymentRatio > thresholds.SafeRatio {
 		pressureLevel = PressureStrained
 	}
 
 	oldHomeProceedsShare := netOldHomeProceeds / math.Max(input.CashOnHand+netOldHomeProceeds, 1)
 	reasons := make([]string, 0, 3)
-
-	if oldHomeProceedsShare > a.OldHomeShareThreshold {
+	if oldHomeProceedsShare > applied.OldHomeShareThreshold {
 		reasons = append(reasons, "旧房净回款占首付能力比重较高，未锁定成交前不宜贸然下定。")
 	}
 	if downPaymentGap > 0 {
@@ -242,14 +295,14 @@ func CalculateWith(input HousingCapacityInput, a Assumptions) HousingCapacityRes
 		input.OldLoanBalance+math.Max(requiredUpfront-input.CashOnHand, 0),
 		1,
 	)
-
 	strategy := "可以同步推进"
 	if pressureLevel == PressureDanger || downPaymentGap > 0 {
 		strategy = "暂缓改善"
-	} else if oldHomeProceedsShare > a.OldHomeShareThreshold {
+	} else if oldHomeProceedsShare > applied.OldHomeShareThreshold {
 		strategy = "先卖后买或同步推进"
 	}
 
+	appliedCopy := applied
 	return HousingCapacityResult{
 		NetOldHomeProceeds:          round(netOldHomeProceeds, 1),
 		DeployableCash:              round(deployableCash, 1),
@@ -263,9 +316,63 @@ func CalculateWith(input HousingCapacityInput, a Assumptions) HousingCapacityRes
 		MinimumSafeOldHomeSalePrice: minimumSafeOldHomeSalePrice,
 		Strategy:                    strategy,
 		Reasons:                     reasons,
-		RuleVersion:                 a.RuleVersion,
-		EffectiveDate:               a.EffectiveDate,
+		RuleVersion:                 applied.RuleVersion,
+		EffectiveDate:               applied.EffectiveDate,
+		TraceabilityStatus:          TraceabilityComplete,
+		AppliedAssumptions:          &appliedCopy,
+	}, nil
+}
+
+func (assumptions Assumptions) monthlyPaymentCoefficient() float64 {
+	return (1 - assumptions.CityPolicy.DownPaymentRate) * assumptions.Loan.perPrincipalMonthlyFactor()
+}
+
+func (loan LoanParams) perPrincipalMonthlyFactor() float64 {
+	n := loan.LoanTermMonths
+	if n <= 0 {
+		return 0
 	}
+	rate := loan.AnnualInterestRate / 12
+	if rate <= 0 {
+		return 1 / float64(n)
+	}
+	if loan.RepaymentMethod == RepaymentEqualPrincipal {
+		return 1/float64(n) + rate
+	}
+	power := math.Pow(1+rate, float64(n))
+	return rate * power / (power - 1)
+}
+
+func normalizeCityPolicy(policy CityPolicy) CityPolicy {
+	policy.City = strings.TrimSpace(policy.City)
+	policy.PolicyName = strings.TrimSpace(policy.PolicyName)
+	policy.EffectiveDate = strings.TrimSpace(policy.EffectiveDate)
+	policy.Source = strings.TrimSpace(policy.Source)
+	policy.Origin = ""
+	return policy
+}
+
+func sameCityPolicyValues(left, right CityPolicy) bool {
+	left = normalizeCityPolicy(left)
+	right = normalizeCityPolicy(right)
+	return left.City == right.City && left.PolicyName == right.PolicyName &&
+		left.DownPaymentRate == right.DownPaymentRate && left.EffectiveDate == right.EffectiveDate &&
+		left.Source == right.Source
+}
+
+func isEffectiveDateValid(value string, asOf time.Time) bool {
+	value = strings.TrimSpace(value)
+	if asOf.IsZero() {
+		return false
+	}
+	if _, err := time.Parse(time.DateOnly, value); err != nil {
+		return false
+	}
+	return value <= asOf.Format(time.DateOnly)
+}
+
+func isFinite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func round(value float64, digits int) float64 {

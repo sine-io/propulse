@@ -21,6 +21,11 @@ jobs:
       PROPULSE_TEST_DATABASE_URL: postgres://propulse:propulse@127.0.0.1:5432/propulse?sslmode=disable
       PROPULSE_USER_ID: propulse-ci-user
       PROPULSE_ACCESS_TOKEN: propulse-ci-access-token
+      PROPULSE_CAPACITY_POLICY_CITY: CI测试城市
+      PROPULSE_CAPACITY_POLICY_NAME: CI测试首付政策
+      PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE: "0.35"
+      PROPULSE_CAPACITY_POLICY_EFFECTIVE_DATE: "2026-07-14"
+      PROPULSE_CAPACITY_POLICY_SOURCE: GitHub Actions test configuration
 
     services:
       postgres:
