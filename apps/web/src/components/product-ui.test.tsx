@@ -11,6 +11,7 @@ import {
   getActionWindow,
   getCapacityAssumptions,
   getWatchlist,
+  type ActionWindowResponse,
   type CalculationResponse,
   type CapacityAssumptionsResponse,
   type WatchlistItem,
@@ -411,6 +412,7 @@ describe("ActionWindowPage", () => {
 		expect(await screen.findByText("出手窗口已锁定")).toBeInTheDocument();
 		expect(getActionWindow).not.toHaveBeenCalled();
 		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
+		expect(screen.queryByText("决策因子与证据")).not.toBeInTheDocument();
 	});
 
 	it("renders a loading state without stale recommendation content", async () => {
@@ -420,6 +422,7 @@ describe("ActionWindowPage", () => {
 
 		expect(await screen.findByText("正在检查出手窗口")).toBeInTheDocument();
 		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
+		expect(screen.queryByText("决策因子与证据")).not.toBeInTheDocument();
 	});
 
 	it("does not invent a recommendation when the API is unavailable", async () => {
@@ -429,6 +432,7 @@ describe("ActionWindowPage", () => {
 		expect(await screen.findByText("决策服务不可用")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
 		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
+		expect(screen.queryByText("决策因子与证据")).not.toBeInTheDocument();
 	});
 
 	it.each([
@@ -446,6 +450,7 @@ describe("ActionWindowPage", () => {
 		expect(screen.getByRole("link")).toHaveAttribute("href", href);
 		expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
 		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
+		expect(screen.queryByText("决策因子与证据")).not.toBeInTheDocument();
 		expect(screen.queryByText("行动清单")).not.toBeInTheDocument();
 		expect(screen.queryByText("风险警示")).not.toBeInTheDocument();
 	});
@@ -454,13 +459,13 @@ describe("ActionWindowPage", () => {
 		setAccessToken("secret-token");
 		vi.mocked(getActionWindow)
 			.mockRejectedValueOnce(new Error("offline"))
-			.mockResolvedValueOnce({
+			.mockResolvedValueOnce(actionWindowFixture({
 				action: "等",
 				confidence: "中",
 				summary: "等待新增数据。",
 				checklist: ["复核数据。"],
 				risks: ["避免追价。"],
-			});
+			}));
 		render(createElement(ActionWindowPage));
 		fireEvent.click(await screen.findByRole("button", { name: "重试" }));
 
@@ -470,30 +475,55 @@ describe("ActionWindowPage", () => {
 
   it("renders API action window recommendations", async () => {
 	setAccessToken("secret-token");
-    vi.mocked(getActionWindow).mockResolvedValueOnce({
+    vi.mocked(getActionWindow).mockResolvedValueOnce(actionWindowFixture({
       action: "出手",
       confidence: "高",
       summary: "预算安全且目标户型稀缺，可以准备出手。",
       checklist: ["确认贷款批复。", "准备谈价底线。"],
       risks: ["不要因为稀缺而突破预算。"],
-    });
+      factors: actionWindowFixture().factors.map((factor) =>
+        factor.key === "market_signal"
+          ? { ...factor, summary: "API 指标显示目标小区进入可谈区间。" }
+          : factor,
+      ),
+    }));
     render(createElement(ActionWindowPage));
 
     expect(await screen.findByText("建议出手")).toBeInTheDocument();
     expect(screen.getByText("高")).toBeInTheDocument();
+    expect(screen.getByText("接口花园")).toBeInTheDocument();
+    expect(screen.getByText("API 指标显示目标小区进入可谈区间。")).toBeInTheDocument();
+    expect(screen.getByText("510 万元")).toBeInTheDocument();
+    expect(screen.getByText("尚未执行可比备选评估，本次置信度不使用备选加分。")).toBeInTheDocument();
+    expect(screen.getByText("暂无可核验值")).toBeInTheDocument();
+    expect(screen.getByText("无可用来源")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /接口花园/ })).toHaveAttribute(
+      "href",
+      "/neighborhoods?id=11111111-1111-1111-1111-111111111111",
+    );
+    expect(screen.getAllByRole("link", { name: /资金测算记录/ })[0]).toHaveAttribute(
+      "href",
+      "/calculator?calculationId=22222222-2222-2222-2222-222222222222",
+    );
+    expect(screen.getAllByRole("link", { name: /小区指标批次/ })[0]).toHaveAttribute(
+      "href",
+      "/data/imports/44444444-4444-4444-4444-444444444444",
+    );
+    expect(screen.queryByText(/同户型约 12 套/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/已添加 2 个/)).not.toBeInTheDocument();
     expect(screen.getByText("确认贷款批复。")).toBeInTheDocument();
     expect(screen.getByText("不要因为稀缺而突破预算。")).toBeInTheDocument();
   });
 
   it("lets the user tick off checklist items (ACTION-005)", async () => {
 	setAccessToken("secret-token");
-    vi.mocked(getActionWindow).mockResolvedValueOnce({
+    vi.mocked(getActionWindow).mockResolvedValueOnce(actionWindowFixture({
       action: "出手",
       confidence: "高",
       summary: "预算安全且目标户型稀缺，可以准备出手。",
       checklist: ["确认贷款批复。", "准备谈价底线。"],
       risks: ["不要因为稀缺而突破预算。"],
-    });
+    }));
     render(createElement(ActionWindowPage));
 
     const checkbox = await screen.findByRole("checkbox", { name: "确认贷款批复。" });
@@ -502,6 +532,108 @@ describe("ActionWindowPage", () => {
     expect(checkbox).toBeChecked();
   });
 });
+
+function actionWindowFixture(overrides: Partial<ActionWindowResponse> = {}): ActionWindowResponse {
+  const capacitySource = {
+    type: "capacity_calculation" as const,
+    id: "22222222-2222-2222-2222-222222222222",
+    observedAt: "2026-07-14T07:30:00Z",
+  };
+  const metricSource = {
+    type: "neighborhood_metric" as const,
+    id: "33333333-3333-3333-3333-333333333333",
+    observedAt: "2026-07-14T08:00:00Z",
+  };
+  return {
+    action: "砍价",
+    confidence: "中",
+    confidenceReasons: ["预算与目标小区信号支持议价，但尚无可比备选证据用于提高置信度。"],
+    summary: "预算与当前市场证据支持试探底价。",
+    target: {
+      neighborhoodId: "11111111-1111-1111-1111-111111111111",
+      name: "接口花园",
+      area: "滨江核心",
+      targetLayout: "三房",
+    },
+    capacityCalculation: {
+      id: capacitySource.id,
+      createdAt: capacitySource.observedAt,
+      ruleVersion: "capacity/2026.07.14.1",
+      traceabilityStatus: "complete",
+    },
+    metric: {
+      id: metricSource.id,
+      collectionRunId: "44444444-4444-4444-4444-444444444444",
+      algorithmVersion: "market-metrics/2026.07.14.1",
+      collectedAt: metricSource.observedAt,
+      calculatedAt: "2026-07-14T08:05:00Z",
+      sourceIds: ["55555555-5555-5555-5555-555555555555"],
+      listingSampleCount: 42,
+      transactionSampleCount: 5,
+      coverage: "full",
+      freshness: "current",
+      qualityState: "sufficient",
+      qualityWarnings: [],
+    },
+    factors: [
+      {
+        key: "budget_pressure",
+        status: "positive",
+        summary: "资金压力处于安全区。",
+        source: capacitySource,
+        evidence: [
+          { key: "safe_total_price", label: "安全总价", valueType: "number", numberValue: 510, unit: "万元" },
+        ],
+      },
+      {
+        key: "down_payment_gap",
+        status: "positive",
+        summary: "当前测算没有首付缺口。",
+        source: capacitySource,
+        evidence: [
+          { key: "has_down_payment_gap", label: "存在首付缺口", valueType: "boolean", booleanValue: false },
+        ],
+      },
+      {
+        key: "market_signal",
+        status: "positive",
+        summary: "目标小区信号支持议价。",
+        source: metricSource,
+        evidence: [
+          { key: "neighborhood_status", label: "小区信号", valueType: "text", textValue: "适合砍价" },
+        ],
+      },
+      {
+        key: "transaction_momentum",
+        status: "positive",
+        summary: "真实成交动量偏弱，买方议价条件相对有利。",
+        source: metricSource,
+        evidence: [
+          { key: "recent_30_day_count", label: "近 30 天成交", valueType: "number", numberValue: 1, unit: "笔" },
+        ],
+      },
+      {
+        key: "target_layout_supply",
+        status: "neutral",
+        summary: "目标户型当前供给 8 套，稀缺度为中。",
+        source: metricSource,
+        evidence: [
+          { key: "target_layout_supply", label: "目标户型供给", valueType: "number", numberValue: 8, unit: "套" },
+        ],
+      },
+      {
+        key: "alternatives",
+        status: "unknown",
+        summary: "尚未执行可比备选评估，本次置信度不使用备选加分。",
+        source: null,
+        evidence: [],
+      },
+    ],
+    checklist: ["核验目标房源。"],
+    risks: ["不要突破安全总价。"],
+    ...overrides,
+  };
+}
 
 describe("MethodsPage", () => {
   it("matches the reference methodology article structure", () => {

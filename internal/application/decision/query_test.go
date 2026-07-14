@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
@@ -13,14 +14,26 @@ import (
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 )
 
-func TestGetActionWindowComposesLatestCapacityFirstWatchlistMetricAndAlternatives(t *testing.T) {
+func TestGetActionWindowComposesTraceableFactorsWithoutInventingAlternativeEvidence(t *testing.T) {
+	calculationTime := time.Date(2026, 7, 14, 7, 30, 0, 0, time.UTC)
+	collectedAt := time.Date(2026, 7, 14, 8, 0, 0, 0, time.UTC)
+	calculatedAt := time.Date(2026, 7, 14, 8, 5, 0, 0, time.UTC)
+	transactionEvidence := domainneighborhood.NewTransactionMomentumEvidence(collectedAt, 1, 4)
 	capacity := &stubCapacityReader{
 		record: appcapacity.CalculationRecord{
-			ID:     "calc_1",
-			UserID: user.SingleUserID,
+			ID:        "calc_1",
+			UserID:    user.SingleUserID,
+			CreatedAt: calculationTime,
+			Input:     domaincapacity.HousingCapacityInput{TargetTotalPrice: 520},
 			Result: domaincapacity.HousingCapacityResult{
-				PressureLevel:  domaincapacity.PressureStrained,
-				DownPaymentGap: 0,
+				PressureLevel:       domaincapacity.PressureStrained,
+				DownPaymentGap:      0,
+				SafeTotalPrice:      500,
+				MonthlyPaymentRatio: 0.32,
+				DeployableCash:      220,
+				NetOldHomeProceeds:  180,
+				RuleVersion:         "capacity/2026.07.14.1",
+				TraceabilityStatus:  domaincapacity.TraceabilityComplete,
 			},
 		},
 	}
@@ -29,16 +42,37 @@ func TestGetActionWindowComposesLatestCapacityFirstWatchlistMetricAndAlternative
 			{NeighborhoodID: "neighborhood_1"},
 			{NeighborhoodID: "neighborhood_2"},
 		},
+		neighborhood: appneighborhood.Neighborhood{
+			ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房",
+		},
 		metric: appneighborhood.MetricWithSignal{
 			Metric: appneighborhood.MetricSnapshot{
-				TransactionMomentum: domainneighborhood.TransactionMomentumWeak,
-				Freshness:           domainneighborhood.FreshnessCurrent,
-				QualityState:        domainneighborhood.MarketQualitySufficient,
+				ID:                     "metric_1",
+				NeighborhoodID:         "neighborhood_1",
+				CollectionRunID:        "run_1",
+				AlgorithmVersion:       "market-metrics/test.1",
+				SourceIDs:              []string{"source_1"},
+				CollectedAt:            collectedAt,
+				CalculatedAt:           calculatedAt,
+				ListedHomes:            42,
+				PriceCutHomes:          11,
+				TransactionMomentum:    domainneighborhood.TransactionMomentumWeak,
+				TransactionEvidence:    &transactionEvidence,
+				TargetLayoutSupply:     8,
+				ListingSampleCount:     42,
+				TransactionSampleCount: 5,
+				Coverage:               domainneighborhood.CoverageFull,
+				Freshness:              domainneighborhood.FreshnessCurrent,
+				QualityState:           domainneighborhood.MarketQualitySufficient,
 			},
 			Signal: domainneighborhood.SignalResult{
 				Status:               domainneighborhood.NeighborhoodStatusBargain,
+				SupplyPressure:       domainneighborhood.SupplyPressureHigh,
+				PriceCutShare:        0.262,
+				PriceGapPct:          0.06,
 				TargetLayoutScarcity: domainneighborhood.ScarcityMedium,
 				QualityState:         domainneighborhood.MarketQualitySufficient,
+				NextAction:           "试探近期成交低位。",
 			},
 		},
 	}
@@ -57,21 +91,64 @@ func TestGetActionWindowComposesLatestCapacityFirstWatchlistMetricAndAlternative
 	if neighborhood.metricNeighborhoodID != "neighborhood_1" {
 		t.Fatalf("metric neighborhoodID = %q, want neighborhood_1", neighborhood.metricNeighborhoodID)
 	}
-	if result.Action != domaindecision.ActionBargain || result.Confidence != domaindecision.ConfidenceHigh {
+	if result.Action != domaindecision.ActionBargain || result.Confidence != domaindecision.ConfidenceMedium {
 		t.Fatalf("result = %#v", result)
+	}
+	if result.Target.NeighborhoodID != "neighborhood_1" || result.Target.Name != "青枫花园" || result.Target.TargetLayout != "三房" {
+		t.Fatalf("Target = %#v", result.Target)
+	}
+	if result.CapacityCalculation.ID != "calc_1" || !result.CapacityCalculation.CreatedAt.Equal(calculationTime) || result.CapacityCalculation.RuleVersion != "capacity/2026.07.14.1" {
+		t.Fatalf("CapacityCalculation = %#v", result.CapacityCalculation)
+	}
+	if result.Metric.ID != "metric_1" || result.Metric.CollectionRunID != "run_1" || result.Metric.AlgorithmVersion != "market-metrics/test.1" || !result.Metric.CollectedAt.Equal(collectedAt) || result.Metric.TransactionSampleCount != 5 {
+		t.Fatalf("Metric = %#v", result.Metric)
+	}
+	wantKeys := []FactorKey{
+		FactorBudgetPressure, FactorDownPaymentGap, FactorMarketSignal,
+		FactorTransactionMomentum, FactorTargetLayoutSupply, FactorAlternatives,
+	}
+	if len(result.Factors) != len(wantKeys) {
+		t.Fatalf("Factors = %#v", result.Factors)
+	}
+	for index, key := range wantKeys {
+		if result.Factors[index].Key != key {
+			t.Fatalf("Factors[%d].Key = %q, want %q", index, result.Factors[index].Key, key)
+		}
+	}
+	if result.Factors[0].Status != FactorStatusCaution || result.Factors[0].Source == nil || result.Factors[0].Source.ID != "calc_1" {
+		t.Fatalf("budget factor = %#v", result.Factors[0])
+	}
+	if targetPrice := result.Factors[0].Evidence[1].NumberValue; targetPrice == nil || *targetPrice != 520 {
+		t.Fatalf("target total price evidence = %#v", result.Factors[0].Evidence)
+	}
+	if result.Factors[3].Status != FactorStatusPositive || len(result.Factors[3].Evidence) != 8 || result.Factors[3].Source == nil || result.Factors[3].Source.ID != "metric_1" {
+		t.Fatalf("transaction factor = %#v", result.Factors[3])
+	}
+	if result.Factors[4].Summary != "目标户型当前供给 8 套，稀缺度为中。" {
+		t.Fatalf("target layout factor = %#v", result.Factors[4])
+	}
+	alternatives := result.Factors[5]
+	if alternatives.Status != FactorStatusUnknown || alternatives.Source != nil || len(alternatives.Evidence) != 0 {
+		t.Fatalf("alternatives factor = %#v", alternatives)
+	}
+	if len(result.ConfidenceReasons) != 1 || result.ConfidenceReasons[0] != "预算与目标小区信号支持议价，但尚无可比备选证据用于提高置信度。" {
+		t.Fatalf("ConfidenceReasons = %#v", result.ConfidenceReasons)
 	}
 }
 
 func TestGetActionWindowUsesRequestedNeighborhoodID(t *testing.T) {
 	requestedNeighborhoodID := "11111111-1111-1111-1111-111111111112"
+	transactionEvidence := domainneighborhood.NewTransactionMomentumEvidence(time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC), 3, 1)
 	neighborhood := &stubNeighborhoodReader{
 		watchlist: []appneighborhood.WatchlistItemSummary{
 			{NeighborhoodID: "11111111-1111-1111-1111-111111111111"},
 			{NeighborhoodID: requestedNeighborhoodID},
 		},
+		neighborhood: appneighborhood.Neighborhood{ID: requestedNeighborhoodID, Name: "请求小区", Area: "南城", TargetLayout: "两房"},
 		metric: appneighborhood.MetricWithSignal{
 			Metric: appneighborhood.MetricSnapshot{
 				TransactionMomentum: domainneighborhood.TransactionMomentumStrong,
+				TransactionEvidence: &transactionEvidence,
 				Freshness:           domainneighborhood.FreshnessCurrent,
 				QualityState:        domainneighborhood.MarketQualitySufficient,
 			},
@@ -203,6 +280,25 @@ func TestGetActionWindowReturnsMetricInsufficientForUnknownMomentum(t *testing.T
 	assertEmptyActionWindow(t, result)
 }
 
+func TestGetActionWindowReturnsMetricInsufficientWithoutTransactionWindowEvidence(t *testing.T) {
+	result, err := NewService(&stubCapacityReader{record: appcapacity.CalculationRecord{
+		Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
+	}}, &stubNeighborhoodReader{
+		watchlist: []appneighborhood.WatchlistItemSummary{{NeighborhoodID: "neighborhood_1"}},
+		metric: appneighborhood.MetricWithSignal{
+			Metric: appneighborhood.MetricSnapshot{
+				Freshness: domainneighborhood.FreshnessCurrent, QualityState: domainneighborhood.MarketQualitySufficient,
+				TransactionMomentum: domainneighborhood.TransactionMomentumWeak, TransactionEvidence: nil,
+			},
+			Signal: domainneighborhood.SignalResult{QualityState: domainneighborhood.MarketQualitySufficient},
+		},
+	}, user.SingleUserID).GetActionWindow(context.Background(), GetActionWindowQuery{})
+	if !errors.Is(err, ErrMetricInsufficient) {
+		t.Fatalf("result/error = %#v/%v", result, err)
+	}
+	assertEmptyActionWindow(t, result)
+}
+
 func TestGetActionWindowReturnsMetricStaleWithoutRecommendation(t *testing.T) {
 	for _, freshness := range []domainneighborhood.Freshness{domainneighborhood.FreshnessStale, domainneighborhood.FreshnessExpired} {
 		t.Run(string(freshness), func(t *testing.T) {
@@ -223,9 +319,9 @@ func TestGetActionWindowReturnsMetricStaleWithoutRecommendation(t *testing.T) {
 	}
 }
 
-func assertEmptyActionWindow(t *testing.T, result domaindecision.ActionWindowResult) {
+func assertEmptyActionWindow(t *testing.T, result ActionWindowResult) {
 	t.Helper()
-	if result.Action != "" || result.Confidence != "" || result.Summary != "" || len(result.Checklist) != 0 || len(result.Risks) != 0 {
+	if result.Action != "" || result.Confidence != "" || result.Summary != "" || len(result.ConfidenceReasons) != 0 || len(result.Factors) != 0 || len(result.Checklist) != 0 || len(result.Risks) != 0 {
 		t.Fatalf("result = %#v, want no recommendation fields", result)
 	}
 }
@@ -249,8 +345,10 @@ type stubNeighborhoodReader struct {
 	metricNeighborhoodID string
 	metricCalled         bool
 	watchlist            []appneighborhood.WatchlistItemSummary
+	neighborhood         appneighborhood.Neighborhood
 	metric               appneighborhood.MetricWithSignal
 	err                  error
+	neighborhoodErr      error
 	metricErr            error
 }
 
@@ -260,6 +358,16 @@ func (s *stubNeighborhoodReader) ListWatchlist(_ context.Context, query appneigh
 		return nil, s.err
 	}
 	return s.watchlist, nil
+}
+
+func (s *stubNeighborhoodReader) GetNeighborhood(_ context.Context, query appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error) {
+	if s.neighborhoodErr != nil {
+		return appneighborhood.Neighborhood{}, s.neighborhoodErr
+	}
+	if s.neighborhood.ID == "" {
+		s.neighborhood.ID = query.ID
+	}
+	return s.neighborhood, nil
 }
 
 func (s *stubNeighborhoodReader) LatestMetric(_ context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {

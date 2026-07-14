@@ -5,7 +5,9 @@ import {
   AlertTriangle,
   CheckCircle,
   Database,
+  ExternalLink,
   LockKeyhole,
+  MapPin,
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -13,6 +15,9 @@ import { useEffect, useState } from "react";
 import { getAccessToken, subscribeToAccessToken } from "@/lib/access-token";
 import { ApiError, getActionWindow, type ActionWindowResponse } from "@/lib/api-client";
 import { StatusBadge } from "./status-badge";
+
+type DecisionFactor = ActionWindowResponse["factors"][number];
+type DecisionFactorEvidence = DecisionFactor["evidence"][number];
 
 type AccessState = "checking" | "locked" | "unlocked";
 type PageState = "checking" | "locked" | "loading" | "ready" | "blocked";
@@ -154,6 +159,39 @@ export function ActionWindowPage() {
             <p className="border border-slate-100 bg-slate-50 p-4 text-base leading-relaxed text-slate-700">
               {recommendation.summary}
             </p>
+            <ul className="mt-4 space-y-2 text-sm text-slate-600">
+              {recommendation.confidenceReasons.map((reason) => (
+                <li key={reason} className="flex items-start gap-2">
+                  <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-blue-500" />
+                  <span>{reason}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <DecisionContext recommendation={recommendation} />
+
+          <section>
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">决策因子与证据</h2>
+                <p className="mt-1 text-sm text-slate-500">六项证据来自本次策略使用的同一测算与指标。</p>
+              </div>
+              <StatusBadge
+                tone={recommendation.metric.qualityState === "sufficient" ? "emerald" : "amber"}
+              >
+                {qualityStateCopy[recommendation.metric.qualityState]}
+              </StatusBadge>
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {recommendation.factors.map((factor) => (
+                <DecisionFactorItem
+                  key={factor.key}
+                  factor={factor}
+                  recommendation={recommendation}
+                />
+              ))}
+            </div>
           </section>
 
           <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -201,6 +239,230 @@ export function ActionWindowPage() {
       ) : null}
     </main>
   );
+}
+
+function DecisionContext({ recommendation }: { recommendation: ActionWindowResponse }) {
+  return (
+    <section className="grid gap-4 border-y border-slate-200 py-5 text-sm md:grid-cols-3">
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-slate-500">评估目标</p>
+        <Link
+          href={`/neighborhoods?id=${encodeURIComponent(recommendation.target.neighborhoodId)}`}
+          className="mt-1 inline-flex max-w-full items-center gap-2 font-semibold text-blue-700 hover:underline"
+        >
+          <MapPin aria-hidden="true" className="h-4 w-4 flex-none" />
+          <span className="truncate">{recommendation.target.name}</span>
+        </Link>
+        <p className="mt-1 text-xs text-slate-500">
+          {recommendation.target.area} · {recommendation.target.targetLayout}
+        </p>
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-slate-500">资金测算</p>
+        <Link
+          href={`/calculator?calculationId=${encodeURIComponent(recommendation.capacityCalculation.id)}`}
+          className="mt-1 inline-flex max-w-full items-center gap-2 font-semibold text-blue-700 hover:underline"
+        >
+          <span className="truncate">测算 {shortReference(recommendation.capacityCalculation.id)}</span>
+          <ExternalLink aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
+        </Link>
+        <p className="mt-1 text-xs text-slate-500">
+          {formatDecisionTimestamp(recommendation.capacityCalculation.createdAt)} ·{" "}
+          {recommendation.capacityCalculation.ruleVersion} ·{" "}
+          {traceabilityCopy[recommendation.capacityCalculation.traceabilityStatus]}
+        </p>
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-slate-500">市场指标</p>
+        <Link
+          href={`/data/imports/${encodeURIComponent(recommendation.metric.collectionRunId)}`}
+          className="mt-1 inline-flex max-w-full items-center gap-2 font-semibold text-blue-700 hover:underline"
+        >
+          <span className="truncate">批次 {shortReference(recommendation.metric.collectionRunId)}</span>
+          <ExternalLink aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
+        </Link>
+        <p className="mt-1 text-xs text-slate-500">
+          {formatDecisionTimestamp(recommendation.metric.collectedAt)} ·{" "}
+          {coverageCopy[recommendation.metric.coverage]} ·{" "}
+          {freshnessCopy[recommendation.metric.freshness]} · 挂牌{" "}
+          {recommendation.metric.listingSampleCount} / 成交{" "}
+          {recommendation.metric.transactionSampleCount}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function DecisionFactorItem({
+  factor,
+  recommendation,
+}: {
+  factor: DecisionFactor;
+  recommendation: ActionWindowResponse;
+}) {
+  const sourceHref = factorSourceHref(factor, recommendation);
+  return (
+    <article className="rounded-lg border border-slate-200 bg-white p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-semibold text-slate-900">{factorLabel[factor.key]}</h3>
+        <StatusBadge tone={factorTone[factor.status]}>{factorStatusCopy[factor.status]}</StatusBadge>
+      </div>
+      <p className="mt-3 min-h-10 text-sm leading-relaxed text-slate-700">{factor.summary}</p>
+      {factor.evidence.length > 0 ? (
+        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-slate-100 pt-4">
+          {factor.evidence.map((evidence) => (
+            <div key={evidence.key} className="min-w-0">
+              <dt className="text-xs text-slate-500">{evidence.label}</dt>
+              <dd className="mt-1 break-words text-sm font-medium text-slate-900">
+                {formatFactorEvidence(evidence)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="mt-4 border-t border-slate-100 pt-4 text-xs text-slate-500">暂无可核验值</p>
+      )}
+      <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
+        {factor.source && sourceHref ? (
+          <Link
+            href={sourceHref}
+            className="inline-flex items-center gap-1.5 text-blue-700 hover:underline"
+          >
+            <span>
+              {factorSourceCopy[factor.source.type]} {shortReference(factor.source.id)} ·{" "}
+              {formatDecisionTimestamp(factor.source.observedAt)}
+            </span>
+            <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+          </Link>
+        ) : (
+          <span>无可用来源</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+const factorLabel: Record<DecisionFactor["key"], string> = {
+  budget_pressure: "资金压力",
+  down_payment_gap: "首付缺口",
+  market_signal: "目标小区信号",
+  transaction_momentum: "成交动量",
+  target_layout_supply: "目标户型供给",
+  alternatives: "可比备选",
+};
+
+const factorStatusCopy: Record<DecisionFactor["status"], string> = {
+  positive: "支持",
+  neutral: "中性",
+  caution: "谨慎",
+  negative: "阻断",
+  unknown: "未知",
+};
+
+const factorTone: Record<
+  DecisionFactor["status"],
+  "emerald" | "blue" | "amber" | "rose" | "slate"
+> = {
+  positive: "emerald",
+  neutral: "blue",
+  caution: "amber",
+  negative: "rose",
+  unknown: "slate",
+};
+
+const factorSourceCopy: Record<NonNullable<DecisionFactor["source"]>["type"], string> = {
+  capacity_calculation: "资金测算记录",
+  neighborhood_metric: "小区指标批次",
+  alternative_comparison: "备选比较",
+};
+
+const qualityStateCopy: Record<ActionWindowResponse["metric"]["qualityState"], string> = {
+  sufficient: "证据充分",
+  low_confidence: "证据可信度较低",
+  insufficient_data: "证据不足",
+};
+
+const traceabilityCopy: Record<
+  ActionWindowResponse["capacityCalculation"]["traceabilityStatus"],
+  string
+> = {
+  complete: "规则可追溯",
+  legacy_unversioned: "旧版未版本化",
+};
+
+const coverageCopy: Record<ActionWindowResponse["metric"]["coverage"], string> = {
+  full: "完整覆盖",
+  partial: "部分覆盖",
+};
+
+const freshnessCopy: Record<ActionWindowResponse["metric"]["freshness"], string> = {
+  current: "数据当前",
+  stale: "数据陈旧",
+  expired: "数据过期",
+};
+
+const evidenceTextCopy: Record<string, string> = {
+  bargain: "适合砍价",
+  complete: "可追溯",
+  current: "当前",
+  danger: "危险",
+  full: "完整覆盖",
+  high: "高",
+  low: "低",
+  medium: "中",
+  safe: "安全",
+  stable: "平稳",
+  strained: "承压",
+  strong: "活跃",
+  sufficient: "充分",
+  weak: "偏弱",
+};
+
+function formatFactorEvidence(evidence: DecisionFactorEvidence): string {
+  if (evidence.valueType === "number") {
+    if (evidence.numberValue == null) return "暂无";
+    const value = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(
+      evidence.numberValue,
+    );
+    return `${value}${evidence.unit ? ` ${evidence.unit}` : ""}`;
+  }
+  if (evidence.valueType === "boolean") {
+    if (evidence.booleanValue == null) return "暂无";
+    return evidence.booleanValue ? "是" : "否";
+  }
+  if (!evidence.textValue) return "暂无";
+  if (evidence.key === "window_start" || evidence.key === "window_end") {
+    return formatDecisionTimestamp(evidence.textValue);
+  }
+  return evidenceTextCopy[evidence.textValue] ?? evidence.textValue;
+}
+
+function factorSourceHref(
+  factor: DecisionFactor,
+  recommendation: ActionWindowResponse,
+): string | undefined {
+  switch (factor.source?.type) {
+    case "capacity_calculation":
+      return `/calculator?calculationId=${encodeURIComponent(factor.source.id)}`;
+    case "neighborhood_metric":
+      return `/data/imports/${encodeURIComponent(recommendation.metric.collectionRunId)}`;
+    case "alternative_comparison":
+      return "/watchlist";
+    default:
+      return undefined;
+  }
+}
+
+function shortReference(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
+}
+
+function formatDecisionTimestamp(value: string): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Shanghai",
+  }).format(new Date(value));
 }
 
 function actionWindowBlockedState(error: unknown): BlockedState {

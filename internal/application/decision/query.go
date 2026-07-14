@@ -25,6 +25,7 @@ type CapacityReader interface {
 
 type NeighborhoodReader interface {
 	ListWatchlist(ctx context.Context, query appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error)
+	GetNeighborhood(ctx context.Context, query appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error)
 	LatestMetric(ctx context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error)
 }
 
@@ -46,24 +47,24 @@ type GetActionWindowQuery struct {
 	NeighborhoodID string
 }
 
-func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuery) (domaindecision.ActionWindowResult, error) {
+func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuery) (ActionWindowResult, error) {
 	capacity, err := s.capacity.LatestCalculation(ctx, appcapacity.LatestCalculationQuery{UserID: s.userID})
 	if err != nil {
 		if errors.Is(err, appcapacity.ErrCalculationNotFound) {
-			return domaindecision.ActionWindowResult{}, ErrCapacityRequired
+			return ActionWindowResult{}, ErrCapacityRequired
 		}
-		return domaindecision.ActionWindowResult{}, err
+		return ActionWindowResult{}, err
 	}
 
 	watchlist, err := s.neighborhood.ListWatchlist(ctx, appneighborhood.ListWatchlistQuery{UserID: s.userID})
 	if err != nil {
-		return domaindecision.ActionWindowResult{}, err
+		return ActionWindowResult{}, err
 	}
 
 	explicitNeighborhoodID := strings.TrimSpace(query.NeighborhoodID)
 	if explicitNeighborhoodID != "" {
 		if _, err := uuid.Parse(explicitNeighborhoodID); err != nil {
-			return domaindecision.ActionWindowResult{}, ErrInvalidNeighborhoodID
+			return ActionWindowResult{}, ErrInvalidNeighborhoodID
 		}
 	}
 
@@ -72,30 +73,35 @@ func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuer
 		neighborhoodID = watchlist[0].NeighborhoodID
 	}
 	if neighborhoodID == "" {
-		return domaindecision.ActionWindowResult{}, ErrWatchlistRequired
+		return ActionWindowResult{}, ErrWatchlistRequired
 	}
 
 	metric, err := s.neighborhood.LatestMetric(ctx, appneighborhood.LatestMetricQuery{NeighborhoodID: neighborhoodID})
 	if err != nil {
 		if errors.Is(err, appneighborhood.ErrMetricNotFound) {
-			return domaindecision.ActionWindowResult{}, ErrMetricRequired
+			return ActionWindowResult{}, ErrMetricRequired
 		}
-		return domaindecision.ActionWindowResult{}, err
+		return ActionWindowResult{}, err
 	}
 	if metric.Metric.Freshness == domainneighborhood.FreshnessStale || metric.Metric.Freshness == domainneighborhood.FreshnessExpired {
-		return domaindecision.ActionWindowResult{}, ErrMetricStale
+		return ActionWindowResult{}, ErrMetricStale
 	}
 	if metric.Metric.QualityState != domainneighborhood.MarketQualitySufficient ||
 		metric.Metric.TransactionMomentum == domainneighborhood.TransactionMomentumUnknown ||
+		metric.Metric.TransactionEvidence == nil ||
 		metric.Signal.QualityState != domainneighborhood.MarketQualitySufficient {
-		return domaindecision.ActionWindowResult{}, ErrMetricInsufficient
+		return ActionWindowResult{}, ErrMetricInsufficient
 	}
 
-	return domaindecision.RecommendActionWindow(domaindecision.ActionWindowInput{
+	target, err := s.neighborhood.GetNeighborhood(ctx, appneighborhood.GetNeighborhoodQuery{ID: neighborhoodID})
+	if err != nil {
+		return ActionWindowResult{}, err
+	}
+	recommendation := domaindecision.RecommendActionWindow(domaindecision.ActionWindowInput{
 		BudgetPressure:       capacity.Result.PressureLevel,
 		HasDownPaymentGap:    capacity.Result.DownPaymentGap > 0,
 		NeighborhoodStatus:   metric.Signal.Status,
 		TargetLayoutScarcity: metric.Signal.TargetLayoutScarcity,
-		AlternativesBetter:   len(watchlist) > 1,
-	}), nil
+	})
+	return newActionWindowResult(capacity, target, metric, recommendation), nil
 }

@@ -150,6 +150,55 @@ func assertStringEnumContains(t *testing.T, schema map[string]interface{}, want 
 	t.Fatalf("enum = %#v, missing %q", values, want)
 }
 
+func TestActionWindowEvidenceContract(t *testing.T) {
+	spec := loadOpenAPI(t)
+	components := requiredMap(t, spec, "components")
+	schemas := requiredMap(t, components, "schemas")
+	paths := requiredMap(t, spec, "paths")
+
+	operation := requiredMap(t, requiredMap(t, paths, "/api/v1/decision/action-window"), "get")
+	if got := requiredString(t, responseJSONSchema(t, operation, "200"), "$ref"); got != "#/components/schemas/ActionWindowResponse" {
+		t.Fatalf("action-window response schema = %q", got)
+	}
+	response := requiredMap(t, schemas, "ActionWindowResponse")
+	assertRequiredFields(t, response, []string{
+		"action", "confidence", "confidenceReasons", "summary", "target",
+		"capacityCalculation", "metric", "factors", "checklist", "risks",
+	})
+	assertRequiredFields(t, requiredMap(t, schemas, "ActionWindowTarget"), []string{"neighborhoodId", "name", "area", "targetLayout"})
+	assertRequiredFields(t, requiredMap(t, schemas, "CapacityCalculationReference"), []string{"id", "createdAt", "ruleVersion", "traceabilityStatus"})
+	assertRequiredFields(t, requiredMap(t, schemas, "DecisionMetricReference"), []string{
+		"id", "collectionRunId", "algorithmVersion", "collectedAt", "calculatedAt", "sourceIds",
+		"listingSampleCount", "transactionSampleCount", "coverage", "freshness", "qualityState", "qualityWarnings",
+	})
+
+	factor := requiredMap(t, schemas, "DecisionFactor")
+	assertRequiredFields(t, factor, []string{"key", "status", "summary", "source", "evidence"})
+	factorProperties := requiredMap(t, factor, "properties")
+	for _, key := range []string{
+		"budget_pressure", "down_payment_gap", "market_signal", "transaction_momentum", "target_layout_supply", "alternatives",
+	} {
+		assertStringEnumContains(t, requiredMap(t, factorProperties, "key"), key)
+	}
+	for _, status := range []string{"positive", "neutral", "caution", "negative", "unknown"} {
+		assertStringEnumContains(t, requiredMap(t, factorProperties, "status"), status)
+	}
+	sourceProperty := requiredMap(t, factorProperties, "source")
+	if nullable, ok := sourceProperty["nullable"].(bool); !ok || !nullable {
+		t.Fatalf("DecisionFactor.source nullable = %#v, want true", sourceProperty["nullable"])
+	}
+	source := requiredMap(t, schemas, "DecisionFactorSource")
+	assertRequiredFields(t, source, []string{"type", "id", "observedAt"})
+	for _, sourceType := range []string{"capacity_calculation", "neighborhood_metric", "alternative_comparison"} {
+		assertStringEnumContains(t, requiredMap(t, requiredMap(t, source, "properties"), "type"), sourceType)
+	}
+	evidence := requiredMap(t, schemas, "DecisionFactorEvidence")
+	assertRequiredFields(t, evidence, []string{"key", "label", "valueType"})
+	for _, valueType := range []string{"text", "number", "boolean"} {
+		assertStringEnumContains(t, requiredMap(t, requiredMap(t, evidence, "properties"), "valueType"), valueType)
+	}
+}
+
 func TestCapacityCalculationContract(t *testing.T) {
 	spec := loadOpenAPI(t)
 	components := requiredMap(t, spec, "components")
