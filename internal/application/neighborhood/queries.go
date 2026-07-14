@@ -101,6 +101,10 @@ func (s *Service) ListWatchlist(ctx context.Context, query ListWatchlistQuery) (
 		}
 
 		item.Metric = refreshMetricQuality(item.Metric, s.now())
+		weeklyComparison, err := s.weeklyComparisonForMetric(ctx, item.Metric)
+		if err != nil {
+			return nil, err
+		}
 		signal := evaluateMetric(item.Name, item.Metric)
 		collectedAt := item.Metric.CollectedAt
 		summaries = append(summaries, WatchlistItemSummary{
@@ -124,6 +128,7 @@ func (s *Service) ListWatchlist(ctx context.Context, query ListWatchlistQuery) (
 			Freshness:              item.Metric.Freshness,
 			QualityState:           item.Metric.QualityState,
 			QualityWarnings:        append([]domainneighborhood.QualityWarning(nil), item.Metric.QualityWarnings...),
+			WeeklyComparison:       weeklyComparison,
 		})
 	}
 

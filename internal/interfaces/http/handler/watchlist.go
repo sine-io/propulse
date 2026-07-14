@@ -36,26 +36,27 @@ type watchlistResponse struct {
 }
 
 type watchlistItemResponse struct {
-	ID                     string                                 `json:"id"`
-	NeighborhoodID         string                                 `json:"neighborhoodId"`
-	Name                   string                                 `json:"name"`
-	Area                   string                                 `json:"area"`
-	TargetLayout           string                                 `json:"targetLayout"`
-	Status                 domainneighborhood.NeighborhoodStatus  `json:"status"`
-	ListedHomes            int                                    `json:"listedHomes"`
-	PriceCutHomes          int                                    `json:"priceCutHomes"`
-	TransactionMomentum    domainneighborhood.TransactionMomentum `json:"transactionMomentum"`
-	Advice                 string                                 `json:"advice"`
-	HasMetric              bool                                   `json:"hasMetric"`
-	CollectionRunID        string                                 `json:"collectionRunId,omitempty"`
-	AlgorithmVersion       string                                 `json:"algorithmVersion,omitempty"`
-	SourceIDs              []string                               `json:"sourceIds"`
-	CollectedAt            *string                                `json:"collectedAt"`
-	TransactionSampleCount int                                    `json:"transactionSampleCount"`
-	Coverage               domainneighborhood.Coverage            `json:"coverage"`
-	Freshness              domainneighborhood.Freshness           `json:"freshness"`
-	QualityState           domainneighborhood.MarketQualityState  `json:"qualityState"`
-	QualityWarnings        []domainneighborhood.QualityWarning    `json:"qualityWarnings"`
+	ID                     string                                  `json:"id"`
+	NeighborhoodID         string                                  `json:"neighborhoodId"`
+	Name                   string                                  `json:"name"`
+	Area                   string                                  `json:"area"`
+	TargetLayout           string                                  `json:"targetLayout"`
+	Status                 domainneighborhood.NeighborhoodStatus   `json:"status"`
+	ListedHomes            *int                                    `json:"listedHomes"`
+	PriceCutHomes          *int                                    `json:"priceCutHomes"`
+	TransactionMomentum    *domainneighborhood.TransactionMomentum `json:"transactionMomentum"`
+	Advice                 string                                  `json:"advice"`
+	HasMetric              bool                                    `json:"hasMetric"`
+	CollectionRunID        string                                  `json:"collectionRunId,omitempty"`
+	AlgorithmVersion       string                                  `json:"algorithmVersion,omitempty"`
+	SourceIDs              []string                                `json:"sourceIds"`
+	CollectedAt            *string                                 `json:"collectedAt"`
+	TransactionSampleCount *int                                    `json:"transactionSampleCount"`
+	Coverage               domainneighborhood.Coverage             `json:"coverage"`
+	Freshness              domainneighborhood.Freshness            `json:"freshness"`
+	QualityState           domainneighborhood.MarketQualityState   `json:"qualityState"`
+	QualityWarnings        []domainneighborhood.QualityWarning     `json:"qualityWarnings"`
+	WeeklyComparison       *metricComparisonResponse               `json:"weeklyComparison"`
 }
 
 func (h Watchlist) AddItem(c *gin.Context) {
@@ -101,9 +102,22 @@ func (h Watchlist) List(c *gin.Context) {
 	response := watchlistResponse{Items: make([]watchlistItemResponse, 0, len(items))}
 	for _, item := range items {
 		var collectedAt *string
+		var listedHomes, priceCutHomes, transactionSampleCount *int
+		var transactionMomentum *domainneighborhood.TransactionMomentum
+		var weeklyComparison *metricComparisonResponse
 		if item.CollectedAt != nil {
 			formatted := item.CollectedAt.UTC().Format(time.RFC3339)
 			collectedAt = &formatted
+		}
+		if item.HasMetric {
+			listedHomes = handlerIntPtr(item.ListedHomes)
+			priceCutHomes = handlerIntPtr(item.PriceCutHomes)
+			transactionMomentum = &item.TransactionMomentum
+			transactionSampleCount = handlerIntPtr(item.TransactionSampleCount)
+			if item.WeeklyComparison != nil {
+				comparison := newMetricComparisonResponse(*item.WeeklyComparison)
+				weeklyComparison = &comparison
+			}
 		}
 		response.Items = append(response.Items, watchlistItemResponse{
 			ID:                     item.ID,
@@ -112,22 +126,25 @@ func (h Watchlist) List(c *gin.Context) {
 			Area:                   item.Area,
 			TargetLayout:           item.TargetLayout,
 			Status:                 item.Status,
-			ListedHomes:            item.ListedHomes,
-			PriceCutHomes:          item.PriceCutHomes,
-			TransactionMomentum:    item.TransactionMomentum,
+			ListedHomes:            listedHomes,
+			PriceCutHomes:          priceCutHomes,
+			TransactionMomentum:    transactionMomentum,
 			Advice:                 item.Advice,
 			HasMetric:              item.HasMetric,
 			CollectionRunID:        item.CollectionRunID,
 			AlgorithmVersion:       item.AlgorithmVersion,
 			SourceIDs:              append([]string{}, item.SourceIDs...),
 			CollectedAt:            collectedAt,
-			TransactionSampleCount: item.TransactionSampleCount,
+			TransactionSampleCount: transactionSampleCount,
 			Coverage:               item.Coverage,
 			Freshness:              item.Freshness,
 			QualityState:           item.QualityState,
 			QualityWarnings:        append([]domainneighborhood.QualityWarning{}, item.QualityWarnings...),
+			WeeklyComparison:       weeklyComparison,
 		})
 	}
 
 	c.JSON(http.StatusOK, response)
 }
+
+func handlerIntPtr(value int) *int { return &value }

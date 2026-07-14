@@ -89,6 +89,7 @@ type WatchlistItemSummary struct {
 	Freshness              domainneighborhood.Freshness
 	QualityState           domainneighborhood.MarketQualityState
 	QualityWarnings        []domainneighborhood.QualityWarning
+	WeeklyComparison       *MetricComparison
 }
 
 type MetricSnapshot struct {

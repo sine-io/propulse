@@ -1311,6 +1311,7 @@ components:
         - freshness
         - qualityState
         - qualityWarnings
+        - weeklyComparison
       properties:
         id:
           type: string
@@ -1327,11 +1328,14 @@ components:
           enum: ["数据不足", "重点看", "继续观察", "适合砍价", "价格偏硬", "暂不建议追"]
         listedHomes:
           type: integer
+          nullable: true
         priceCutHomes:
           type: integer
+          nullable: true
         transactionMomentum:
           type: string
           enum: [unknown, weak, stable, strong]
+          nullable: true
         advice:
           type: string
         hasMetric:
@@ -1353,6 +1357,7 @@ components:
         transactionSampleCount:
           type: integer
           minimum: 0
+          nullable: true
         coverage:
           type: string
           enum: [unknown, full, partial]
@@ -1366,6 +1371,11 @@ components:
           type: array
           items:
             type: string
+        weeklyComparison:
+          description: Compares the current metric with the latest full-coverage batch collected in the inclusive [T-14 days, T-7 days] window, where T is currentBatch.collectedAt.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/MetricComparison'
     ActionWindowResponse:
       type: object
       required: [action, confidence, summary, checklist, risks]

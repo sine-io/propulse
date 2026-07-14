@@ -426,6 +426,17 @@ func TestListWatchlistReturnsBriefShape(t *testing.T) {
 				Freshness:              domainneighborhood.FreshnessCurrent,
 				QualityState:           domainneighborhood.MarketQualitySufficient,
 				QualityWarnings:        []domainneighborhood.QualityWarning{},
+				WeeklyComparison: &appneighborhood.MetricComparison{
+					Status: domainneighborhood.MetricComparisonAvailable,
+					CurrentBatch: appneighborhood.CollectionRunReference{
+						CollectionRunID: "11111111-1111-1111-1111-111111111111",
+						DataSourceID:    "22222222-2222-2222-2222-222222222222",
+						SourceRef:       "current",
+						CollectedAt:     time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
+						Coverage:        domainneighborhood.CoverageFull,
+					},
+					PriceCutHomes: &domainneighborhood.MetricChangeValue{Current: 11, Baseline: 8, AbsoluteChange: 3, PercentageStatus: domainneighborhood.PercentageChangeAvailable},
+				},
 			},
 		},
 	}
@@ -447,15 +458,18 @@ func TestListWatchlistReturnsBriefShape(t *testing.T) {
 			Area                   string  `json:"area"`
 			TargetLayout           string  `json:"targetLayout"`
 			Status                 string  `json:"status"`
-			ListedHomes            int     `json:"listedHomes"`
-			PriceCutHomes          int     `json:"priceCutHomes"`
-			TransactionMomentum    string  `json:"transactionMomentum"`
+			ListedHomes            *int    `json:"listedHomes"`
+			PriceCutHomes          *int    `json:"priceCutHomes"`
+			TransactionMomentum    *string `json:"transactionMomentum"`
 			Advice                 string  `json:"advice"`
 			HasMetric              bool    `json:"hasMetric"`
 			AlgorithmVersion       string  `json:"algorithmVersion"`
 			CollectedAt            *string `json:"collectedAt"`
-			TransactionSampleCount int     `json:"transactionSampleCount"`
+			TransactionSampleCount *int    `json:"transactionSampleCount"`
 			QualityState           string  `json:"qualityState"`
+			WeeklyComparison       *struct {
+				Status string `json:"status"`
+			} `json:"weeklyComparison"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
@@ -464,7 +478,7 @@ func TestListWatchlistReturnsBriefShape(t *testing.T) {
 	if len(response.Items) != 1 {
 		t.Fatalf("items = %d, want 1", len(response.Items))
 	}
-	if response.Items[0].NeighborhoodID != "neighborhood_1" || response.Items[0].Status != "适合砍价" || !response.Items[0].HasMetric || response.Items[0].AlgorithmVersion != "market-metrics/test.1" || response.Items[0].CollectedAt == nil || response.Items[0].TransactionSampleCount != 3 || response.Items[0].QualityState != "sufficient" {
+	if response.Items[0].NeighborhoodID != "neighborhood_1" || response.Items[0].Status != "适合砍价" || !response.Items[0].HasMetric || response.Items[0].AlgorithmVersion != "market-metrics/test.1" || response.Items[0].CollectedAt == nil || response.Items[0].TransactionSampleCount == nil || *response.Items[0].TransactionSampleCount != 3 || response.Items[0].QualityState != "sufficient" || response.Items[0].WeeklyComparison == nil || response.Items[0].WeeklyComparison.Status != "available" {
 		t.Fatalf("item = %#v", response.Items[0])
 	}
 }
@@ -503,11 +517,12 @@ func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
 	}
 	var response struct {
 		Items []struct {
-			Status              string `json:"status"`
-			ListedHomes         int    `json:"listedHomes"`
-			PriceCutHomes       int    `json:"priceCutHomes"`
-			TransactionMomentum string `json:"transactionMomentum"`
-			Advice              string `json:"advice"`
+			Status              string    `json:"status"`
+			ListedHomes         *int      `json:"listedHomes"`
+			PriceCutHomes       *int      `json:"priceCutHomes"`
+			TransactionMomentum *string   `json:"transactionMomentum"`
+			Advice              string    `json:"advice"`
+			WeeklyComparison    *struct{} `json:"weeklyComparison"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
@@ -520,8 +535,8 @@ func TestListWatchlistReturnsNeutralSummaryWithoutMetric(t *testing.T) {
 	if item.Status != "数据不足" || item.Advice != "暂无指标数据，等待导入或计算后再判断。" {
 		t.Fatalf("item = %#v", item)
 	}
-	if item.ListedHomes != 0 || item.PriceCutHomes != 0 || item.TransactionMomentum != "unknown" {
-		t.Fatalf("metric fields = listed %d, price cuts %d, momentum %q", item.ListedHomes, item.PriceCutHomes, item.TransactionMomentum)
+	if item.ListedHomes != nil || item.PriceCutHomes != nil || item.TransactionMomentum != nil || item.WeeklyComparison != nil {
+		t.Fatalf("metric fields = listed %#v, price cuts %#v, momentum %#v, comparison %#v", item.ListedHomes, item.PriceCutHomes, item.TransactionMomentum, item.WeeklyComparison)
 	}
 }
 

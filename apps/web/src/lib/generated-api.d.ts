@@ -1307,10 +1307,10 @@ export interface components {
             targetLayout: string;
             /** @enum {string} */
             status: "数据不足" | "重点看" | "继续观察" | "适合砍价" | "价格偏硬" | "暂不建议追";
-            listedHomes: number;
-            priceCutHomes: number;
-            /** @enum {string} */
-            transactionMomentum: "unknown" | "weak" | "stable" | "strong";
+            listedHomes: number | null;
+            priceCutHomes: number | null;
+            /** @enum {string|null} */
+            transactionMomentum: "unknown" | "weak" | "stable" | "strong" | null;
             advice: string;
             hasMetric: boolean;
             /** Format: uuid */
@@ -1319,7 +1319,7 @@ export interface components {
             sourceIds: string[];
             /** Format: date-time */
             collectedAt: string | null;
-            transactionSampleCount: number;
+            transactionSampleCount: number | null;
             /** @enum {string} */
             coverage: "unknown" | "full" | "partial";
             /** @enum {string} */
@@ -1327,6 +1327,8 @@ export interface components {
             /** @enum {string} */
             qualityState: "sufficient" | "low_confidence" | "insufficient_data";
             qualityWarnings: string[];
+            /** @description Compares the current metric with the latest full-coverage batch collected in the inclusive [T-14 days, T-7 days] window, where T is currentBatch.collectedAt. */
+            weeklyComparison: components["schemas"]["MetricComparison"] | null;
         };
         ActionWindowResponse: {
             /**

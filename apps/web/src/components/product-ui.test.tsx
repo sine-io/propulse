@@ -614,7 +614,7 @@ describe("WatchlistPage", () => {
       ).not.toBeInTheDocument();
     });
 
-    expect(screen.getAllByText("0")).toHaveLength(4);
+    expect(screen.getAllByText("0")).toHaveLength(5);
     expect(screen.getByText("观察池暂无小区")).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "云澜府 城东新区 · 四房" }),
@@ -637,9 +637,81 @@ describe("WatchlistPage", () => {
 		});
 		render(createElement(WatchlistPage));
 
-		expect(await screen.findByText("数据已过期")).toBeInTheDocument();
+		expect(await screen.findByText("数据已陈旧")).toBeInTheDocument();
 		expect(screen.getByText("过期小区：市场数据已陈旧")).toBeInTheDocument();
 		expect(screen.queryByText("适合砍价")).not.toBeInTheDocument();
+	});
+
+	it("renders weekly comparison values and their source batches", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getWatchlist).mockResolvedValueOnce({
+			items: [
+				watchlistFixture({
+					name: "周对比小区",
+					weeklyComparison: {
+						status: "available",
+						currentBatch: {
+							collectionRunId: "11111111-1111-1111-1111-111111111111",
+							dataSourceId: "22222222-2222-2222-2222-222222222222",
+							sourceRef: "current.csv",
+							collectedAt: "2026-07-14T08:00:00Z",
+							coverage: "full",
+						},
+						baselineBatch: {
+							collectionRunId: "33333333-3333-3333-3333-333333333333",
+							dataSourceId: "22222222-2222-2222-2222-222222222222",
+							sourceRef: "baseline.csv",
+							collectedAt: "2026-07-07T08:00:00Z",
+							coverage: "full",
+						},
+						listedHomes: metricChange(18, 15),
+						priceCutHomes: metricChange(6, 4),
+						recent30DayTransactions: metricChange(5, 5),
+					},
+				}),
+			],
+		});
+		render(createElement(WatchlistPage));
+
+		expect(await screen.findByText("周对比小区")).toBeInTheDocument();
+		expect(screen.getByText("+3（+20.0%）")).toBeInTheDocument();
+		expect(screen.getByText("+2（+50.0%）")).toBeInTheDocument();
+		expect(screen.getByText("0（0.0%）")).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "当前批次" })).toHaveAttribute(
+			"href",
+			"/data/imports/11111111-1111-1111-1111-111111111111",
+		);
+		expect(screen.getByRole("link", { name: "基准批次" })).toHaveAttribute(
+			"href",
+			"/data/imports/33333333-3333-3333-3333-333333333333",
+		);
+	});
+
+	it("explains when no full weekly baseline is available", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getWatchlist).mockResolvedValueOnce({
+			items: [
+				watchlistFixture({
+					name: "无周基线小区",
+					weeklyComparison: {
+						status: "unavailable",
+						reason: "full_baseline_not_found",
+						currentBatch: {
+							collectionRunId: "11111111-1111-1111-1111-111111111111",
+							dataSourceId: "22222222-2222-2222-2222-222222222222",
+							sourceRef: "current.csv",
+							collectedAt: "2026-07-14T08:00:00Z",
+							coverage: "full",
+						},
+					},
+				}),
+			],
+		});
+		render(createElement(WatchlistPage));
+
+		expect(
+			await screen.findByText("暂无本周对比：基准窗口内没有完整批次"),
+		).toBeInTheDocument();
 	});
 
 	it("renders unknown momentum as transaction data insufficient", async () => {
@@ -700,7 +772,18 @@ function watchlistFixture(overrides: Partial<WatchlistItem> = {}): WatchlistItem
 		freshness: "current",
 		qualityState: "sufficient",
 		qualityWarnings: [],
+		weeklyComparison: null,
 		...overrides,
+	};
+}
+
+function metricChange(current: number, baseline: number) {
+	return {
+		current,
+		baseline,
+		absoluteChange: current - baseline,
+		percentageChange: ((current - baseline) / baseline) * 100,
+		percentageStatus: "available" as const,
 	};
 }
 
