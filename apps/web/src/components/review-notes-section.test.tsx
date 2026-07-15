@@ -8,7 +8,8 @@ import {
   type ReviewNote,
   type WatchlistItem,
 } from "@/lib/api-client";
-import { getShanghaiWeekStart, ReviewNotesSection } from "./review-notes-section";
+import { getShanghaiWeekStart } from "@/lib/shanghai-date";
+import { ReviewNotesSection } from "./review-notes-section";
 
 vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();

@@ -6,7 +6,9 @@ import {
   Bell,
   CheckCircle,
   Database,
+  Download,
   Eye,
+  LoaderCircle,
   LockKeyhole,
   RefreshCw,
 } from "lucide-react";
@@ -14,6 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { getAccessToken, subscribeToAccessToken } from "@/lib/access-token";
 import { ApiError, getWatchlist, type WatchlistItem } from "@/lib/api-client";
+import { downloadWatchlistCSV } from "@/lib/watchlist-report";
 import { ReviewNotesSection } from "./review-notes-section";
 import { StatusBadge } from "./status-badge";
 
@@ -42,13 +45,21 @@ type CommunityView = {
   weeklyTransactions: string;
 };
 
-export function WatchlistPage() {
+interface WatchlistPageProps {
+  downloadReport?: (items: WatchlistItem[]) => string;
+}
+
+export function WatchlistPage({
+  downloadReport = downloadWatchlistCSV,
+}: WatchlistPageProps = {}) {
   const [accessState, setAccessState] = useState<"checking" | "locked" | "unlocked">(
     "checking",
   );
   const [pageState, setPageState] = useState<PageState>("checking");
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [requestVersion, setRequestVersion] = useState(0);
+  const [exportError, setExportError] = useState<string>();
+  const [exportFeedback, setExportFeedback] = useState<string>();
 
   useEffect(() => {
     const syncAccess = () => setAccessState(getAccessToken() ? "unlocked" : "locked");
@@ -110,17 +121,53 @@ export function WatchlistPage() {
       ),
     [communities],
   );
+  const canExport = pageState === "ready" && items.length > 0;
+  const exportLabel = pageState === "checking" || pageState === "loading"
+    ? "观察池加载中"
+    : pageState === "locked"
+      ? "解锁后可导出"
+      : pageState === "failed"
+        ? "数据读取失败"
+        : items.length === 0
+          ? "暂无数据可导出"
+          : "导出本周 CSV";
+
+  const exportCSV = () => {
+    if (!canExport) return;
+    setExportError(undefined);
+    setExportFeedback(undefined);
+    try {
+      const filename = downloadReport(items);
+      setExportFeedback(`${filename} 已开始下载。`);
+    } catch {
+      setExportError("CSV 导出失败，请重试。");
+    }
+  };
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <section className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">我的观察池</h1>
-          <p className="mt-2 text-slate-500">每周跟踪，不错过买方窗口期。</p>
+      <section className="mb-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">我的观察池</h1>
+            <p className="mt-2 text-slate-500">每周跟踪，不错过买方窗口期。</p>
+          </div>
+          <button
+            type="button"
+            disabled={!canExport}
+            onClick={exportCSV}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+          >
+            {pageState === "checking" || pageState === "loading" ? (
+              <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download aria-hidden="true" className="h-4 w-4" />
+            )}
+            {exportLabel}
+          </button>
         </div>
-        <Link href="/templates" className="text-sm font-medium text-blue-600 hover:underline">
-          导出本周报表
-        </Link>
+        {exportError ? <p role="alert" className="mt-2 text-sm text-rose-700">{exportError}</p> : null}
+        {exportFeedback ? <p role="status" className="mt-2 text-sm text-emerald-700">{exportFeedback}</p> : null}
       </section>
 
       {pageState === "checking" || pageState === "loading" ? (
