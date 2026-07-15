@@ -7,10 +7,13 @@ import RootLayout, { metadata } from "@/app/layout";
 import { setAccessToken } from "@/lib/access-token";
 import {
   ApiError,
+  createReviewNote,
   createCapacityCalculation,
   getActionWindow,
   getCapacityAssumptions,
   getWatchlist,
+  listReviewNotes,
+  updateReviewNote,
   type ActionWindowResponse,
   type CalculationResponse,
   type CapacityAssumptionsResponse,
@@ -30,9 +33,12 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
   return {
     ...actual,
     createCapacityCalculation: vi.fn(),
+    createReviewNote: vi.fn(),
     getActionWindow: vi.fn(),
     getCapacityAssumptions: vi.fn(),
     getWatchlist: vi.fn(),
+    listReviewNotes: vi.fn(),
+    updateReviewNote: vi.fn(),
   };
 });
 
@@ -43,13 +49,19 @@ beforeEach(() => {
 	window.sessionStorage.clear();
 	window.history.replaceState({}, "", "/");
   vi.mocked(createCapacityCalculation).mockReset();
+  vi.mocked(createReviewNote).mockReset();
   vi.mocked(getActionWindow).mockReset();
   vi.mocked(getCapacityAssumptions).mockReset();
   vi.mocked(getWatchlist).mockReset();
+  vi.mocked(listReviewNotes).mockReset();
+  vi.mocked(updateReviewNote).mockReset();
   vi.mocked(createCapacityCalculation).mockRejectedValue(new Error("api unavailable"));
+  vi.mocked(createReviewNote).mockRejectedValue(new Error("api unavailable"));
   vi.mocked(getActionWindow).mockRejectedValue(new Error("api unavailable"));
   vi.mocked(getCapacityAssumptions).mockRejectedValue(new Error("api unavailable"));
   vi.mocked(getWatchlist).mockRejectedValue(new Error("api unavailable"));
+  vi.mocked(listReviewNotes).mockRejectedValue(new Error("api unavailable"));
+  vi.mocked(updateReviewNote).mockRejectedValue(new Error("api unavailable"));
 });
 
 describe("AppHeader", () => {

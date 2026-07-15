@@ -5,6 +5,7 @@ import { clearAccessToken, getAccessToken, setAccessToken } from "./access-token
 import {
   addWatchlistItem,
   ApiError,
+  createReviewNote,
   createCapacityCalculation,
   getCSVImportTemplate,
   getActionWindow,
@@ -15,7 +16,9 @@ import {
   importCSVCollectionRun,
   importJSONCollectionRun,
   listDataSources,
+  listReviewNotes,
   searchNeighborhoods,
+  updateReviewNote,
   verifyAccessToken,
   type HousingCapacityInput,
 } from "./api-client";
@@ -73,6 +76,54 @@ describe("api-client", () => {
 
     await expect(getWatchlist()).resolves.toEqual({ items: [] });
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/watchlist", undefined);
+  });
+
+  it("lists, creates, and updates protected review notes with exact contracts", async () => {
+    setAccessToken("review-token");
+    const signal = new AbortController().signal;
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 2, pageSize: 10 }))
+      .mockResolvedValueOnce(jsonResponse({ id: "note-1" }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ id: "note/1", content: "更新正文" }));
+    const createInput = {
+      kind: "review" as const,
+      content: "本周复盘",
+      neighborhoodId: "11111111-1111-4111-8111-111111111111",
+      weekStartDate: "2026-07-13",
+    };
+
+    await listReviewNotes(2, 10, signal);
+    await createReviewNote(createInput, signal);
+    await updateReviewNote("note/1", { content: "更新正文" }, signal);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/review-notes?page=2&pageSize=10",
+      expect.objectContaining({ signal }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/review-notes",
+      expect.objectContaining({
+        body: JSON.stringify(createInput),
+        method: "POST",
+        signal,
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/v1/review-notes/note%2F1",
+      expect.objectContaining({
+        body: JSON.stringify({ content: "更新正文" }),
+        method: "PATCH",
+        signal,
+      }),
+    );
+    for (const call of fetchMock.mock.calls) {
+      const headers = new Headers(call[1]?.headers);
+      expect(headers.get("Authorization")).toBe("Bearer review-token");
+      expect(headers.get("content-type")).toBe(call === fetchMock.mock.calls[0] ? null : "application/json");
+    }
   });
 
   it("passes an optional abort signal to requests", async () => {

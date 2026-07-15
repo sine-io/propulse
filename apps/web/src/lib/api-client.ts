@@ -34,6 +34,11 @@ export type ImportCollectionRunResponse = components["schemas"]["ImportCollectio
 export type CollectionRunDetail = components["schemas"]["CollectionRunDetail"];
 export type ValidationIssue = components["schemas"]["ValidationIssue"];
 export type ImportMetadata = Omit<ImportJSONRequest, "records">;
+export type ReviewNoteKind = components["schemas"]["ReviewNoteKind"];
+export type CreateReviewNoteInput = components["schemas"]["CreateReviewNoteRequest"];
+export type UpdateReviewNoteInput = components["schemas"]["UpdateReviewNoteRequest"];
+export type ReviewNote = components["schemas"]["ReviewNoteResponse"];
+export type ReviewNotesPage = components["schemas"]["ReviewNotesPageResponse"];
 
 export interface NeighborhoodSearchQuery {
   area?: string;
@@ -86,6 +91,46 @@ export async function getWatchlist(
     "/api/v1/watchlist",
     signal ? { signal } : undefined,
   );
+}
+
+export async function listReviewNotes(
+  page: number,
+  pageSize: number,
+  signal?: AbortSignal,
+): Promise<ReviewNotesPage> {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  return request<ReviewNotesPage>(
+    `/api/v1/review-notes?${params.toString()}`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function createReviewNote(
+  input: CreateReviewNoteInput,
+  signal?: AbortSignal,
+): Promise<ReviewNote> {
+  return request<ReviewNote>("/api/v1/review-notes", {
+    body: JSON.stringify(input),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    signal,
+  });
+}
+
+export async function updateReviewNote(
+  id: string,
+  input: UpdateReviewNoteInput,
+  signal?: AbortSignal,
+): Promise<ReviewNote> {
+  return request<ReviewNote>(`/api/v1/review-notes/${encodeURIComponent(id)}`, {
+    body: JSON.stringify(input),
+    headers: { "content-type": "application/json" },
+    method: "PATCH",
+    signal,
+  });
 }
 
 export async function addWatchlistItem(
