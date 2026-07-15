@@ -134,11 +134,15 @@ func (h Decision) GetActionWindow(c *gin.Context) {
 			return
 		}
 		if errors.Is(err, appdecision.ErrWatchlistRequired) {
-			writeError(c, http.StatusBadRequest, "watchlist_required", "add a neighborhood to the watchlist before requesting an action window")
+			writeError(c, http.StatusBadRequest, "watchlist_required", "select a watched neighborhood before requesting an action window")
 			return
 		}
 		if errors.Is(err, appdecision.ErrInvalidNeighborhoodID) {
 			writeError(c, http.StatusBadRequest, "invalid_neighborhood_id", "neighborhoodId must be a valid UUID")
+			return
+		}
+		if errors.Is(err, appdecision.ErrNeighborhoodNotWatched) {
+			writeError(c, http.StatusBadRequest, "neighborhood_not_watched", "neighborhoodId must belong to the current user's watchlist")
 			return
 		}
 		if errors.Is(err, appdecision.ErrMetricRequired) {

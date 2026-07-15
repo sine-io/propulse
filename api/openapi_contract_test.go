@@ -226,6 +226,48 @@ func TestActionWindowEvidenceContract(t *testing.T) {
 	}
 }
 
+func TestActionWindowRequiresWatchedNeighborhoodSelection(t *testing.T) {
+	spec := loadOpenAPI(t)
+	paths := requiredMap(t, spec, "paths")
+	operation := requiredMap(t, requiredMap(t, paths, "/api/v1/decision/action-window"), "get")
+
+	rawParameters, ok := operation["parameters"].([]interface{})
+	if !ok {
+		t.Fatalf("action-window parameters = %#v, want list", operation["parameters"])
+	}
+	var neighborhoodID map[string]interface{}
+	for _, rawParameter := range rawParameters {
+		parameter, ok := rawParameter.(map[string]interface{})
+		if ok && parameter["name"] == "neighborhoodId" && parameter["in"] == "query" {
+			neighborhoodID = parameter
+			break
+		}
+	}
+	if neighborhoodID == nil {
+		t.Fatal("action-window neighborhoodId query parameter is missing")
+	}
+	if required, ok := neighborhoodID["required"].(bool); !ok || !required {
+		t.Fatalf("neighborhoodId required = %#v, want true", neighborhoodID["required"])
+	}
+	schema := requiredMap(t, neighborhoodID, "schema")
+	if got := requiredString(t, schema, "type"); got != "string" {
+		t.Fatalf("neighborhoodId type = %q, want string", got)
+	}
+	if got := requiredString(t, schema, "format"); got != "uuid" {
+		t.Fatalf("neighborhoodId format = %q, want uuid", got)
+	}
+
+	responses := requiredMap(t, operation, "responses")
+	badRequest := requiredMap(t, responses, "400")
+	jsonContent := requiredMap(t, requiredMap(t, badRequest, "content"), "application/json")
+	examples := requiredMap(t, jsonContent, "examples")
+	for _, name := range []string{"capacityRequired", "watchlistRequired", "invalidNeighborhoodID", "neighborhoodNotWatched"} {
+		if _, ok := examples[name]; !ok {
+			t.Fatalf("action-window 400 examples missing %q", name)
+		}
+	}
+}
+
 func TestCapacityCalculationContract(t *testing.T) {
 	spec := loadOpenAPI(t)
 	components := requiredMap(t, spec, "components")

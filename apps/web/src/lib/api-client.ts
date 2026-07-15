@@ -78,10 +78,12 @@ export async function getWatchlist(
 }
 
 export async function getActionWindow(
+  neighborhoodId: string,
   signal?: AbortSignal,
 ): Promise<ActionWindowResponse> {
+  const params = new URLSearchParams({ neighborhoodId });
   return request<ActionWindowResponse>(
-    "/api/v1/decision/action-window",
+    `/api/v1/decision/action-window?${params.toString()}`,
     signal ? { signal } : undefined,
   );
 }

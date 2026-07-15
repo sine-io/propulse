@@ -17,6 +17,7 @@ import (
 )
 
 func TestGetActionWindowReturnsRecommendation(t *testing.T) {
+	const neighborhoodID = "11111111-1111-1111-1111-111111111112"
 	gin.SetMode(gin.ReleaseMode)
 	service := &stubDecisionApplication{
 		result: decisionResultFixture(),
@@ -24,15 +25,15 @@ func TestGetActionWindowReturnsRecommendation(t *testing.T) {
 	engine := gin.New()
 	engine.GET("/api/v1/decision/action-window", NewDecision(service).GetActionWindow)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/decision/action-window?neighborhoodId=neighborhood_2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/decision/action-window?neighborhoodId="+neighborhoodID, nil)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	if service.query.NeighborhoodID != "neighborhood_2" {
-		t.Fatalf("NeighborhoodID = %q, want neighborhood_2", service.query.NeighborhoodID)
+	if service.query.NeighborhoodID != neighborhoodID {
+		t.Fatalf("NeighborhoodID = %q, want %q", service.query.NeighborhoodID, neighborhoodID)
 	}
 
 	var response struct {
@@ -151,6 +152,15 @@ func TestGetActionWindowReturnsCapacityRequired(t *testing.T) {
 	if response.Error.Message != "create a capacity calculation before requesting an action window" {
 		t.Fatalf("message = %q", response.Error.Message)
 	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("json.Unmarshal(raw) error = %v", err)
+	}
+	for _, field := range []string{"action", "target", "factors", "checklist", "risks"} {
+		if _, ok := raw[field]; ok {
+			t.Fatalf("capacity error response contains recommendation field %q: %s", field, rec.Body.String())
+		}
+	}
 }
 
 func TestGetActionWindowMapsExpectedApplicationErrors(t *testing.T) {
@@ -162,6 +172,7 @@ func TestGetActionWindowMapsExpectedApplicationErrors(t *testing.T) {
 	}{
 		{name: "watchlist required", appErr: appdecision.ErrWatchlistRequired, wantStatus: http.StatusBadRequest, wantCode: "watchlist_required"},
 		{name: "invalid neighborhood ID", appErr: appdecision.ErrInvalidNeighborhoodID, wantStatus: http.StatusBadRequest, wantCode: "invalid_neighborhood_id"},
+		{name: "neighborhood not watched", appErr: appdecision.ErrNeighborhoodNotWatched, wantStatus: http.StatusBadRequest, wantCode: "neighborhood_not_watched"},
 		{name: "metric required", appErr: appdecision.ErrMetricRequired, wantStatus: http.StatusNotFound, wantCode: "metric_required"},
 		{name: "metric stale", appErr: appdecision.ErrMetricStale, wantStatus: http.StatusConflict, wantCode: "metric_stale"},
 		{name: "metric insufficient", appErr: appdecision.ErrMetricInsufficient, wantStatus: http.StatusConflict, wantCode: "metric_insufficient"},
@@ -184,12 +195,18 @@ func TestGetActionWindowMapsExpectedApplicationErrors(t *testing.T) {
 				Error struct {
 					Code string `json:"code"`
 				} `json:"error"`
+				Action  *string         `json:"action"`
+				Target  json.RawMessage `json:"target"`
+				Factors json.RawMessage `json:"factors"`
 			}
 			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 				t.Fatalf("json.Unmarshal() error = %v", err)
 			}
 			if response.Error.Code != tt.wantCode {
 				t.Fatalf("error code = %q, want %q", response.Error.Code, tt.wantCode)
+			}
+			if response.Action != nil || response.Target != nil || response.Factors != nil {
+				t.Fatalf("error response contains recommendation data: %s", rec.Body.String())
 			}
 		})
 	}

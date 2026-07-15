@@ -13,7 +13,13 @@ import {
 import { useEffect, useState } from "react";
 
 import { getAccessToken, subscribeToAccessToken } from "@/lib/access-token";
-import { ApiError, getActionWindow, type ActionWindowResponse } from "@/lib/api-client";
+import {
+  ApiError,
+  getActionWindow,
+  getWatchlist,
+  type ActionWindowResponse,
+  type WatchlistItem,
+} from "@/lib/api-client";
 import { StatusBadge } from "./status-badge";
 
 type DecisionFactor = ActionWindowResponse["factors"][number];
@@ -22,12 +28,14 @@ type AlternativeComparison = ActionWindowResponse["alternativeComparison"];
 type AlternativeCandidate = AlternativeComparison["candidates"][number];
 
 type AccessState = "checking" | "locked" | "unlocked";
-type PageState = "checking" | "locked" | "loading" | "ready" | "blocked";
+type WatchlistState = "idle" | "loading" | "ready" | "failed";
+type RecommendationState = "idle" | "loading" | "ready" | "blocked";
 
 type BlockedState = {
   code:
     | "capacity_required"
     | "watchlist_required"
+    | "neighborhood_not_watched"
     | "metric_required"
     | "metric_stale"
     | "metric_insufficient"
@@ -40,11 +48,22 @@ type BlockedState = {
 
 export function ActionWindowPage() {
   const [accessState, setAccessState] = useState<AccessState>("checking");
-  const [pageState, setPageState] = useState<PageState>("checking");
+  const [watchlistState, setWatchlistState] = useState<WatchlistState>("idle");
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [selectedNeighborhoodID, setSelectedNeighborhoodID] = useState("");
+  const [rejectedNeighborhoodID, setRejectedNeighborhoodID] = useState<string>();
+  const [recommendationState, setRecommendationState] = useState<RecommendationState>("idle");
   const [recommendation, setRecommendation] = useState<ActionWindowResponse>();
   const [blocked, setBlocked] = useState<BlockedState>();
   const [checkedItems, setCheckedItems] = useState<string[]>([]);
-  const [requestVersion, setRequestVersion] = useState(0);
+  const [watchlistRequestVersion, setWatchlistRequestVersion] = useState(0);
+  const [recommendationRequestVersion, setRecommendationRequestVersion] = useState(0);
+
+  const selectedWatchlistItem = watchlist.find(
+    (item) => item.neighborhoodId === selectedNeighborhoodID,
+  );
+  const selectionWasRejected = rejectedNeighborhoodID === selectedNeighborhoodID;
+  const hasValidSelection = Boolean(selectedWatchlistItem) && !selectionWasRejected;
 
   useEffect(() => {
     const syncAccess = () => setAccessState(getAccessToken() ? "unlocked" : "locked");
@@ -53,40 +72,136 @@ export function ActionWindowPage() {
   }, []);
 
   useEffect(() => {
-    if (accessState === "checking") {
-      setPageState("checking");
-      return;
-    }
-    if (accessState === "locked") {
+    const syncSelection = () => {
+      setSelectedNeighborhoodID(readNeighborhoodIDFromURL());
       setRecommendation(undefined);
       setBlocked(undefined);
-      setPageState("locked");
+      setCheckedItems([]);
+      setRejectedNeighborhoodID(undefined);
+      setRecommendationState("idle");
+      setRecommendationRequestVersion((version) => version + 1);
+    };
+    syncSelection();
+    window.addEventListener("popstate", syncSelection);
+    return () => window.removeEventListener("popstate", syncSelection);
+  }, []);
+
+  useEffect(() => {
+    if (accessState !== "unlocked") {
+      setWatchlist([]);
+      setWatchlistState("idle");
+      setRecommendation(undefined);
+      setBlocked(undefined);
+      setCheckedItems([]);
+      setRecommendationState("idle");
       return;
     }
 
     const controller = new AbortController();
+    let active = true;
+    setWatchlist([]);
+    setWatchlistState("loading");
     setRecommendation(undefined);
     setBlocked(undefined);
-    setPageState("loading");
-    getActionWindow(controller.signal)
+    setCheckedItems([]);
+    setRecommendationState("idle");
+    getWatchlist(controller.signal)
       .then((response) => {
-        setRecommendation(response);
-        setCheckedItems([]);
-        setPageState("ready");
+        if (!active) return;
+        setWatchlist(response.items);
+        setWatchlistState("ready");
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (!active || isAbortError(error)) return;
+        if (error instanceof ApiError && error.status === 401) {
+          setAccessState("locked");
+          return;
+        }
+        setWatchlistState("failed");
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [accessState, watchlistRequestVersion]);
+
+  useEffect(() => {
+    if (
+      accessState !== "unlocked" ||
+      watchlistState !== "ready" ||
+      !selectedWatchlistItem ||
+      selectionWasRejected
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setRecommendation(undefined);
+    setBlocked(undefined);
+    setCheckedItems([]);
+    setRecommendationState("loading");
+    getActionWindow(selectedNeighborhoodID, controller.signal)
+      .then((response) => {
+        if (!active) return;
+        if (response.target.neighborhoodId !== selectedNeighborhoodID) {
+          setBlocked({
+            code: "request_failed",
+            title: "决策目标不一致",
+            detail: "服务返回的目标与当前选择不一致。",
+          });
+          setRecommendationState("blocked");
+          return;
+        }
+        setRecommendation(response);
+        setCheckedItems([]);
+        setRecommendationState("ready");
+      })
+      .catch((error: unknown) => {
+        if (!active || isAbortError(error)) return;
         setRecommendation(undefined);
         if (error instanceof ApiError && error.status === 401) {
-          setPageState("locked");
+          setAccessState("locked");
+          return;
+        }
+        if (error instanceof ApiError && error.code === "neighborhood_not_watched") {
+          setRejectedNeighborhoodID(selectedNeighborhoodID);
+          setRecommendationState("idle");
           return;
         }
         setBlocked(actionWindowBlockedState(error));
-        setPageState("blocked");
+        setRecommendationState("blocked");
       });
 
-    return () => controller.abort();
-  }, [accessState, requestVersion]);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    accessState,
+    recommendationRequestVersion,
+    selectedNeighborhoodID,
+    selectedWatchlistItem,
+    selectionWasRejected,
+    watchlistState,
+  ]);
+
+  const selectNeighborhood = (neighborhoodID: string) => {
+    const url = new URL(window.location.href);
+    if (neighborhoodID) {
+      url.searchParams.set("neighborhoodId", neighborhoodID);
+    } else {
+      url.searchParams.delete("neighborhoodId");
+    }
+    window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    setRecommendation(undefined);
+    setBlocked(undefined);
+    setCheckedItems([]);
+    setRejectedNeighborhoodID(undefined);
+    setRecommendationState("idle");
+    setSelectedNeighborhoodID(neighborhoodID);
+  };
 
   const toggleChecklistItem = (item: string) => {
     setCheckedItems((current) =>
@@ -96,17 +211,71 @@ export function ActionWindowPage() {
     );
   };
 
+  const displayedTarget = hasValidSelection
+    ? recommendationState === "ready" && recommendation
+      ? recommendation.target
+      : selectedWatchlistItem
+    : undefined;
+  const displayedCollectedAt = recommendationState === "ready" && recommendation
+    ? recommendation.metric.collectedAt
+    : selectedWatchlistItem?.collectedAt;
+  const selectionIsMissing = selectedNeighborhoodID === "";
+  const selectionIsUnavailable = !selectionIsMissing && !hasValidSelection;
+
   return (
     <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <section className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900">现在适合看、等、砍价，还是出手？</h1>
-        <p className="mt-2 text-slate-500">结合资金预算与目标小区的可信市场指标生成决策。</p>
+        <h1 className="text-3xl font-bold text-slate-900">
+          {displayedTarget ? `${displayedTarget.name}出手窗口` : "现在适合看、等、砍价，还是出手？"}
+        </h1>
+        <p className="mt-2 text-slate-500">
+          {displayedTarget ? (
+            <>
+              {displayedTarget.area} · {displayedTarget.targetLayout}
+              {displayedCollectedAt ? ` · 指标采集 ${formatDecisionTimestamp(displayedCollectedAt)}` : ""}
+            </>
+          ) : (
+            "结合资金预算与目标小区的可信市场指标生成决策。"
+          )}
+        </p>
       </section>
 
-      {pageState === "checking" || pageState === "loading" ? (
-        <DecisionState icon={Database} title="正在检查出手窗口" tone="slate" />
+      {accessState === "unlocked" && watchlistState === "ready" && watchlist.length > 0 ? (
+        <section className="border-y border-slate-200 py-5">
+          <label htmlFor="action-window-neighborhood" className="block text-sm font-semibold text-slate-900">
+            目标小区
+          </label>
+          <select
+            id="action-window-neighborhood"
+            value={hasValidSelection ? selectedNeighborhoodID : ""}
+            onChange={(event) => selectNeighborhood(event.target.value)}
+            className="mt-2 h-11 w-full max-w-xl rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="">请选择已关注小区</option>
+            {watchlist.map((item) => {
+              const responseTarget = recommendation?.target.neighborhoodId === item.neighborhoodId
+                ? recommendation.target
+                : undefined;
+              return (
+                <option key={item.neighborhoodId} value={item.neighborhoodId}>
+                  {responseTarget?.name ?? item.name} · {responseTarget?.targetLayout ?? item.targetLayout}
+                </option>
+              );
+            })}
+          </select>
+          {displayedTarget ? (
+            <p className="mt-2 text-xs text-slate-500">
+              {displayedTarget.name} · {displayedTarget.targetLayout}
+              {displayedCollectedAt ? ` · 指标采集 ${formatDecisionTimestamp(displayedCollectedAt)}` : ""}
+            </p>
+          ) : null}
+        </section>
       ) : null}
-      {pageState === "locked" ? (
+
+      {accessState === "checking" || (accessState === "unlocked" && watchlistState === "loading") ? (
+        <DecisionState icon={Database} title="正在读取观察池" tone="slate" />
+      ) : null}
+      {accessState === "locked" ? (
         <DecisionState
           icon={LockKeyhole}
           title="出手窗口已锁定"
@@ -114,7 +283,60 @@ export function ActionWindowPage() {
           tone="amber"
         />
       ) : null}
-      {pageState === "blocked" && blocked ? (
+      {accessState === "unlocked" && watchlistState === "failed" ? (
+        <DecisionState
+          icon={AlertTriangle}
+          title="观察池读取失败"
+          detail="请求没有返回可用的观察池。"
+          tone="rose"
+          action={(
+            <button
+              type="button"
+              onClick={() => setWatchlistRequestVersion((version) => version + 1)}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <RefreshCw aria-hidden="true" className="h-4 w-4" />
+              重试
+            </button>
+          )}
+        />
+      ) : null}
+      {accessState === "unlocked" && watchlistState === "ready" && watchlist.length === 0 ? (
+        <DecisionState
+          icon={MapPin}
+          title="观察池暂无小区"
+          detail="添加目标小区后才能生成出手建议。"
+          tone="amber"
+          action={(
+            <Link
+              href="/neighborhoods"
+              className="inline-flex h-9 items-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              添加目标小区
+            </Link>
+          )}
+        />
+      ) : null}
+      {accessState === "unlocked" && watchlistState === "ready" && watchlist.length > 0 && selectionIsMissing ? (
+        <DecisionState
+          icon={MapPin}
+          title="选择目标小区"
+          detail="当前尚未指定本次评估目标。"
+          tone="slate"
+        />
+      ) : null}
+      {accessState === "unlocked" && watchlistState === "ready" && watchlist.length > 0 && selectionIsUnavailable ? (
+        <DecisionState
+          icon={AlertTriangle}
+          title="目标已不在观察池"
+          detail="原目标不可用于本次评估，请重新选择。"
+          tone="amber"
+        />
+      ) : null}
+      {accessState === "unlocked" && watchlistState === "ready" && hasValidSelection && recommendationState === "loading" ? (
+        <DecisionState icon={Database} title="正在检查出手窗口" tone="slate" />
+      ) : null}
+      {accessState === "unlocked" && recommendationState === "blocked" && blocked ? (
         <DecisionState
           icon={AlertTriangle}
           title={blocked.title}
@@ -132,7 +354,7 @@ export function ActionWindowPage() {
               ) : null}
               <button
                 type="button"
-                onClick={() => setRequestVersion((version) => version + 1)}
+                onClick={() => setRecommendationRequestVersion((version) => version + 1)}
                 className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 <RefreshCw aria-hidden="true" className="h-4 w-4" />
@@ -143,7 +365,7 @@ export function ActionWindowPage() {
         />
       ) : null}
 
-      {pageState === "ready" && recommendation ? (
+      {recommendationState === "ready" && recommendation ? (
         <>
           <section className="border-l-4 border-l-blue-600 bg-white p-6 shadow-sm sm:p-8">
             <div className="mb-4 flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -669,6 +891,14 @@ function formatDecisionTimestamp(value: string): string {
   }).format(new Date(value));
 }
 
+function readNeighborhoodIDFromURL(): string {
+  return new URLSearchParams(window.location.search).get("neighborhoodId")?.trim() ?? "";
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 function actionWindowBlockedState(error: unknown): BlockedState {
   if (!(error instanceof ApiError)) {
     return { code: "request_failed", title: "决策服务不可用", detail: "请求没有返回可用结论。" };
@@ -686,9 +916,15 @@ function actionWindowBlockedState(error: unknown): BlockedState {
       return {
         code: "watchlist_required",
         title: "需要目标小区",
-        detail: "观察池中还没有可评估的小区。",
-        href: "/neighborhoods",
-        linkLabel: "添加目标小区",
+        detail: "请从观察池中明确选择本次评估目标。",
+        href: "/watchlist",
+        linkLabel: "查看观察池",
+      };
+    case "neighborhood_not_watched":
+      return {
+        code: "neighborhood_not_watched",
+        title: "目标已不在观察池",
+        detail: "原目标不可用于本次评估，请重新选择。",
       };
     case "metric_required":
       return {

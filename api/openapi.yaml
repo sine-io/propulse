@@ -303,10 +303,11 @@ paths:
       parameters:
         - in: query
           name: neighborhoodId
-          required: false
+          required: true
           schema:
             type: string
-          description: Neighborhood to evaluate. Defaults to the first watchlist item.
+            format: uuid
+          description: Watched neighborhood to evaluate.
       responses:
         '200':
           description: Action window recommendation
@@ -330,12 +331,17 @@ paths:
                   value:
                     error:
                       code: watchlist_required
-                      message: add a neighborhood to the watchlist before requesting an action window
+                      message: select a watched neighborhood before requesting an action window
                 invalidNeighborhoodID:
                   value:
                     error:
                       code: invalid_neighborhood_id
                       message: neighborhoodId must be a valid UUID
+                neighborhoodNotWatched:
+                  value:
+                    error:
+                      code: neighborhood_not_watched
+                      message: neighborhoodId must belong to the current user's watchlist
         '401':
           $ref: '#/components/responses/AccessRequired'
         '404':

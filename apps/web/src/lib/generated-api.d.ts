@@ -545,9 +545,9 @@ export interface paths {
         /** Recommend the current action window */
         get: {
             parameters: {
-                query?: {
-                    /** @description Neighborhood to evaluate. Defaults to the first watchlist item. */
-                    neighborhoodId?: string;
+                query: {
+                    /** @description Watched neighborhood to evaluate. */
+                    neighborhoodId: string;
                 };
                 header?: never;
                 path?: never;
