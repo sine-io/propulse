@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { getAccessToken, subscribeToAccessToken } from "@/lib/access-token";
 import { ApiError, getWatchlist, type WatchlistItem } from "@/lib/api-client";
+import { ReviewNotesSection } from "./review-notes-section";
 import { StatusBadge } from "./status-badge";
 
 type PageState = "checking" | "locked" | "loading" | "ready" | "failed";
@@ -206,6 +207,8 @@ export function WatchlistPage() {
           )}
         </>
       ) : null}
+
+      <ReviewNotesSection accessState={accessState} watchlistItems={items} />
     </main>
   );
 }
