@@ -48,6 +48,10 @@ func TestAccessProtectionContract(t *testing.T) {
 		{path: "/api/v1/neighborhoods/{id}/metrics/history", method: "get"},
 		{path: "/api/v1/watchlist/items", method: "post", protected: true},
 		{path: "/api/v1/watchlist", method: "get", protected: true},
+		{path: "/api/v1/review-notes", method: "post", protected: true},
+		{path: "/api/v1/review-notes", method: "get", protected: true},
+		{path: "/api/v1/review-notes/{id}", method: "get", protected: true},
+		{path: "/api/v1/review-notes/{id}", method: "patch", protected: true},
 		{path: "/api/v1/decision/action-window", method: "get", protected: true},
 		{path: "/admin/api/data-sources", method: "post", protected: true},
 		{path: "/admin/api/data-sources", method: "get", protected: true},
@@ -94,6 +98,104 @@ func TestAccessProtectionContract(t *testing.T) {
 	if importResponses := requiredMap(t, importOperation, "responses"); hasKey(importResponses, "403") {
 		t.Fatal("admin import operation must not retain the obsolete 403 response")
 	}
+}
+
+func TestReviewNotesContract(t *testing.T) {
+	spec := loadOpenAPI(t)
+	paths := requiredMap(t, spec, "paths")
+	schemas := requiredMap(t, requiredMap(t, spec, "components"), "schemas")
+
+	collectionPath := requiredMap(t, paths, "/api/v1/review-notes")
+	create := requiredMap(t, collectionPath, "post")
+	list := requiredMap(t, collectionPath, "get")
+	notePath := requiredMap(t, paths, "/api/v1/review-notes/{id}")
+	get := requiredMap(t, notePath, "get")
+	update := requiredMap(t, notePath, "patch")
+
+	for _, operation := range []map[string]interface{}{create, list, get, update} {
+		responses := requiredMap(t, operation, "responses")
+		for _, status := range []string{"400", "401", "500"} {
+			if _, ok := responses[status]; !ok {
+				t.Fatalf("review operation responses = %v, missing %s", mapKeys(responses), status)
+			}
+		}
+	}
+	for _, operation := range []map[string]interface{}{create, get, update} {
+		if _, ok := requiredMap(t, operation, "responses")["404"]; !ok {
+			t.Fatal("review create/get/update operation is missing 404 response")
+		}
+	}
+	if got := requiredString(t, responseJSONSchema(t, create, "201"), "$ref"); got != "#/components/schemas/ReviewNoteResponse" {
+		t.Fatalf("create response schema = %q", got)
+	}
+	if got := requiredString(t, responseJSONSchema(t, list, "200"), "$ref"); got != "#/components/schemas/ReviewNotesPageResponse" {
+		t.Fatalf("list response schema = %q", got)
+	}
+	for _, operation := range []map[string]interface{}{get, update} {
+		if got := requiredString(t, responseJSONSchema(t, operation, "200"), "$ref"); got != "#/components/schemas/ReviewNoteResponse" {
+			t.Fatalf("single-note response schema = %q", got)
+		}
+		id := operationParameter(t, operation, "id", "path")
+		if id == nil || requiredString(t, requiredMap(t, id, "schema"), "format") != "uuid" {
+			t.Fatalf("review id parameter = %#v, want UUID", id)
+		}
+	}
+
+	page := operationParameter(t, list, "page", "query")
+	pageSize := operationParameter(t, list, "pageSize", "query")
+	if page == nil || fmt.Sprint(requiredMap(t, page, "schema")["default"]) != "1" {
+		t.Fatalf("page parameter = %#v, want default 1", page)
+	}
+	if pageSize == nil {
+		t.Fatal("pageSize parameter is missing")
+	}
+	pageSizeSchema := requiredMap(t, pageSize, "schema")
+	if fmt.Sprint(pageSizeSchema["default"]) != "20" || fmt.Sprint(pageSizeSchema["maximum"]) != "100" {
+		t.Fatalf("pageSize schema = %#v, want default 20 maximum 100", pageSizeSchema)
+	}
+
+	createRequest := requiredMap(t, schemas, "CreateReviewNoteRequest")
+	assertRequiredFields(t, createRequest, []string{"kind", "content"})
+	if additional, ok := createRequest["additionalProperties"].(bool); !ok || additional {
+		t.Fatalf("CreateReviewNoteRequest additionalProperties = %#v, want false", createRequest["additionalProperties"])
+	}
+	createProperties := requiredMap(t, createRequest, "properties")
+	if _, exists := createProperties["userId"]; exists {
+		t.Fatal("CreateReviewNoteRequest must not expose userId")
+	}
+	if got := requiredString(t, requiredMap(t, createProperties, "weekStartDate"), "format"); got != "date" {
+		t.Fatalf("weekStartDate format = %q, want date", got)
+	}
+	content := requiredMap(t, createProperties, "content")
+	if fmt.Sprint(content["minLength"]) != "1" || fmt.Sprint(content["maxLength"]) != "8000" {
+		t.Fatalf("review content limits = %#v", content)
+	}
+
+	updateRequest := requiredMap(t, schemas, "UpdateReviewNoteRequest")
+	assertRequiredFields(t, updateRequest, []string{"content"})
+	updateProperties := requiredMap(t, updateRequest, "properties")
+	if len(updateProperties) != 1 || updateProperties["content"] == nil {
+		t.Fatalf("UpdateReviewNoteRequest properties = %v, want only content", mapKeys(updateProperties))
+	}
+	if additional, ok := updateRequest["additionalProperties"].(bool); !ok || additional {
+		t.Fatalf("UpdateReviewNoteRequest additionalProperties = %#v, want false", updateRequest["additionalProperties"])
+	}
+
+	note := requiredMap(t, schemas, "ReviewNoteResponse")
+	assertRequiredFields(t, note, []string{"id", "kind", "neighborhoodId", "weekStartDate", "content", "createdAt", "updatedAt"})
+	noteProperties := requiredMap(t, note, "properties")
+	if _, exists := noteProperties["userId"]; exists {
+		t.Fatal("ReviewNoteResponse must not expose userId")
+	}
+	for _, field := range []string{"neighborhoodId", "weekStartDate"} {
+		property := requiredMap(t, noteProperties, field)
+		if nullable, ok := property["nullable"].(bool); !ok || !nullable {
+			t.Fatalf("ReviewNoteResponse.%s nullable = %#v, want true", field, property["nullable"])
+		}
+	}
+	assertStringEnumContains(t, requiredMap(t, schemas, "ReviewNoteKind"), "review")
+	assertStringEnumContains(t, requiredMap(t, schemas, "ReviewNoteKind"), "viewing_note")
+	assertRequiredFields(t, requiredMap(t, schemas, "ReviewNotesPageResponse"), []string{"items", "total", "page", "pageSize"})
 }
 
 func TestMetricHistoryAndQualityContracts(t *testing.T) {
@@ -499,7 +601,7 @@ func assertAccessRequiredResponse(t *testing.T, response map[string]interface{})
 	example := requiredMap(t, jsonContent, "example")
 	wantExample := map[string]interface{}{
 		"error": map[string]interface{}{
-			"code":    "access_required",
+			"code":    "unauthorized",
 			"message": "valid bearer access token is required",
 		},
 	}

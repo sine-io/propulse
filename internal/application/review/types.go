@@ -1,42 +1,31 @@
-// Package review 定义复盘记录与看房笔记的领域模型与持久化端口（WATCH-006.1 / #58）。
-// 本子任务只建立数据模型与基础存取能力；受保护的 CRUD API 由 #59 负责。
+// Package review coordinates review-note commands and queries.
 package review
 
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
+
+	domainreview "github.com/sine-io/propulse/internal/domain/review"
 )
 
-// Kind 区分复盘记录与看房笔记。
-type Kind string
+type Kind = domainreview.Kind
+type Note = domainreview.Note
 
 const (
-	KindReview      Kind = "review"
-	KindViewingNote Kind = "viewing_note"
+	KindReview      = domainreview.KindReview
+	KindViewingNote = domainreview.KindViewingNote
+	MaxContentRunes = domainreview.MaxContentRunes
 )
 
-const maxContentLength = 8000
-
-// ErrInvalidNote 表示笔记内容或类型不满足约束。
-var ErrInvalidNote = errors.New("invalid review note")
-
-// ErrNoteNotFound 表示按 ID 未找到笔记。
+var ErrInvalidNote = domainreview.ErrInvalidNote
+var ErrInvalidNoteID = errors.New("invalid review note id")
+var ErrInvalidNeighborhoodID = errors.New("invalid neighborhood id")
+var ErrInvalidPagination = errors.New("invalid review note pagination")
+var ErrNeighborhoodNotFound = errors.New("neighborhood not found")
 var ErrNoteNotFound = errors.New("review note not found")
 
-// Note 是复盘/看房笔记实体，关联稳定用户身份与可选小区、周次。
-type Note struct {
-	ID             string
-	UserID         string
-	NeighborhoodID *string
-	Kind           Kind
-	WeekStartDate  *time.Time
-	Content        string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-}
-
-// CreateNoteInput 是创建笔记的入参（ID 由 repository 生成）。
 type CreateNoteInput struct {
 	UserID         string
 	NeighborhoodID *string
@@ -45,22 +34,35 @@ type CreateNoteInput struct {
 	Content        string
 }
 
-// Validate 校验创建入参：用户与内容非空、类型合法、内容长度受限。
 func (input CreateNoteInput) Validate() error {
-	if input.UserID == "" {
+	if strings.TrimSpace(input.UserID) == "" || !domainreview.IsValidKind(input.Kind) {
 		return ErrInvalidNote
 	}
-	if input.Kind != KindReview && input.Kind != KindViewingNote {
-		return ErrInvalidNote
+	if _, err := domainreview.NormalizeContent(input.Content); err != nil {
+		return err
 	}
-	if l := len(input.Content); l == 0 || l > maxContentLength {
-		return ErrInvalidNote
+	if input.NeighborhoodID != nil {
+		_, err := normalizeRequiredUUID(*input.NeighborhoodID, ErrInvalidNeighborhoodID)
+		return err
 	}
 	return nil
 }
 
-// Repository 定义复盘笔记的持久化端口。
+type ListNotesInput struct {
+	UserID string
+	Limit  int
+	Offset int
+}
+
+type ListNotesResult struct {
+	Items []Note
+	Total int
+}
+
 type Repository interface {
 	CreateNote(ctx context.Context, input CreateNoteInput) (Note, error)
-	ListNotesByUser(ctx context.Context, userID string) ([]Note, error)
+	NeighborhoodExists(ctx context.Context, id string) (bool, error)
+	FindNote(ctx context.Context, userID string, id string) (Note, error)
+	UpdateNoteContent(ctx context.Context, userID string, id string, content string) (Note, error)
+	ListNotes(ctx context.Context, input ListNotesInput) (ListNotesResult, error)
 }

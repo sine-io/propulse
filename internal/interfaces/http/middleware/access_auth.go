@@ -22,7 +22,7 @@ func AccessAuth(token string) gin.HandlerFunc {
 		if !valid {
 			c.Header("WWW-Authenticate", "Bearer")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": gin.H{
-				"code":    "access_required",
+				"code":    "unauthorized",
 				"message": "valid bearer access token is required",
 			}})
 			return

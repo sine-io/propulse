@@ -18,6 +18,7 @@ import (
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
+	appreview "github.com/sine-io/propulse/internal/application/review"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
@@ -200,6 +201,7 @@ func TestRunWaitsForInFlightHTTPHandlerBeforeClosingRuntime(t *testing.T) {
 		neighborhood: &stubAppNeighborhoodApplication{},
 		collection:   &stubAppCollectionApplication{},
 		decision:     &stubAppDecisionApplication{},
+		review:       &stubAppReviewApplication{},
 		queueClient:  closeSignalCloser{closed: runtimeClosed},
 	}
 	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
@@ -441,6 +443,7 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 			neighborhood: &stubAppNeighborhoodApplication{},
 			collection:   &stubAppCollectionApplication{},
 			decision:     &stubAppDecisionApplication{},
+			review:       &stubAppReviewApplication{},
 			queueClient:  noopCloser{},
 		}, nil
 	}
@@ -514,6 +517,7 @@ func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 			neighborhood: service,
 			collection:   &stubAppCollectionApplication{},
 			decision:     &stubAppDecisionApplication{},
+			review:       &stubAppReviewApplication{},
 			queueClient:  noopCloser{},
 		}, nil
 	}
@@ -574,6 +578,7 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 			neighborhood: &stubAppNeighborhoodApplication{},
 			collection:   service,
 			decision:     &stubAppDecisionApplication{},
+			review:       &stubAppReviewApplication{},
 			queueClient:  noopCloser{},
 		}, nil
 	}
@@ -620,6 +625,7 @@ func TestRunHTTPServerPassesRuntimeReadinessCheckerToRouter(t *testing.T) {
 		neighborhood: &stubAppNeighborhoodApplication{},
 		collection:   &stubAppCollectionApplication{},
 		decision:     &stubAppDecisionApplication{},
+		review:       &stubAppReviewApplication{},
 		readiness:    checker,
 	}
 	listenAndServe = func(server *http.Server) error {
@@ -658,6 +664,7 @@ func testRunStartsHTTPServer(t *testing.T, mode string) {
 			neighborhood: &stubAppNeighborhoodApplication{},
 			collection:   &stubAppCollectionApplication{},
 			decision:     &stubAppDecisionApplication{},
+			review:       &stubAppReviewApplication{},
 			queueClient:  noopCloser{},
 		}, nil
 	}
@@ -986,6 +993,24 @@ type stubAppDecisionApplication struct{}
 
 func (*stubAppDecisionApplication) GetActionWindow(context.Context, appdecision.GetActionWindowQuery) (appdecision.ActionWindowResult, error) {
 	return appdecision.ActionWindowResult{}, nil
+}
+
+type stubAppReviewApplication struct{}
+
+func (*stubAppReviewApplication) CreateNote(context.Context, appreview.CreateNoteCommand) (appreview.Note, error) {
+	return appreview.Note{}, nil
+}
+
+func (*stubAppReviewApplication) UpdateNote(context.Context, appreview.UpdateNoteCommand) (appreview.Note, error) {
+	return appreview.Note{}, nil
+}
+
+func (*stubAppReviewApplication) GetNote(context.Context, appreview.GetNoteQuery) (appreview.Note, error) {
+	return appreview.Note{}, appreview.ErrNoteNotFound
+}
+
+func (*stubAppReviewApplication) ListNotes(context.Context, appreview.ListNotesQuery) (appreview.NotesPage, error) {
+	return appreview.NotesPage{Items: []appreview.Note{}, Page: 1, PageSize: 20}, nil
 }
 
 type noopCloser struct{}
