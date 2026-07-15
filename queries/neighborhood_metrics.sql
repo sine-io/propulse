@@ -105,12 +105,16 @@ listing_aggregate AS (
     MAX(captured_at) AS latest_listing_observed_at
   FROM inventory_listings
 ),
-target_layout_supply AS (
-  SELECT COUNT(*)::int AS target_layout_supply
-  FROM inventory_run ir
-  JOIN listing_observations lo ON lo.collection_run_id = ir.id
-  WHERE lo.status = 'active'
-    AND lo.layout = sqlc.arg(target_layout)
+layout_supply AS (
+  SELECT COALESCE(
+    jsonb_object_agg(layout, supply ORDER BY layout),
+    '{}'::jsonb
+  ) AS target_layout_supply_by_layout
+  FROM (
+    SELECT listing_layout AS layout, COUNT(*)::int AS supply
+    FROM inventory_listings
+    GROUP BY listing_layout
+  ) grouped_supply
 ),
 previous_listing_aggregate AS (
   SELECT COUNT(*)::int AS previous_listed_homes
@@ -185,7 +189,7 @@ SELECT
   la.listing_price_max,
   ta.transaction_price_min,
   ta.transaction_price_max,
-  COALESCE(tls.target_layout_supply, 0)::int AS target_layout_supply,
+  ls.target_layout_supply_by_layout,
   COALESCE(la.listed_homes, 0)::int AS listing_sample_count,
   COALESCE(ta.transaction_sample_count, 0)::int AS transaction_sample_count,
   COALESCE(ta.last_thirty_day_transaction_count, 0)::int AS last_thirty_day_transaction_count,
@@ -196,9 +200,9 @@ SELECT
   END AS listed_homes_change_pct
 FROM trigger_run tr
 CROSS JOIN source_ids
+CROSS JOIN layout_supply ls
 LEFT JOIN inventory_run ir ON TRUE
 LEFT JOIN listing_aggregate la ON TRUE
-LEFT JOIN target_layout_supply tls ON TRUE
 LEFT JOIN previous_listing_aggregate pla ON TRUE
 LEFT JOIN price_cut_aggregate pca ON TRUE
 LEFT JOIN transaction_aggregate ta ON TRUE;
@@ -214,7 +218,7 @@ INSERT INTO neighborhood_metrics (
   transaction_price_min,
   transaction_price_max,
   transaction_momentum,
-  target_layout_supply,
+  target_layout_supply_by_layout,
   collection_run_id,
   inventory_collection_run_id,
   source_ids,

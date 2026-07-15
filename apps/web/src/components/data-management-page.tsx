@@ -29,7 +29,6 @@ import {
   listDataSources,
   searchNeighborhoods,
   type CreateDataSourceRequest,
-  type CreateNeighborhoodRequest,
   type DataSource,
   type ImportCollectionRunResponse,
   type ImportJSONRecord,
@@ -49,10 +48,11 @@ const emptySourceDraft: CreateDataSourceRequest = {
   notes: "",
 };
 
-const emptyNeighborhoodDraft: CreateNeighborhoodRequest = {
+const emptyNeighborhoodDraft = {
   name: "",
+  city: "",
   area: "",
-  targetLayout: "",
+  availableLayouts: "",
 };
 
 export function DataManagementPage() {
@@ -220,8 +220,14 @@ export function DataManagementPage() {
     try {
       const created = await createNeighborhood({
         name: neighborhoodDraft.name.trim(),
+        city: neighborhoodDraft.city.trim(),
         area: neighborhoodDraft.area.trim(),
-        targetLayout: neighborhoodDraft.targetLayout.trim(),
+        availableLayouts: [...new Set(
+          neighborhoodDraft.availableLayouts
+            .split(/[,，\n]/)
+            .map((layout) => layout.trim())
+            .filter(Boolean),
+        )],
       });
       setNeighborhoods((current) => [
         created,
@@ -459,7 +465,7 @@ export function DataManagementPage() {
             >
               <option value="">选择小区</option>
               {neighborhoods.map((item) => (
-                <option key={item.id} value={item.id}>{item.name} · {item.area} · {item.targetLayout}</option>
+                <option key={item.id} value={item.id}>{item.name} · {item.city ?? "城市未标注"} · {item.area} · {item.availableLayouts.join("/")}</option>
               ))}
             </select>
             {neighborhoods.length === 0 && searchQuery.trim() ? (
@@ -467,12 +473,13 @@ export function DataManagementPage() {
             ) : null}
             {catalogError ? <p role="alert" className="mt-2 text-sm text-rose-700">{catalogError}</p> : null}
             {showNeighborhoodForm ? (
-              <form onSubmit={submitNeighborhood} className="mt-3 grid gap-3 border-l-2 border-blue-200 pl-4 sm:grid-cols-3">
+              <form onSubmit={submitNeighborhood} className="mt-3 grid gap-3 border-l-2 border-blue-200 pl-4 sm:grid-cols-2">
                 <Field label="小区名称" value={neighborhoodDraft.name} onChange={(value) => setNeighborhoodDraft((current) => ({ ...current, name: value }))} required />
+                <Field label="城市" value={neighborhoodDraft.city} onChange={(value) => setNeighborhoodDraft((current) => ({ ...current, city: value }))} required />
                 <Field label="区域" value={neighborhoodDraft.area} onChange={(value) => setNeighborhoodDraft((current) => ({ ...current, area: value }))} required />
-                <Field label="关注户型" value={neighborhoodDraft.targetLayout} onChange={(value) => setNeighborhoodDraft((current) => ({ ...current, targetLayout: value }))} required />
-                {neighborhoodCreateError ? <p role="alert" className="text-sm text-rose-700 sm:col-span-3">{neighborhoodCreateError}</p> : null}
-                <div className="flex gap-2 sm:col-span-3">
+                <Field label="可选户型（逗号分隔）" value={neighborhoodDraft.availableLayouts} onChange={(value) => setNeighborhoodDraft((current) => ({ ...current, availableLayouts: value }))} required />
+                {neighborhoodCreateError ? <p role="alert" className="text-sm text-rose-700 sm:col-span-2">{neighborhoodCreateError}</p> : null}
+                <div className="flex gap-2 sm:col-span-2">
                   <button type="submit" disabled={isCreatingNeighborhood} className={primaryButtonClass}>
                     {isCreatingNeighborhood ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}
                     创建小区

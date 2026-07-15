@@ -81,12 +81,16 @@ listing_aggregate AS (
     MAX(captured_at) AS latest_listing_observed_at
   FROM inventory_listings
 ),
-target_layout_supply AS (
-  SELECT COUNT(*)::int AS target_layout_supply
-  FROM inventory_run ir
-  JOIN listing_observations lo ON lo.collection_run_id = ir.id
-  WHERE lo.status = 'active'
-    AND lo.layout = $3
+layout_supply AS (
+  SELECT COALESCE(
+    jsonb_object_agg(layout, supply ORDER BY layout),
+    '{}'::jsonb
+  ) AS target_layout_supply_by_layout
+  FROM (
+    SELECT listing_layout AS layout, COUNT(*)::int AS supply
+    FROM inventory_listings
+    GROUP BY listing_layout
+  ) grouped_supply
 ),
 previous_listing_aggregate AS (
   SELECT COUNT(*)::int AS previous_listed_homes
@@ -161,7 +165,7 @@ SELECT
   la.listing_price_max,
   ta.transaction_price_min,
   ta.transaction_price_max,
-  COALESCE(tls.target_layout_supply, 0)::int AS target_layout_supply,
+  ls.target_layout_supply_by_layout,
   COALESCE(la.listed_homes, 0)::int AS listing_sample_count,
   COALESCE(ta.transaction_sample_count, 0)::int AS transaction_sample_count,
   COALESCE(ta.last_thirty_day_transaction_count, 0)::int AS last_thirty_day_transaction_count,
@@ -172,9 +176,9 @@ SELECT
   END AS listed_homes_change_pct
 FROM trigger_run tr
 CROSS JOIN source_ids
+CROSS JOIN layout_supply ls
 LEFT JOIN inventory_run ir ON TRUE
 LEFT JOIN listing_aggregate la ON TRUE
-LEFT JOIN target_layout_supply tls ON TRUE
 LEFT JOIN previous_listing_aggregate pla ON TRUE
 LEFT JOIN price_cut_aggregate pca ON TRUE
 LEFT JOIN transaction_aggregate ta ON TRUE
@@ -183,7 +187,6 @@ LEFT JOIN transaction_aggregate ta ON TRUE
 type AggregateMarketObservationsParams struct {
 	TriggerRunID   pgtype.UUID
 	NeighborhoodID pgtype.UUID
-	TargetLayout   string
 }
 
 type AggregateMarketObservationsRow struct {
@@ -200,7 +203,7 @@ type AggregateMarketObservationsRow struct {
 	ListingPriceMax                   pgtype.Numeric
 	TransactionPriceMin               pgtype.Numeric
 	TransactionPriceMax               pgtype.Numeric
-	TargetLayoutSupply                int32
+	TargetLayoutSupplyByLayout        interface{}
 	ListingSampleCount                int32
 	TransactionSampleCount            int32
 	LastThirtyDayTransactionCount     int32
@@ -209,7 +212,7 @@ type AggregateMarketObservationsRow struct {
 }
 
 func (q *Queries) AggregateMarketObservations(ctx context.Context, arg AggregateMarketObservationsParams) (AggregateMarketObservationsRow, error) {
-	row := q.db.QueryRow(ctx, aggregateMarketObservations, arg.TriggerRunID, arg.NeighborhoodID, arg.TargetLayout)
+	row := q.db.QueryRow(ctx, aggregateMarketObservations, arg.TriggerRunID, arg.NeighborhoodID)
 	var i AggregateMarketObservationsRow
 	err := row.Scan(
 		&i.CollectionRunID,
@@ -225,7 +228,7 @@ func (q *Queries) AggregateMarketObservations(ctx context.Context, arg Aggregate
 		&i.ListingPriceMax,
 		&i.TransactionPriceMin,
 		&i.TransactionPriceMax,
-		&i.TargetLayoutSupply,
+		&i.TargetLayoutSupplyByLayout,
 		&i.ListingSampleCount,
 		&i.TransactionSampleCount,
 		&i.LastThirtyDayTransactionCount,
@@ -336,7 +339,7 @@ func (q *Queries) LatestCompletedFullCollectionRun(ctx context.Context, arg Late
 }
 
 const latestNeighborhoodMetric = `-- name: LatestNeighborhoodMetric :one
-SELECT nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.target_layout_supply, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings, nm.algorithm_version, nm.transaction_window_start, nm.transaction_window_end, nm.recent_30_day_transaction_count, nm.preceding_60_day_transaction_count, nm.recent_30_day_monthly_frequency, nm.preceding_60_day_monthly_frequency, cr.collected_at AS collection_run_collected_at
+SELECT nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings, nm.algorithm_version, nm.transaction_window_start, nm.transaction_window_end, nm.recent_30_day_transaction_count, nm.preceding_60_day_transaction_count, nm.recent_30_day_monthly_frequency, nm.preceding_60_day_monthly_frequency, nm.target_layout_supply_by_layout, cr.collected_at AS collection_run_collected_at
 FROM neighborhood_metrics nm
 JOIN collection_runs cr ON cr.id = nm.collection_run_id
 WHERE nm.neighborhood_id = $1
@@ -361,7 +364,6 @@ type LatestNeighborhoodMetricRow struct {
 	TransactionPriceMin            pgtype.Numeric
 	TransactionPriceMax            pgtype.Numeric
 	TransactionMomentum            string
-	TargetLayoutSupply             int32
 	CalculatedAt                   pgtype.Timestamptz
 	CollectionRunID                pgtype.UUID
 	InventoryCollectionRunID       pgtype.UUID
@@ -382,6 +384,7 @@ type LatestNeighborhoodMetricRow struct {
 	Preceding60DayTransactionCount pgtype.Int4
 	Recent30DayMonthlyFrequency    pgtype.Numeric
 	Preceding60DayMonthlyFrequency pgtype.Numeric
+	TargetLayoutSupplyByLayout     []byte
 	CollectionRunCollectedAt       pgtype.Timestamptz
 }
 
@@ -399,7 +402,6 @@ func (q *Queries) LatestNeighborhoodMetric(ctx context.Context, arg LatestNeighb
 		&i.TransactionPriceMin,
 		&i.TransactionPriceMax,
 		&i.TransactionMomentum,
-		&i.TargetLayoutSupply,
 		&i.CalculatedAt,
 		&i.CollectionRunID,
 		&i.InventoryCollectionRunID,
@@ -420,6 +422,7 @@ func (q *Queries) LatestNeighborhoodMetric(ctx context.Context, arg LatestNeighb
 		&i.Preceding60DayTransactionCount,
 		&i.Recent30DayMonthlyFrequency,
 		&i.Preceding60DayMonthlyFrequency,
+		&i.TargetLayoutSupplyByLayout,
 		&i.CollectionRunCollectedAt,
 	)
 	return i, err
@@ -427,7 +430,7 @@ func (q *Queries) LatestNeighborhoodMetric(ctx context.Context, arg LatestNeighb
 
 const listNeighborhoodMetricHistory = `-- name: ListNeighborhoodMetricHistory :many
 SELECT
-  nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.target_layout_supply, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings, nm.algorithm_version, nm.transaction_window_start, nm.transaction_window_end, nm.recent_30_day_transaction_count, nm.preceding_60_day_transaction_count, nm.recent_30_day_monthly_frequency, nm.preceding_60_day_monthly_frequency,
+  nm.id, nm.neighborhood_id, nm.listed_homes, nm.price_cut_homes, nm.avg_days_on_market, nm.listing_price_min, nm.listing_price_max, nm.transaction_price_min, nm.transaction_price_max, nm.transaction_momentum, nm.calculated_at, nm.collection_run_id, nm.inventory_collection_run_id, nm.source_ids, nm.listing_sample_count, nm.transaction_sample_count, nm.listed_homes_change_pct, nm.coverage, nm.freshness, nm.quality_state, nm.latest_observed_at, nm.inventory_collected_at, nm.quality_warnings, nm.algorithm_version, nm.transaction_window_start, nm.transaction_window_end, nm.recent_30_day_transaction_count, nm.preceding_60_day_transaction_count, nm.recent_30_day_monthly_frequency, nm.preceding_60_day_monthly_frequency, nm.target_layout_supply_by_layout,
   cr.data_source_id,
   cr.source_ref,
   cr.collected_at AS collection_run_collected_at,
@@ -459,7 +462,6 @@ type ListNeighborhoodMetricHistoryRow struct {
 	TransactionPriceMin            pgtype.Numeric
 	TransactionPriceMax            pgtype.Numeric
 	TransactionMomentum            string
-	TargetLayoutSupply             int32
 	CalculatedAt                   pgtype.Timestamptz
 	CollectionRunID                pgtype.UUID
 	InventoryCollectionRunID       pgtype.UUID
@@ -480,6 +482,7 @@ type ListNeighborhoodMetricHistoryRow struct {
 	Preceding60DayTransactionCount pgtype.Int4
 	Recent30DayMonthlyFrequency    pgtype.Numeric
 	Preceding60DayMonthlyFrequency pgtype.Numeric
+	TargetLayoutSupplyByLayout     []byte
 	DataSourceID                   pgtype.UUID
 	SourceRef                      string
 	CollectionRunCollectedAt       pgtype.Timestamptz
@@ -511,7 +514,6 @@ func (q *Queries) ListNeighborhoodMetricHistory(ctx context.Context, arg ListNei
 			&i.TransactionPriceMin,
 			&i.TransactionPriceMax,
 			&i.TransactionMomentum,
-			&i.TargetLayoutSupply,
 			&i.CalculatedAt,
 			&i.CollectionRunID,
 			&i.InventoryCollectionRunID,
@@ -532,6 +534,7 @@ func (q *Queries) ListNeighborhoodMetricHistory(ctx context.Context, arg ListNei
 			&i.Preceding60DayTransactionCount,
 			&i.Recent30DayMonthlyFrequency,
 			&i.Preceding60DayMonthlyFrequency,
+			&i.TargetLayoutSupplyByLayout,
 			&i.DataSourceID,
 			&i.SourceRef,
 			&i.CollectionRunCollectedAt,
@@ -571,7 +574,7 @@ INSERT INTO neighborhood_metrics (
   transaction_price_min,
   transaction_price_max,
   transaction_momentum,
-  target_layout_supply,
+  target_layout_supply_by_layout,
   collection_run_id,
   inventory_collection_run_id,
   source_ids,
@@ -596,7 +599,7 @@ INSERT INTO neighborhood_metrics (
 )
 ON CONFLICT (collection_run_id, algorithm_version) DO UPDATE SET
   algorithm_version = neighborhood_metrics.algorithm_version
-RETURNING id, neighborhood_id, listed_homes, price_cut_homes, avg_days_on_market, listing_price_min, listing_price_max, transaction_price_min, transaction_price_max, transaction_momentum, target_layout_supply, calculated_at, collection_run_id, inventory_collection_run_id, source_ids, listing_sample_count, transaction_sample_count, listed_homes_change_pct, coverage, freshness, quality_state, latest_observed_at, inventory_collected_at, quality_warnings, algorithm_version, transaction_window_start, transaction_window_end, recent_30_day_transaction_count, preceding_60_day_transaction_count, recent_30_day_monthly_frequency, preceding_60_day_monthly_frequency
+RETURNING id, neighborhood_id, listed_homes, price_cut_homes, avg_days_on_market, listing_price_min, listing_price_max, transaction_price_min, transaction_price_max, transaction_momentum, calculated_at, collection_run_id, inventory_collection_run_id, source_ids, listing_sample_count, transaction_sample_count, listed_homes_change_pct, coverage, freshness, quality_state, latest_observed_at, inventory_collected_at, quality_warnings, algorithm_version, transaction_window_start, transaction_window_end, recent_30_day_transaction_count, preceding_60_day_transaction_count, recent_30_day_monthly_frequency, preceding_60_day_monthly_frequency, target_layout_supply_by_layout
 `
 
 type UpsertNeighborhoodMetricParams struct {
@@ -609,7 +612,7 @@ type UpsertNeighborhoodMetricParams struct {
 	TransactionPriceMin            pgtype.Numeric
 	TransactionPriceMax            pgtype.Numeric
 	TransactionMomentum            string
-	TargetLayoutSupply             int32
+	TargetLayoutSupplyByLayout     []byte
 	CollectionRunID                pgtype.UUID
 	InventoryCollectionRunID       pgtype.UUID
 	SourceIds                      []byte
@@ -642,7 +645,7 @@ func (q *Queries) UpsertNeighborhoodMetric(ctx context.Context, arg UpsertNeighb
 		arg.TransactionPriceMin,
 		arg.TransactionPriceMax,
 		arg.TransactionMomentum,
-		arg.TargetLayoutSupply,
+		arg.TargetLayoutSupplyByLayout,
 		arg.CollectionRunID,
 		arg.InventoryCollectionRunID,
 		arg.SourceIds,
@@ -675,7 +678,6 @@ func (q *Queries) UpsertNeighborhoodMetric(ctx context.Context, arg UpsertNeighb
 		&i.TransactionPriceMin,
 		&i.TransactionPriceMax,
 		&i.TransactionMomentum,
-		&i.TargetLayoutSupply,
 		&i.CalculatedAt,
 		&i.CollectionRunID,
 		&i.InventoryCollectionRunID,
@@ -696,6 +698,7 @@ func (q *Queries) UpsertNeighborhoodMetric(ctx context.Context, arg UpsertNeighb
 		&i.Preceding60DayTransactionCount,
 		&i.Recent30DayMonthlyFrequency,
 		&i.Preceding60DayMonthlyFrequency,
+		&i.TargetLayoutSupplyByLayout,
 	)
 	return i, err
 }

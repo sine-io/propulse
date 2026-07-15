@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -46,11 +47,12 @@ func (r *inMemoryNeighborhoodRepository) CreateNeighborhood(_ context.Context, i
 		id = uuid.NewString()
 	}
 	neighborhood := appneighborhood.Neighborhood{
-		ID:           id,
-		Name:         input.Name,
-		Area:         input.Area,
-		TargetLayout: input.TargetLayout,
-		CreatedAt:    time.Now().UTC(),
+		ID:               id,
+		Name:             input.Name,
+		City:             memoryStringPtr(input.City),
+		Area:             input.Area,
+		AvailableLayouts: append([]string(nil), input.AvailableLayouts...),
+		CreatedAt:        time.Now().UTC(),
 	}
 	r.neighborhoods[id] = neighborhood
 	return neighborhood, nil
@@ -73,20 +75,34 @@ func (r *inMemoryNeighborhoodRepository) SearchNeighborhoods(_ context.Context, 
 
 	matched := make([]appneighborhood.Neighborhood, 0, len(r.neighborhoods))
 	for _, n := range r.neighborhoods {
-		if input.Query != "" &&
-			!strings.Contains(n.Name, input.Query) && !strings.Contains(n.Area, input.Query) {
+		if n.City == nil || len(n.AvailableLayouts) == 0 {
+			continue
+		}
+		if input.Query != "" && !strings.Contains(n.Name, input.Query) {
+			continue
+		}
+		if input.City != "" && *n.City != input.City {
 			continue
 		}
 		if input.Area != "" && n.Area != input.Area {
 			continue
 		}
-		if input.TargetLayout != "" && n.TargetLayout != input.TargetLayout {
+		if input.TargetLayout != "" && !slices.Contains(n.AvailableLayouts, input.TargetLayout) {
 			continue
 		}
 		matched = append(matched, n)
 	}
 
-	sort.Slice(matched, func(i, j int) bool { return matched[i].Name < matched[j].Name })
+	sort.Slice(matched, func(i, j int) bool {
+		left := []string{*matched[i].City, matched[i].Area, matched[i].Name, matched[i].ID}
+		right := []string{*matched[j].City, matched[j].Area, matched[j].Name, matched[j].ID}
+		for index := range left {
+			if left[index] != right[index] {
+				return left[index] < right[index]
+			}
+		}
+		return false
+	})
 	total := len(matched)
 
 	start := input.Offset
@@ -98,7 +114,31 @@ func (r *inMemoryNeighborhoodRepository) SearchNeighborhoods(_ context.Context, 
 		end = total
 	}
 
-	return appneighborhood.SearchNeighborhoodsResult{Items: matched[start:end], Total: total}, nil
+	filters := appneighborhood.NeighborhoodSearchFilters{Cities: []string{}, Areas: []appneighborhood.NeighborhoodAreaFilter{}}
+	citySeen := map[string]struct{}{}
+	areaSeen := map[string]struct{}{}
+	for _, n := range r.neighborhoods {
+		if n.City == nil || len(n.AvailableLayouts) == 0 {
+			continue
+		}
+		if _, ok := citySeen[*n.City]; !ok {
+			citySeen[*n.City] = struct{}{}
+			filters.Cities = append(filters.Cities, *n.City)
+		}
+		key := *n.City + "\x00" + n.Area
+		if _, ok := areaSeen[key]; !ok {
+			areaSeen[key] = struct{}{}
+			filters.Areas = append(filters.Areas, appneighborhood.NeighborhoodAreaFilter{City: *n.City, Area: n.Area})
+		}
+	}
+	sort.Strings(filters.Cities)
+	sort.Slice(filters.Areas, func(i, j int) bool {
+		if filters.Areas[i].City != filters.Areas[j].City {
+			return filters.Areas[i].City < filters.Areas[j].City
+		}
+		return filters.Areas[i].Area < filters.Areas[j].Area
+	})
+	return appneighborhood.SearchNeighborhoodsResult{Items: matched[start:end], Total: total, Filters: filters}, nil
 }
 
 func (r *inMemoryNeighborhoodRepository) exists(_ context.Context, id string) (bool, error) {
@@ -108,21 +148,26 @@ func (r *inMemoryNeighborhoodRepository) exists(_ context.Context, id string) (b
 	return ok, nil
 }
 
-func (r *inMemoryNeighborhoodRepository) AddWatchlistItem(_ context.Context, userID string, neighborhoodID string) (appneighborhood.WatchlistItem, error) {
+func (r *inMemoryNeighborhoodRepository) AddWatchlistItem(_ context.Context, userID string, neighborhoodID string, targetLayout string) (appneighborhood.WatchlistItem, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.neighborhoods[neighborhoodID]; !ok {
+	neighborhood, ok := r.neighborhoods[neighborhoodID]
+	if !ok {
 		return appneighborhood.WatchlistItem{}, appneighborhood.ErrNeighborhoodNotFound
 	}
+	if !slices.Contains(neighborhood.AvailableLayouts, targetLayout) {
+		return appneighborhood.WatchlistItem{}, appneighborhood.ErrInvalidTargetLayout
+	}
 	key := userID + ":" + neighborhoodID
-	if item, ok := r.watchlist[key]; ok {
-		return item, nil
+	if _, ok := r.watchlist[key]; ok {
+		return appneighborhood.WatchlistItem{}, appneighborhood.ErrWatchlistItemExists
 	}
 	item := appneighborhood.WatchlistItem{
 		ID:             uuid.NewString(),
 		UserID:         userID,
 		NeighborhoodID: neighborhoodID,
+		TargetLayout:   targetLayout,
 		CreatedAt:      time.Now().UTC(),
 	}
 	r.watchlist[key] = item
@@ -146,14 +191,17 @@ func (r *inMemoryNeighborhoodRepository) ListWatchlist(_ context.Context, userID
 			ID:             item.ID,
 			NeighborhoodID: item.NeighborhoodID,
 			Name:           neighborhood.Name,
+			City:           neighborhood.City,
 			Area:           neighborhood.Area,
-			TargetLayout:   neighborhood.TargetLayout,
+			TargetLayout:   item.TargetLayout,
 			HasMetric:      hasMetric,
 			Metric:         metric,
 		})
 	}
 	return items, nil
 }
+
+func memoryStringPtr(value string) *string { return &value }
 
 func (r *inMemoryNeighborhoodRepository) LatestMetric(_ context.Context, neighborhoodID string) (appneighborhood.MetricSnapshot, error) {
 	r.mu.RLock()

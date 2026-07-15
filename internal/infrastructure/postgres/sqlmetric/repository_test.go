@@ -32,7 +32,6 @@ func TestRepositoryLatestMetricMapsSqlcRow(t *testing.T) {
 				numericValue(t, "495.5"),
 				numericValue(t, "545.5"),
 				string(domainneighborhood.TransactionMomentumWeak),
-				int32(12),
 				pgtype.Timestamptz{Time: calculatedAt, Valid: true},
 			},
 		},
@@ -52,7 +51,7 @@ func TestRepositoryLatestMetricMapsSqlcRow(t *testing.T) {
 	if got.ID != metricID.String() || got.NeighborhoodID != neighborhoodID.String() {
 		t.Fatalf("metric IDs = (%q, %q), want (%q, %q)", got.ID, got.NeighborhoodID, metricID.String(), neighborhoodID.String())
 	}
-	if got.ListedHomes != 42 || got.PriceCutHomes != 11 || got.TargetLayoutSupply != 12 {
+	if got.ListedHomes != 42 || got.PriceCutHomes != 11 {
 		t.Fatalf("metric counts = %#v", got)
 	}
 	if got.AvgDaysOnMarket == nil || *got.AvgDaysOnMarket != 78.5 ||

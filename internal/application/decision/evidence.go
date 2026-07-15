@@ -15,6 +15,7 @@ import (
 func newActionWindowResult(
 	calculation appcapacity.CalculationRecord,
 	target appneighborhood.Neighborhood,
+	targetLayout string,
 	metric appneighborhood.MetricWithSignal,
 	alternativeComparison AlternativeComparisonResult,
 	recommendation domaindecision.ActionWindowResult,
@@ -28,7 +29,7 @@ func newActionWindowResult(
 			NeighborhoodID: target.ID,
 			Name:           target.Name,
 			Area:           target.Area,
-			TargetLayout:   target.TargetLayout,
+			TargetLayout:   targetLayout,
 		},
 		CapacityCalculation: CapacityCalculationReference{
 			ID:                 calculation.ID,

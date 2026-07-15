@@ -71,14 +71,15 @@ func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuer
 		return ActionWindowResult{}, err
 	}
 	neighborhoodID := parsedNeighborhoodID.String()
-	isWatched := false
-	for _, item := range watchlist {
+	var selectedWatchlistItem *appneighborhood.WatchlistItemSummary
+	for index := range watchlist {
+		item := &watchlist[index]
 		if item.NeighborhoodID == neighborhoodID {
-			isWatched = true
+			selectedWatchlistItem = item
 			break
 		}
 	}
-	if !isWatched {
+	if selectedWatchlistItem == nil {
 		return ActionWindowResult{}, ErrNeighborhoodNotWatched
 	}
 
@@ -90,7 +91,10 @@ func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuer
 		return ActionWindowResult{}, err
 	}
 
-	metric, err := s.neighborhood.LatestMetric(ctx, appneighborhood.LatestMetricQuery{NeighborhoodID: neighborhoodID})
+	metric, err := s.neighborhood.LatestMetric(ctx, appneighborhood.LatestMetricQuery{
+		NeighborhoodID: neighborhoodID,
+		TargetLayout:   selectedWatchlistItem.TargetLayout,
+	})
 	if err != nil {
 		if errors.Is(err, appneighborhood.ErrMetricNotFound) {
 			return ActionWindowResult{}, ErrMetricRequired
@@ -111,7 +115,7 @@ func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuer
 	if err != nil {
 		return ActionWindowResult{}, err
 	}
-	alternativeComparison, err := s.compareAlternatives(ctx, capacity, target, metric, watchlist)
+	alternativeComparison, err := s.compareAlternatives(ctx, capacity, target, selectedWatchlistItem.TargetLayout, metric, watchlist)
 	if err != nil {
 		return ActionWindowResult{}, err
 	}
@@ -122,5 +126,5 @@ func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuer
 		TargetLayoutScarcity:  metric.Signal.TargetLayoutScarcity,
 		AlternativeComparison: alternativeComparison.Status,
 	})
-	return newActionWindowResult(capacity, target, metric, alternativeComparison, recommendation), nil
+	return newActionWindowResult(capacity, target, selectedWatchlistItem.TargetLayout, metric, alternativeComparison, recommendation), nil
 }

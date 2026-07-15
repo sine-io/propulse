@@ -268,6 +268,77 @@ func TestActionWindowRequiresWatchedNeighborhoodSelection(t *testing.T) {
 	}
 }
 
+func TestNeighborhoodCatalogAndWatchlistTargetContract(t *testing.T) {
+	spec := loadOpenAPI(t)
+	paths := requiredMap(t, spec, "paths")
+	schemas := requiredMap(t, requiredMap(t, spec, "components"), "schemas")
+
+	search := requiredMap(t, requiredMap(t, paths, "/api/v1/neighborhoods"), "get")
+	for _, name := range []string{"city", "area", "targetLayout", "q", "page", "pageSize"} {
+		if operationParameter(t, search, name, "query") == nil {
+			t.Fatalf("neighborhood search parameter %q is missing", name)
+		}
+	}
+	searchResponse := requiredMap(t, schemas, "NeighborhoodSearchResponse")
+	assertRequiredFields(t, searchResponse, []string{"items", "total", "page", "pageSize", "filters"})
+	assertRequiredFields(t, requiredMap(t, schemas, "NeighborhoodSearchFilters"), []string{"cities", "areas"})
+	assertRequiredFields(t, requiredMap(t, schemas, "NeighborhoodAreaFilter"), []string{"city", "area"})
+
+	create := requiredMap(t, schemas, "CreateNeighborhoodRequest")
+	assertRequiredFields(t, create, []string{"city", "area", "name", "availableLayouts"})
+	neighborhood := requiredMap(t, schemas, "NeighborhoodResponse")
+	assertRequiredFields(t, neighborhood, []string{"id", "city", "area", "name", "availableLayouts"})
+	if _, ok := requiredMap(t, neighborhood, "properties")["targetLayout"]; ok {
+		t.Fatal("NeighborhoodResponse must not retain a default targetLayout")
+	}
+
+	latest := requiredMap(t, requiredMap(t, paths, "/api/v1/neighborhoods/{id}/metrics"), "get")
+	assertRequiredOperationParameter(t, latest, "targetLayout")
+	assertRequiredFields(t, requiredMap(t, schemas, "NeighborhoodMetricResponse"), []string{"targetLayout", "targetLayoutSupply"})
+	history := requiredMap(t, requiredMap(t, paths, "/api/v1/neighborhoods/{id}/metrics/history"), "get")
+	assertRequiredOperationParameter(t, history, "targetLayout")
+	assertRequiredFields(t, requiredMap(t, schemas, "MetricHistoryResponse"), []string{"targetLayout"})
+	assertRequiredFields(t, requiredMap(t, schemas, "MetricHistoryPoint"), []string{"targetLayoutSupply"})
+
+	add := requiredMap(t, requiredMap(t, paths, "/api/v1/watchlist/items"), "post")
+	addRequest := requiredMap(t, schemas, "AddWatchlistItemRequest")
+	assertRequiredFields(t, addRequest, []string{"neighborhoodId", "targetLayout"})
+	if got := requiredString(t, requiredMap(t, requiredMap(t, addRequest, "properties"), "neighborhoodId"), "format"); got != "uuid" {
+		t.Fatalf("AddWatchlistItemRequest.neighborhoodId format = %q, want uuid", got)
+	}
+	assertRequiredFields(t, requiredMap(t, schemas, "AddWatchlistItemResponse"), []string{"neighborhoodId", "targetLayout"})
+	if _, ok := requiredMap(t, add, "responses")["409"]; !ok {
+		t.Fatal("watchlist create contract is missing duplicate conflict response")
+	}
+	assertRequiredFields(t, requiredMap(t, schemas, "WatchlistItem"), []string{"city", "targetLayout"})
+}
+
+func assertRequiredOperationParameter(t *testing.T, operation map[string]interface{}, name string) {
+	t.Helper()
+	parameter := operationParameter(t, operation, name, "query")
+	if parameter == nil {
+		t.Fatalf("required query parameter %q is missing", name)
+	}
+	if required, ok := parameter["required"].(bool); !ok || !required {
+		t.Fatalf("query parameter %q required = %#v, want true", name, parameter["required"])
+	}
+}
+
+func operationParameter(t *testing.T, operation map[string]interface{}, name, location string) map[string]interface{} {
+	t.Helper()
+	rawParameters, ok := operation["parameters"].([]interface{})
+	if !ok {
+		t.Fatalf("operation parameters = %#v, want list", operation["parameters"])
+	}
+	for _, rawParameter := range rawParameters {
+		parameter, ok := rawParameter.(map[string]interface{})
+		if ok && parameter["name"] == name && parameter["in"] == location {
+			return parameter
+		}
+	}
+	return nil
+}
+
 func TestCapacityCalculationContract(t *testing.T) {
 	spec := loadOpenAPI(t)
 	components := requiredMap(t, spec, "components")

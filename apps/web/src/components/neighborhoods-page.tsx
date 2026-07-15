@@ -4,11 +4,14 @@ import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   CalendarClock,
+  CheckCircle,
   Database,
-  ExternalLink,
   History,
+  LockKeyhole,
   MapPin,
+  Plus,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -27,6 +30,7 @@ import {
 } from "recharts";
 
 import {
+  addWatchlistItem,
   ApiError,
   getMetricHistory,
   getNeighborhood,
@@ -35,11 +39,23 @@ import {
   type MetricHistoryResponse,
   type Neighborhood,
   type NeighborhoodMetricResponse,
+  type NeighborhoodSearchResponse,
 } from "@/lib/api-client";
+import { getAccessToken, subscribeToAccessToken } from "@/lib/access-token";
 
 import { StatusBadge } from "./status-badge";
 
-type PageState = "checking" | "loading" | "not_found" | "no_metric" | "ready" | "failed";
+type DetailPageState = "loading" | "not_found" | "select_layout" | "metric_loading" | "no_metric" | "ready" | "failed";
+type CatalogState = "loading" | "ready" | "failed";
+type SubmitState = "idle" | "locked" | "submitting" | "duplicate" | "failed";
+
+type AddSelection = {
+  area: string;
+  city: string;
+  neighborhoodId: string;
+  q: string;
+  targetLayout: string;
+};
 
 type NeighborhoodView = {
   history?: MetricHistoryResponse;
@@ -60,12 +76,25 @@ type TrendPoint = {
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export function NeighborhoodsPage({ initialNeighborhoodId }: { initialNeighborhoodId?: string }) {
-  const [routeReady, setRouteReady] = useState(Boolean(initialNeighborhoodId));
+const emptySelection: AddSelection = {
+  area: "",
+  city: "",
+  neighborhoodId: "",
+  q: "",
+  targetLayout: "",
+};
+
+interface NeighborhoodsPageProps {
+  initialNeighborhoodId?: string;
+  navigate?: (href: string) => void;
+}
+
+export function NeighborhoodsPage({
+  initialNeighborhoodId,
+  navigate = (href) => window.location.assign(href),
+}: NeighborhoodsPageProps) {
+  const [routeReady, setRouteReady] = useState(initialNeighborhoodId !== undefined);
   const [neighborhoodId, setNeighborhoodId] = useState(initialNeighborhoodId?.trim() ?? "");
-  const [pageState, setPageState] = useState<PageState>("checking");
-  const [view, setView] = useState<NeighborhoodView>({ historyFailed: false });
-  const [requestVersion, setRequestVersion] = useState(0);
 
   useEffect(() => {
     if (initialNeighborhoodId !== undefined) {
@@ -83,16 +112,229 @@ export function NeighborhoodsPage({ initialNeighborhoodId }: { initialNeighborho
     return () => window.removeEventListener("popstate", syncRoute);
   }, [initialNeighborhoodId]);
 
+  if (!routeReady) {
+    return <PageStateBand icon={Database} title="正在读取目标小区" tone="slate" />;
+  }
+  if (!neighborhoodId) {
+    return <NeighborhoodSelector navigate={navigate} />;
+  }
+
+  return <NeighborhoodDetail key={neighborhoodId} neighborhoodId={neighborhoodId} navigate={navigate} />;
+}
+
+function NeighborhoodSelector({ navigate }: { navigate: (href: string) => void }) {
+  const [selection, setSelection] = useState<AddSelection>(() => readAddSelection());
+  const [queryDraft, setQueryDraft] = useState(() => readAddSelection().q);
+  const [results, setResults] = useState<Neighborhood[]>([]);
+  const [filters, setFilters] = useState<{ cities: string[]; areas: { city: string; area: string }[] }>({ cities: [], areas: [] });
+  const [catalogState, setCatalogState] = useState<CatalogState>("loading");
+  const [invalidSelection, setInvalidSelection] = useState<string>();
+  const [requestVersion, setRequestVersion] = useState(0);
+
+  const commitSelection = useCallback((next: AddSelection, method: "push" | "replace" = "push") => {
+    setSelection(next);
+    writeAddSelection(next, method);
+  }, []);
+
   useEffect(() => {
-    if (!routeReady) {
-      setPageState("checking");
-      return;
-    }
-    if (!neighborhoodId) {
-      setView({ historyFailed: false });
-      setPageState("checking");
-      return;
-    }
+    const syncSelection = () => {
+      const next = readAddSelection();
+      setSelection(next);
+      setQueryDraft(next.q);
+      setInvalidSelection(undefined);
+    };
+    window.addEventListener("popstate", syncSelection);
+    return () => window.removeEventListener("popstate", syncSelection);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCatalogState("loading");
+
+    const selectedRequest = selection.neighborhoodId
+      ? getNeighborhood(selection.neighborhoodId, controller.signal)
+      : Promise.resolve<Neighborhood | undefined>(undefined);
+
+    Promise.allSettled([
+      searchNeighborhoods({
+        area: selection.area,
+        city: selection.city,
+        page: 1,
+        pageSize: 100,
+        q: selection.q,
+      }, controller.signal),
+      selectedRequest,
+    ]).then(([searchResult, selectedResult]) => {
+      if (controller.signal.aborted) return;
+      if (searchResult.status === "rejected") {
+        if (!isAbortError(searchResult.reason)) {
+          setResults([]);
+          setCatalogState("failed");
+        }
+        return;
+      }
+
+      let selectedNeighborhood: Neighborhood | undefined;
+      let selectedMissing = false;
+      if (selectedResult.status === "fulfilled") {
+        selectedNeighborhood = selectedResult.value;
+      } else if (isNotFound(selectedResult.reason)) {
+        selectedMissing = true;
+      } else if (!isAbortError(selectedResult.reason)) {
+        setResults([]);
+        setCatalogState("failed");
+        return;
+      }
+
+      const reconciled = reconcileCatalogSelection(
+        selection,
+        searchResult.value,
+        selectedNeighborhood,
+        selectedMissing,
+      );
+      setFilters(searchResult.value.filters);
+      setResults(reconciled.results);
+      if (reconciled.message) setInvalidSelection(reconciled.message);
+      setCatalogState("ready");
+      if (!sameSelection(reconciled.selection, selection)) {
+        commitSelection(reconciled.selection, "replace");
+      }
+    });
+
+    return () => controller.abort();
+  }, [
+    commitSelection,
+    requestVersion,
+    selection,
+  ]);
+
+  const selectedNeighborhood = results.find((item) => item.id === selection.neighborhoodId);
+  const areaOptions = filters.areas.filter((item) => item.city === selection.city);
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setInvalidSelection(undefined);
+    commitSelection({
+      ...selection,
+      neighborhoodId: "",
+      q: queryDraft.trim(),
+      targetLayout: "",
+    });
+  };
+
+  return (
+    <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <header className="border-b border-slate-200 pb-6">
+        <p className="text-sm font-semibold text-blue-700">目标小区</p>
+        <h1 className="mt-1 text-3xl font-bold text-slate-900">添加目标小区</h1>
+      </header>
+
+      <section aria-label="目标小区筛选" className="grid gap-5 border-b border-slate-200 py-6 sm:grid-cols-2">
+        <form onSubmit={submitSearch} className="sm:col-span-2">
+          <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="neighborhood-search">小区名称</label>
+          <div className="flex max-w-2xl gap-2">
+            <input
+              id="neighborhood-search"
+              value={queryDraft}
+              onChange={(event) => setQueryDraft(event.target.value)}
+              placeholder="输入小区名称"
+              className="h-11 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+            <button type="submit" className="inline-flex h-11 flex-none items-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800">
+              <Search aria-hidden="true" className="h-4 w-4" />
+              搜索
+            </button>
+          </div>
+        </form>
+
+        <NativeSelect
+          id="target-city"
+          label="城市"
+          value={selection.city}
+          disabled={catalogState !== "ready"}
+          placeholder="选择城市"
+          options={filters.cities}
+          onChange={(city) => {
+            setInvalidSelection(undefined);
+            commitSelection({ ...selection, area: "", city, neighborhoodId: "", targetLayout: "" });
+          }}
+        />
+        <NativeSelect
+          id="target-area"
+          label="板块"
+          value={selection.area}
+          disabled={!selection.city || catalogState !== "ready"}
+          placeholder="选择板块"
+          options={areaOptions.map((item) => item.area)}
+          onChange={(area) => {
+            setInvalidSelection(undefined);
+            commitSelection({ ...selection, area, neighborhoodId: "", targetLayout: "" });
+          }}
+        />
+        <div className="sm:col-span-2">
+          <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="target-neighborhood">小区</label>
+          <select
+            id="target-neighborhood"
+            value={selection.neighborhoodId}
+            disabled={!selection.city || !selection.area || catalogState !== "ready"}
+            onChange={(event) => {
+              setInvalidSelection(undefined);
+              commitSelection({ ...selection, neighborhoodId: event.target.value, targetLayout: "" });
+            }}
+            className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+          >
+            <option value="">选择小区</option>
+            {results.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </div>
+      </section>
+
+      {catalogState === "loading" ? <PageStateBand icon={Database} title="正在加载小区目录" tone="slate" /> : null}
+      {catalogState === "failed" ? (
+        <PageStateBand
+          icon={AlertTriangle}
+          title="小区搜索失败"
+          detail="当前筛选条件没有返回可用目录。"
+          tone="rose"
+          action={<RetryButton onClick={() => setRequestVersion((version) => version + 1)} />}
+        />
+      ) : null}
+      {catalogState === "ready" && selection.city && selection.area && results.length === 0 ? (
+        <PageStateBand icon={Search} title="没有匹配的小区" detail="可以调整名称、城市或板块后重新搜索。" tone="slate" />
+      ) : null}
+      {invalidSelection ? <PageStateBand icon={AlertTriangle} title="原选择已失效" detail={invalidSelection} tone="amber" /> : null}
+
+      <WatchlistTargetAction
+        canSubmit={Boolean(selection.city && selection.area && selectedNeighborhood)}
+        neighborhood={selectedNeighborhood}
+        targetLayout={selection.targetLayout}
+        navigate={navigate}
+        onCancel={() => navigate("/")}
+        onTargetLayoutChange={(targetLayout) => {
+          setInvalidSelection(undefined);
+          commitSelection({ ...selection, targetLayout });
+        }}
+      />
+    </main>
+  );
+}
+
+function NeighborhoodDetail({ neighborhoodId, navigate }: { neighborhoodId: string; navigate: (href: string) => void }) {
+  const [pageState, setPageState] = useState<DetailPageState>("loading");
+  const [view, setView] = useState<NeighborhoodView>({ historyFailed: false });
+  const [targetLayout, setTargetLayout] = useState(() => readDetailTargetLayout());
+  const [invalidSelection, setInvalidSelection] = useState<string>();
+  const [requestVersion, setRequestVersion] = useState(0);
+
+  useEffect(() => {
+    const syncTarget = () => {
+      setTargetLayout(readDetailTargetLayout());
+      setInvalidSelection(undefined);
+    };
+    window.addEventListener("popstate", syncTarget);
+    return () => window.removeEventListener("popstate", syncTarget);
+  }, []);
+
+  useEffect(() => {
     if (!uuidPattern.test(neighborhoodId)) {
       setView({ historyFailed: false });
       setPageState("not_found");
@@ -102,51 +344,74 @@ export function NeighborhoodsPage({ initialNeighborhoodId }: { initialNeighborho
     const controller = new AbortController();
     setView({ historyFailed: false });
     setPageState("loading");
+    getNeighborhood(neighborhoodId, controller.signal)
+      .then((neighborhood) => {
+        if (controller.signal.aborted) return;
+        setView({ historyFailed: false, neighborhood });
+        setPageState("select_layout");
+      })
+      .catch((error: unknown) => {
+        if (isAbortError(error)) return;
+        setPageState(isNotFound(error) ? "not_found" : "failed");
+    });
+    return () => controller.abort();
+  }, [neighborhoodId, requestVersion]);
 
+  useEffect(() => {
+    if (!view.neighborhood) return;
+    if (targetLayout && !view.neighborhood.availableLayouts.includes(targetLayout)) {
+      setTargetLayout("");
+      writeDetailTargetLayout(neighborhoodId, "", "replace");
+      setInvalidSelection("该户型已不在当前小区目录中，请重新选择。");
+      setPageState("select_layout");
+      return;
+    }
+    setPageState(targetLayout ? "metric_loading" : "select_layout");
+  }, [neighborhoodId, targetLayout, view.neighborhood]);
+
+  useEffect(() => {
+    if (!view.neighborhood || !targetLayout || pageState !== "metric_loading") return;
+    const controller = new AbortController();
     Promise.allSettled([
-      getNeighborhood(neighborhoodId, controller.signal),
-      getNeighborhoodMetrics(neighborhoodId, controller.signal),
-      getMetricHistory(neighborhoodId, {}, controller.signal),
-    ]).then(([neighborhoodResult, metricResult, historyResult]) => {
+      getNeighborhoodMetrics(neighborhoodId, targetLayout, controller.signal),
+      getMetricHistory(neighborhoodId, targetLayout, {}, controller.signal),
+    ]).then(([metricResult, historyResult]) => {
       if (controller.signal.aborted) return;
-
-      if (neighborhoodResult.status === "rejected") {
-        setPageState(isNotFound(neighborhoodResult.reason) ? "not_found" : "failed");
-        return;
-      }
       if (metricResult.status === "rejected") {
         if (isNotFound(metricResult.reason)) {
-          setView({ historyFailed: historyResult.status === "rejected", neighborhood: neighborhoodResult.value });
+          setView((current) => ({ ...current, historyFailed: historyResult.status === "rejected", metric: undefined }));
           setPageState("no_metric");
           return;
         }
         setPageState("failed");
         return;
       }
-
-      setView({
+      if (
+        metricResult.value.neighborhoodId !== neighborhoodId ||
+        metricResult.value.targetLayout !== targetLayout ||
+        (historyResult.status === "fulfilled" && (
+          historyResult.value.neighborhoodId !== neighborhoodId ||
+          historyResult.value.targetLayout !== targetLayout
+        ))
+      ) {
+        setPageState("failed");
+        return;
+      }
+      setView((current) => ({
+        ...current,
         history: historyResult.status === "fulfilled" ? historyResult.value : undefined,
         historyFailed: historyResult.status === "rejected",
         metric: metricResult.value,
-        neighborhood: neighborhoodResult.value,
-      });
+      }));
       setPageState("ready");
     });
-
     return () => controller.abort();
-  }, [neighborhoodId, requestVersion, routeReady]);
-
-  if (!routeReady) {
-    return <PageStateBand icon={Database} title="正在读取目标小区" tone="slate" />;
-  }
-  if (!neighborhoodId) {
-    return <NeighborhoodSelector />;
-  }
+  }, [neighborhoodId, pageState, requestVersion, targetLayout, view.neighborhood]);
 
   return (
-    <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+    <main className="mx-auto w-full max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
       {pageState === "loading" ? (
-        <PageStateBand icon={Database} title="正在加载小区身份、指标与历史" tone="slate" />
+        <PageStateBand icon={Database} title="正在加载小区身份" tone="slate" />
       ) : null}
       {pageState === "not_found" ? (
         <PageStateBand
@@ -166,9 +431,33 @@ export function NeighborhoodsPage({ initialNeighborhoodId }: { initialNeighborho
           action={<RetryButton onClick={() => setRequestVersion((version) => version + 1)} />}
         />
       ) : null}
+      {view.neighborhood ? (
+        <>
+          <NeighborhoodHeader neighborhood={view.neighborhood} metric={view.metric} targetLayout={targetLayout} />
+          {invalidSelection ? <PageStateBand icon={AlertTriangle} title="原选择已失效" detail={invalidSelection} tone="amber" /> : null}
+          <WatchlistTargetAction
+            canSubmit
+            neighborhood={view.neighborhood}
+            targetLayout={targetLayout}
+            navigate={navigate}
+            onTargetLayoutChange={(layout) => {
+              setInvalidSelection(undefined);
+              setTargetLayout(layout);
+              setView((current) => ({ ...current, history: undefined, historyFailed: false, metric: undefined }));
+              writeDetailTargetLayout(neighborhoodId, layout, "push");
+              setPageState(layout ? "metric_loading" : "select_layout");
+            }}
+          />
+        </>
+      ) : null}
+      {pageState === "select_layout" && view.neighborhood ? (
+        <PageStateBand icon={MapPin} title="请选择目标户型" tone="slate" />
+      ) : null}
+      {pageState === "metric_loading" ? (
+        <PageStateBand icon={Database} title="正在加载该户型的指标与历史" tone="slate" />
+      ) : null}
       {pageState === "no_metric" && view.neighborhood ? (
         <>
-          <NeighborhoodHeader neighborhood={view.neighborhood} />
           <PageStateBand
             icon={Database}
             title="该小区暂无市场指标"
@@ -184,6 +473,7 @@ export function NeighborhoodsPage({ initialNeighborhoodId }: { initialNeighborho
           historyFailed={view.historyFailed}
           metric={view.metric}
           neighborhood={view.neighborhood}
+          renderHeader={false}
           retry={() => setRequestVersion((version) => version + 1)}
         />
       ) : null}
@@ -191,90 +481,275 @@ export function NeighborhoodsPage({ initialNeighborhoodId }: { initialNeighborho
   );
 }
 
-function NeighborhoodSelector() {
-  const [query, setQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
-  const [results, setResults] = useState<Neighborhood[]>([]);
-  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
-  const [requestVersion, setRequestVersion] = useState(0);
+function WatchlistTargetAction({
+  canSubmit,
+  navigate,
+  neighborhood,
+  onCancel,
+  onTargetLayoutChange,
+  targetLayout,
+}: {
+  canSubmit: boolean;
+  navigate: (href: string) => void;
+  neighborhood?: Neighborhood;
+  onCancel?: () => void;
+  onTargetLayoutChange: (value: string) => void;
+  targetLayout: string;
+}) {
+  const [accessState, setAccessState] = useState<"checking" | "locked" | "unlocked">("checking");
+  const [submitState, setSubmitState] = useState<SubmitState>("idle");
 
-  const runSearch = useCallback((search: string, signal?: AbortSignal) => {
-    setState("loading");
-    searchNeighborhoods(search, signal)
-      .then((response) => {
-        setResults(response.items);
-        setState("ready");
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setResults([]);
-        setState("failed");
-      });
+  useEffect(() => {
+    const syncAccess = () => {
+      const next = getAccessToken() ? "unlocked" : "locked";
+      setAccessState(next);
+      if (next === "unlocked") {
+        setSubmitState((current) => current === "locked" ? "idle" : current);
+      }
+    };
+    syncAccess();
+    return subscribeToAccessToken(syncAccess);
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    runSearch(submittedQuery, controller.signal);
-    return () => controller.abort();
-  }, [requestVersion, runSearch, submittedQuery]);
+    setSubmitState("idle");
+  }, [neighborhood?.id, targetLayout]);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSubmittedQuery(query.trim());
+    if (!canSubmit || !neighborhood || !targetLayout || submitState === "submitting") return;
+    if (accessState !== "unlocked") {
+      setSubmitState("locked");
+      return;
+    }
+
+    setSubmitState("submitting");
+    try {
+      const item = await addWatchlistItem({ neighborhoodId: neighborhood.id, targetLayout });
+      if (item.neighborhoodId !== neighborhood.id || item.targetLayout !== targetLayout) {
+        throw new Error("watchlist target mismatch");
+      }
+      navigate("/watchlist");
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 401) {
+        setAccessState("locked");
+        setSubmitState("locked");
+      } else if (error instanceof ApiError && (error.status === 409 || error.code === "watchlist_item_exists")) {
+        setSubmitState("duplicate");
+      } else {
+        setSubmitState("failed");
+      }
+    }
   };
 
-  return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <section className="border-b border-slate-200 pb-6">
-        <p className="text-sm font-semibold text-blue-700">目标小区</p>
-        <h1 className="mt-1 text-3xl font-bold text-slate-900">选择要查看的小区</h1>
-        <form onSubmit={submit} className="mt-6 flex max-w-2xl gap-2">
-          <label className="sr-only" htmlFor="neighborhood-search">搜索小区名称或区域</label>
-          <input
-            id="neighborhood-search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索小区名称或区域"
-            className="h-11 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-          />
-          <button type="submit" className="inline-flex h-11 items-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800">
-            <Search aria-hidden="true" className="h-4 w-4" />
-            搜索
-          </button>
-        </form>
-      </section>
+  const complete = canSubmit && Boolean(neighborhood && targetLayout);
+  const submitLabel = submitState === "submitting"
+    ? "正在加入"
+    : submitState === "failed"
+      ? "重试加入"
+      : "加入观察池";
 
-      {state === "loading" ? <PageStateBand icon={Database} title="正在搜索小区" tone="slate" /> : null}
-      {state === "failed" ? (
-        <PageStateBand
-          icon={AlertTriangle}
-          title="小区搜索失败"
-          tone="rose"
-          action={<RetryButton onClick={() => setRequestVersion((version) => version + 1)} />}
+  return (
+    <section aria-label="加入观察池" className="border-b border-slate-200 py-6">
+      <form onSubmit={submit} className="grid items-end gap-5 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <NativeSelect
+          id={`target-layout-${neighborhood?.id ?? "none"}`}
+          label="目标户型"
+          value={targetLayout}
+          disabled={!neighborhood}
+          placeholder="选择目标户型"
+          options={neighborhood?.availableLayouts ?? []}
+          onChange={onTargetLayoutChange}
         />
-      ) : null}
-      {state === "ready" && results.length === 0 ? (
-        <PageStateBand icon={Search} title="没有匹配的小区" detail="可以调整名称或区域后重新搜索。" tone="slate" />
-      ) : null}
-      {state === "ready" && results.length > 0 ? (
-        <section aria-label="小区搜索结果" className="divide-y divide-slate-200 border-y border-slate-200">
-          {results.map((item) => (
-            <Link
-              key={item.id}
-              href={`/neighborhoods?id=${encodeURIComponent(item.id)}`}
-              className="flex items-center justify-between gap-4 px-1 py-4 hover:bg-slate-50"
+        <div className="flex flex-wrap gap-2">
+          {onCancel ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="inline-flex h-11 items-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              <div>
-                <h2 className="font-semibold text-slate-900">{item.name}</h2>
-                <p className="mt-1 text-sm text-slate-500">{item.area} · {item.targetLayout}</p>
-              </div>
-              <ExternalLink aria-hidden="true" className="h-4 w-4 flex-none text-slate-400" />
-            </Link>
-          ))}
-        </section>
+              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+              取消
+            </button>
+          ) : null}
+          <button
+            type="submit"
+            disabled={!complete || submitState === "submitting" || submitState === "duplicate"}
+            className="inline-flex h-11 items-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            {submitLabel}
+          </button>
+        </div>
+      </form>
+
+      {submitState === "locked" ? (
+        <div role="status" className="mt-4 flex items-start gap-2 border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <LockKeyhole aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none" />
+          <span>个人空间尚未解锁，当前选择已保留。</span>
+        </div>
       ) : null}
-    </main>
+      {submitState === "duplicate" ? (
+        <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 border-l-4 border-blue-500 bg-blue-50 px-4 py-3 text-sm text-blue-950">
+          <span className="flex items-center gap-2"><CheckCircle aria-hidden="true" className="h-4 w-4" />该小区已在观察池中。</span>
+          <Link href="/watchlist" className="font-medium text-blue-700 hover:underline">查看观察池</Link>
+        </div>
+      ) : null}
+      {submitState === "failed" ? (
+        <div role="alert" className="mt-4 border-l-4 border-rose-400 bg-rose-50 px-4 py-3 text-sm text-rose-950">
+          加入观察池失败，当前选择已保留。
+        </div>
+      ) : null}
+    </section>
   );
+}
+
+function NativeSelect({
+  disabled,
+  id,
+  label,
+  onChange,
+  options,
+  placeholder,
+  value,
+}: {
+  disabled?: boolean;
+  id: string;
+  label: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function reconcileCatalogSelection(
+  current: AddSelection,
+  response: NeighborhoodSearchResponse,
+  selectedNeighborhood: Neighborhood | undefined,
+  selectedMissing: boolean,
+): { message?: string; results: Neighborhood[]; selection: AddSelection } {
+  let selection = { ...current };
+  let message: string | undefined;
+
+  if (selection.city && !response.filters.cities.includes(selection.city)) {
+    selection = { ...selection, area: "", city: "", neighborhoodId: "", targetLayout: "" };
+    message = "原城市已不在可用目录中。";
+  } else if (selection.area && (!selection.city || !response.filters.areas.some((item) => item.city === selection.city && item.area === selection.area))) {
+    selection = { ...selection, area: "", neighborhoodId: "", targetLayout: "" };
+    message = "原板块已不在所选城市的可用目录中。";
+  } else if (selection.neighborhoodId && selectedMissing) {
+    selection = { ...selection, neighborhoodId: "", targetLayout: "" };
+    message = "原小区已不存在。";
+  } else if (selection.neighborhoodId && selectedNeighborhood && !neighborhoodMatchesSelection(selectedNeighborhood, selection)) {
+    selection = { ...selection, neighborhoodId: "", targetLayout: "" };
+    message = "原小区不再匹配当前城市、板块或名称条件。";
+  } else if (selection.targetLayout && selectedNeighborhood && !selectedNeighborhood.availableLayouts.includes(selection.targetLayout)) {
+    selection = { ...selection, targetLayout: "" };
+    message = "原目标户型已不在该小区目录中。";
+  }
+
+  const results = [...response.items];
+  if (
+    selection.neighborhoodId &&
+    selectedNeighborhood &&
+    neighborhoodMatchesSelection(selectedNeighborhood, selection) &&
+    !results.some((item) => item.id === selectedNeighborhood.id)
+  ) {
+    results.push(selectedNeighborhood);
+    results.sort(compareNeighborhoods);
+  }
+  return { message, results, selection };
+}
+
+function neighborhoodMatchesSelection(neighborhood: Neighborhood, selection: AddSelection): boolean {
+  return Boolean(
+    neighborhood.city &&
+    neighborhood.city === selection.city &&
+    neighborhood.area === selection.area &&
+    (!selection.q || neighborhood.name.toLocaleLowerCase("zh-CN").includes(selection.q.toLocaleLowerCase("zh-CN"))) &&
+    neighborhood.availableLayouts.length > 0,
+  );
+}
+
+function compareNeighborhoods(left: Neighborhood, right: Neighborhood): number {
+  for (const [a, b] of [
+    [left.city ?? "", right.city ?? ""],
+    [left.area, right.area],
+    [left.name, right.name],
+    [left.id, right.id],
+  ]) {
+    const compared = a.localeCompare(b, "zh-CN");
+    if (compared !== 0) return compared;
+  }
+  return 0;
+}
+
+function readAddSelection(): AddSelection {
+  if (typeof window === "undefined") return emptySelection;
+  const params = new URLSearchParams(window.location.search);
+  return {
+    area: params.get("area")?.trim() ?? "",
+    city: params.get("city")?.trim() ?? "",
+    neighborhoodId: params.get("neighborhoodId")?.trim() ?? "",
+    q: params.get("q")?.trim() ?? "",
+    targetLayout: params.get("targetLayout")?.trim() ?? "",
+  };
+}
+
+function writeAddSelection(selection: AddSelection, method: "push" | "replace"): void {
+  const params = new URLSearchParams();
+  for (const [key, value] of [
+    ["city", selection.city],
+    ["area", selection.area],
+    ["q", selection.q],
+    ["neighborhoodId", selection.neighborhoodId],
+    ["targetLayout", selection.targetLayout],
+  ] as const) {
+    if (value) params.set(key, value);
+  }
+  writeURL(params, method);
+}
+
+function readDetailTargetLayout(): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("targetLayout")?.trim() ?? "";
+}
+
+function writeDetailTargetLayout(neighborhoodId: string, targetLayout: string, method: "push" | "replace"): void {
+  const params = new URLSearchParams({ id: neighborhoodId });
+  if (targetLayout) params.set("targetLayout", targetLayout);
+  writeURL(params, method);
+}
+
+function writeURL(params: URLSearchParams, method: "push" | "replace"): void {
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  const href = `${window.location.pathname}${query}`;
+  if (method === "push") window.history.pushState({}, "", href);
+  else window.history.replaceState({}, "", href);
+}
+
+function sameSelection(left: AddSelection, right: AddSelection): boolean {
+  return left.area === right.area &&
+    left.city === right.city &&
+    left.neighborhoodId === right.neighborhoodId &&
+    left.q === right.q &&
+    left.targetLayout === right.targetLayout;
 }
 
 function NeighborhoodReadyView({
@@ -282,12 +757,14 @@ function NeighborhoodReadyView({
   historyFailed,
   metric,
   neighborhood,
+  renderHeader = true,
   retry,
 }: {
   history?: MetricHistoryResponse;
   historyFailed: boolean;
   metric: NeighborhoodMetricResponse;
   neighborhood: Neighborhood;
+  renderHeader?: boolean;
   retry: () => void;
 }) {
   const stale = metric.freshness === "stale" || metric.freshness === "expired";
@@ -308,7 +785,7 @@ function NeighborhoodReadyView({
 
   return (
     <>
-      <NeighborhoodHeader neighborhood={neighborhood} metric={metric} />
+      {renderHeader ? <NeighborhoodHeader neighborhood={neighborhood} metric={metric} targetLayout={metric.targetLayout} /> : null}
 
       {stale ? (
         <PageStateBand
@@ -412,16 +889,24 @@ function NeighborhoodReadyView({
   );
 }
 
-function NeighborhoodHeader({ neighborhood, metric }: { neighborhood: Neighborhood; metric?: NeighborhoodMetricResponse }) {
+function NeighborhoodHeader({
+  metric,
+  neighborhood,
+  targetLayout,
+}: {
+  metric?: NeighborhoodMetricResponse;
+  neighborhood: Neighborhood;
+  targetLayout: string;
+}) {
   return (
     <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
       <div>
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <MapPin aria-hidden="true" className="h-4 w-4" />
-          <span>{neighborhood.area}</span>
+          <span>{[neighborhood.city, neighborhood.area].filter(Boolean).join(" · ")}</span>
         </div>
         <h1 className="mt-2 text-3xl font-bold text-slate-900">{neighborhood.name}</h1>
-        <p className="mt-2 text-sm text-slate-600">目标户型：{neighborhood.targetLayout}</p>
+        {targetLayout ? <p className="mt-2 text-sm text-slate-600">目标户型：{targetLayout}</p> : null}
       </div>
       {metric ? (
         <div className="text-right text-xs text-slate-500">
@@ -534,6 +1019,10 @@ function StateLink({ href, label }: { href: string; label: string }) {
 
 function isNotFound(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function formatPriceRange(min?: number | null, max?: number | null): string {

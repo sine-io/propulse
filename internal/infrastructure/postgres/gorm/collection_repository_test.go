@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ func TestCollectionRepositorySaveCollectionRunPersistsRunAndBothObservationTypes
 	ctx, db, repo := openCollectionRepositoryTest(t)
 	source, neighborhood := createCollectionRepositoryFixtures(t, ctx, repo, db)
 	batch := collectionRepositoryBatch(source.ID, neighborhood.ID)
+	batch.Transactions[0].Layout = "四房"
 
 	result, err := repo.SaveCollectionRun(ctx, batch)
 	if err != nil {
@@ -90,8 +92,18 @@ func TestCollectionRepositorySaveCollectionRunPersistsRunAndBothObservationTypes
 	if len(transactions) != 1 {
 		t.Fatalf("transaction observations = %d, want 1", len(transactions))
 	}
-	if transactions[0].CollectionRunID != batch.Run.ID || transactions[0].NeighborhoodID != neighborhood.ID || transactions[0].SourceRecordID != "transaction-source-1" || transactions[0].SourceRow != 2 || transactions[0].Layout != "三房" || transactions[0].AreaSQM != 88.2 || transactions[0].TransactionPrice != 495 || transactions[0].OriginalListingRef == nil || *transactions[0].OriginalListingRef != "listing-source-1" {
+	if transactions[0].CollectionRunID != batch.Run.ID || transactions[0].NeighborhoodID != neighborhood.ID || transactions[0].SourceRecordID != "transaction-source-1" || transactions[0].SourceRow != 2 || transactions[0].Layout != "四房" || transactions[0].AreaSQM != 88.2 || transactions[0].TransactionPrice != 495 || transactions[0].OriginalListingRef == nil || *transactions[0].OriginalListingRef != "listing-source-1" {
 		t.Fatalf("transaction observation = %#v", transactions[0])
+	}
+
+	updatedNeighborhood, err := NewNeighborhoodRepository(db).GetNeighborhood(ctx, neighborhood.ID)
+	if err != nil {
+		t.Fatalf("GetNeighborhood() error = %v", err)
+	}
+	for _, layout := range []string{"三房", "四房"} {
+		if !slices.Contains(updatedNeighborhood.AvailableLayouts, layout) {
+			t.Fatalf("available layouts = %#v, want %q from successful import", updatedNeighborhood.AvailableLayouts, layout)
+		}
 	}
 }
 
@@ -300,12 +312,12 @@ func TestCollectionRepositoryListsRunsMissingCurrentMetricVersionAndRetriesFailu
 	if err := db.WithContext(ctx).Exec(`
 INSERT INTO neighborhood_metrics (
   neighborhood_id, listed_homes, price_cut_homes, transaction_momentum,
-  target_layout_supply, collection_run_id, source_ids, listing_sample_count,
+	  target_layout_supply_by_layout, collection_run_id, source_ids, listing_sample_count,
   transaction_sample_count, coverage, freshness, quality_state, latest_observed_at,
   algorithm_version, transaction_window_start, transaction_window_end,
   recent_30_day_transaction_count, preceding_60_day_transaction_count,
   recent_30_day_monthly_frequency, preceding_60_day_monthly_frequency
-) VALUES (?, 5, 1, 'stable', 2, ?, '[]'::jsonb, 5, 3, 'full', 'current',
+) VALUES (?, 5, 1, 'stable', '{"三房": 2}'::jsonb, ?, '[]'::jsonb, 5, 3, 'full', 'current',
   'sufficient', ?, ?, '2026-04-15', '2026-07-14', 1, 2, 1, 1)`,
 		neighborhood.ID, result.Run.ID, result.Run.CollectedAt, algorithmVersion,
 	).Error; err != nil {
@@ -404,10 +416,11 @@ func createCollectionRepositoryFixtures(t *testing.T, ctx context.Context, repo 
 
 	neighborhoodRepo := NewNeighborhoodRepository(db)
 	neighborhood, err := neighborhoodRepo.CreateNeighborhood(ctx, appneighborhood.CreateNeighborhoodInput{
-		ID:           uuid.NewString(),
-		Name:         "导入测试小区 " + uuid.NewString(),
-		Area:         "测试板块",
-		TargetLayout: "三房",
+		ID:               uuid.NewString(),
+		Name:             "导入测试小区 " + uuid.NewString(),
+		City:             "测试城市",
+		Area:             "测试板块",
+		AvailableLayouts: []string{"三房"},
 	})
 	if err != nil {
 		t.Fatalf("CreateNeighborhood() error = %v", err)

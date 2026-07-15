@@ -205,13 +205,14 @@ export interface paths {
         };
         /**
          * Search neighborhoods
-         * @description Public, anonymous. Supports fuzzy query, area/layout filters and pagination.
+         * @description Public, anonymous. Returns only neighborhoods with a trusted city and at least one catalog layout. Filter options are not truncated by pagination.
          */
         get: {
             parameters: {
                 query?: {
                     q?: string;
                     area?: string;
+                    city?: string;
                     targetLayout?: string;
                     page?: number;
                     pageSize?: number;
@@ -341,7 +342,10 @@ export interface paths {
         /** Get latest neighborhood metrics with signal */
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    /** @description Catalog layout used to project supply and scarcity. */
+                    targetLayout: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -357,6 +361,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NeighborhoodMetricResponse"];
+                    };
+                };
+                /** @description Missing or unavailable target layout */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
                 /** @description Metric not found */
@@ -388,7 +401,9 @@ export interface paths {
         /** Get current-algorithm neighborhood metric history and comparisons */
         get: {
             parameters: {
-                query?: {
+                query: {
+                    /** @description Catalog layout used to project supply for every history point. */
+                    targetLayout: string;
                     /** @description Inclusive collection-time lower bound. Defaults to eight weeks before `to`. */
                     from?: string;
                     /** @description Inclusive collection-time upper bound. Defaults to the current time. */
@@ -487,6 +502,23 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description The neighborhood is already on the current user's watchlist */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": {
+                         *         "code": "watchlist_item_exists",
+                         *         "message": "the neighborhood is already on the watchlist"
+                         *       }
+                         *     }
+                         */
                         "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
@@ -1137,14 +1169,17 @@ export interface components {
         };
         CreateNeighborhoodRequest: {
             name: string;
+            city: string;
             area: string;
-            targetLayout: string;
+            availableLayouts: string[];
         };
         NeighborhoodResponse: {
+            /** Format: uuid */
             id: string;
             name: string;
+            city: string | null;
             area: string;
-            targetLayout: string;
+            availableLayouts: string[];
             /** Format: date-time */
             createdAt?: string;
         };
@@ -1153,6 +1188,15 @@ export interface components {
             total: number;
             page: number;
             pageSize: number;
+            filters: components["schemas"]["NeighborhoodSearchFilters"];
+        };
+        NeighborhoodSearchFilters: {
+            cities: string[];
+            areas: components["schemas"]["NeighborhoodAreaFilter"][];
+        };
+        NeighborhoodAreaFilter: {
+            city: string;
+            area: string;
         };
         NeighborhoodMetricResponse: {
             id: string;
@@ -1177,6 +1221,7 @@ export interface components {
             /** @enum {string} */
             transactionMomentum: "unknown" | "weak" | "stable" | "strong";
             transactionEvidence: components["schemas"]["TransactionMomentumEvidence"];
+            targetLayout: string;
             targetLayoutSupply: number;
             listingSampleCount: number;
             transactionSampleCount: number;
@@ -1260,6 +1305,7 @@ export interface components {
             /** @enum {string} */
             transactionMomentum: "unknown" | "weak" | "stable" | "strong";
             transactionEvidence: components["schemas"]["TransactionMomentumEvidence"];
+            targetLayoutSupply: number;
             listingSampleCount: number;
             transactionSampleCount: number;
             /** @enum {string} */
@@ -1277,6 +1323,7 @@ export interface components {
             status: "ready" | "empty";
             /** Format: uuid */
             neighborhoodId: string;
+            targetLayout: string;
             algorithmVersion: string;
             window: {
                 /** Format: date-time */
@@ -1287,11 +1334,16 @@ export interface components {
             items: components["schemas"]["MetricHistoryPoint"][];
         };
         AddWatchlistItemRequest: {
+            /** Format: uuid */
             neighborhoodId: string;
+            targetLayout: string;
         };
         AddWatchlistItemResponse: {
+            /** Format: uuid */
             id: string;
+            /** Format: uuid */
             neighborhoodId: string;
+            targetLayout: string;
             userId: string;
             /** Format: date-time */
             createdAt: string;
@@ -1303,6 +1355,7 @@ export interface components {
             id: string;
             neighborhoodId: string;
             name: string;
+            city: string | null;
             area: string;
             targetLayout: string;
             /** @enum {string} */
@@ -1311,6 +1364,9 @@ export interface components {
             priceCutHomes: number | null;
             /** @enum {string|null} */
             transactionMomentum: "unknown" | "weak" | "stable" | "strong" | null;
+            targetLayoutSupply: number | null;
+            /** @enum {string|null} */
+            targetLayoutScarcity: "unknown" | "low" | "medium" | "high" | null;
             advice: string;
             hasMetric: boolean;
             /** Format: uuid */

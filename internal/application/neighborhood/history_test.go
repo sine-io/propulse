@@ -23,7 +23,7 @@ func TestMetricHistorySelectsLatestFullWeeklyAndMonthlyBaselines(t *testing.T) {
 	)
 	service := NewServiceWithMetricConfig(repo, historyTestAlgorithmVersion, func() time.Time { return currentAt })
 
-	result, err := service.MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", From: currentAt, To: currentAt})
+	result, err := service.MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", TargetLayout: "三房", From: currentAt, To: currentAt})
 	if err != nil {
 		t.Fatalf("MetricHistory() error = %v", err)
 	}
@@ -49,7 +49,7 @@ func TestMetricHistoryReturnsUnavailableForPartialCurrentRun(t *testing.T) {
 		historyRecord("current", currentAt, domainneighborhood.CoveragePartial, 15, 3, 3),
 	)
 	result, err := NewServiceWithMetricConfig(repo, historyTestAlgorithmVersion, func() time.Time { return currentAt }).
-		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", From: currentAt, To: currentAt})
+		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", TargetLayout: "三房", From: currentAt, To: currentAt})
 	if err != nil {
 		t.Fatalf("MetricHistory() error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestMetricHistoryReturnsUnavailableWithoutFullBaseline(t *testing.T) {
 		historyRecord("current", currentAt, domainneighborhood.CoverageFull, 15, 3, 3),
 	)
 	result, err := NewServiceWithMetricConfig(repo, historyTestAlgorithmVersion, func() time.Time { return currentAt }).
-		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", From: currentAt, To: currentAt})
+		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", TargetLayout: "三房", From: currentAt, To: currentAt})
 	if err != nil {
 		t.Fatalf("MetricHistory() error = %v", err)
 	}
@@ -83,7 +83,7 @@ func TestMetricHistoryMarksPercentageAsZeroBaseline(t *testing.T) {
 		historyRecord("current", currentAt, domainneighborhood.CoverageFull, 3, 2, 1),
 	)
 	result, err := NewServiceWithMetricConfig(repo, historyTestAlgorithmVersion, func() time.Time { return currentAt }).
-		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", From: currentAt, To: currentAt})
+		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", TargetLayout: "三房", From: currentAt, To: currentAt})
 	if err != nil {
 		t.Fatalf("MetricHistory() error = %v", err)
 	}
@@ -103,7 +103,7 @@ func TestMetricHistoryReturnsUnavailableWhenTransactionEvidenceIsMissing(t *test
 	)
 
 	result, err := NewServiceWithMetricConfig(repo, historyTestAlgorithmVersion, func() time.Time { return currentAt }).
-		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", From: currentAt, To: currentAt})
+		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", TargetLayout: "三房", From: currentAt, To: currentAt})
 	if err != nil {
 		t.Fatalf("MetricHistory() error = %v", err)
 	}
@@ -117,7 +117,7 @@ func TestMetricHistoryReturnsExplicitEmptyDefaultWindow(t *testing.T) {
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	repo := historyRepository()
 	result, err := NewServiceWithMetricConfig(repo, historyTestAlgorithmVersion, func() time.Time { return now }).
-		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1"})
+		MetricHistory(context.Background(), MetricHistoryQuery{NeighborhoodID: "neighborhood_1", TargetLayout: "三房"})
 	if err != nil {
 		t.Fatalf("MetricHistory() error = %v", err)
 	}
@@ -130,8 +130,8 @@ func TestMetricHistoryRejectsInvalidAndOversizedWindows(t *testing.T) {
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	service := NewServiceWithMetricConfig(historyRepository(), historyTestAlgorithmVersion, func() time.Time { return now })
 	for name, query := range map[string]MetricHistoryQuery{
-		"reversed": {NeighborhoodID: "neighborhood_1", From: now, To: now.Add(-time.Hour)},
-		"too long": {NeighborhoodID: "neighborhood_1", From: now.Add(-52*7*24*time.Hour - time.Second), To: now},
+		"reversed": {NeighborhoodID: "neighborhood_1", TargetLayout: "三房", From: now, To: now.Add(-time.Hour)},
+		"too long": {NeighborhoodID: "neighborhood_1", TargetLayout: "三房", From: now.Add(-52*7*24*time.Hour - time.Second), To: now},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := service.MetricHistory(context.Background(), query)
@@ -144,7 +144,7 @@ func TestMetricHistoryRejectsInvalidAndOversizedWindows(t *testing.T) {
 
 func historyRepository(records ...MetricHistoryRecord) *memoryRepository {
 	repo := newMemoryRepository()
-	repo.neighborhoods["neighborhood_1"] = Neighborhood{ID: "neighborhood_1"}
+	repo.neighborhoods["neighborhood_1"] = Neighborhood{ID: "neighborhood_1", AvailableLayouts: []string{"三房"}}
 	repo.history = records
 	return repo
 }
@@ -153,25 +153,26 @@ func historyRecord(id string, collectedAt time.Time, coverage domainneighborhood
 	evidence := domainneighborhood.NewTransactionMomentumEvidence(collectedAt, recentTransactions, 3)
 	inventoryRunID := id
 	metric := MetricSnapshot{
-		ID:                       "metric-" + id,
-		NeighborhoodID:           "neighborhood_1",
-		CollectionRunID:          id,
-		AlgorithmVersion:         historyTestAlgorithmVersion,
-		InventoryCollectionRunID: &inventoryRunID,
-		SourceIDs:                []string{"source_1"},
-		LatestObservedAt:         collectedAt,
-		CollectedAt:              collectedAt,
-		ListedHomes:              listedHomes,
-		PriceCutHomes:            priceCutHomes,
-		TransactionMomentum:      domainneighborhood.CalculateTransactionMomentum(evidence),
-		TransactionEvidence:      &evidence,
-		ListingSampleCount:       listedHomes,
-		TransactionSampleCount:   evidence.SampleCount,
-		Coverage:                 coverage,
-		Freshness:                domainneighborhood.FreshnessCurrent,
-		InventoryCollectedAt:     &collectedAt,
-		QualityState:             domainneighborhood.MarketQualitySufficient,
-		CalculatedAt:             collectedAt.Add(time.Hour),
+		ID:                         "metric-" + id,
+		NeighborhoodID:             "neighborhood_1",
+		CollectionRunID:            id,
+		AlgorithmVersion:           historyTestAlgorithmVersion,
+		InventoryCollectionRunID:   &inventoryRunID,
+		SourceIDs:                  []string{"source_1"},
+		LatestObservedAt:           collectedAt,
+		CollectedAt:                collectedAt,
+		ListedHomes:                listedHomes,
+		PriceCutHomes:              priceCutHomes,
+		TransactionMomentum:        domainneighborhood.CalculateTransactionMomentum(evidence),
+		TransactionEvidence:        &evidence,
+		TargetLayoutSupplyByLayout: map[string]int{"三房": listedHomes / 2},
+		ListingSampleCount:         listedHomes,
+		TransactionSampleCount:     evidence.SampleCount,
+		Coverage:                   coverage,
+		Freshness:                  domainneighborhood.FreshnessCurrent,
+		InventoryCollectedAt:       &collectedAt,
+		QualityState:               domainneighborhood.MarketQualitySufficient,
+		CalculatedAt:               collectedAt.Add(time.Hour),
 	}
 	return MetricHistoryRecord{
 		Metric: metric,

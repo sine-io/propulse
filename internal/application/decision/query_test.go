@@ -45,11 +45,11 @@ func TestGetActionWindowComposesTraceableFactorsWithoutInventingAlternativeEvide
 	}
 	neighborhood := &stubNeighborhoodReader{
 		watchlist: []appneighborhood.WatchlistItemSummary{
-			{NeighborhoodID: testTargetNeighborhoodID},
-			{NeighborhoodID: testCandidateNeighborhoodID},
+			{NeighborhoodID: testTargetNeighborhoodID, TargetLayout: "三房"},
+			{NeighborhoodID: testCandidateNeighborhoodID, TargetLayout: "四房"},
 		},
 		neighborhood: appneighborhood.Neighborhood{
-			ID: testTargetNeighborhoodID, Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房",
+			ID: testTargetNeighborhoodID, Name: "青枫花园", Area: "滨江核心",
 		},
 		metric: appneighborhood.MetricWithSignal{
 			Metric: appneighborhood.MetricSnapshot{
@@ -96,6 +96,9 @@ func TestGetActionWindowComposesTraceableFactorsWithoutInventingAlternativeEvide
 	}
 	if neighborhood.metricNeighborhoodID != testTargetNeighborhoodID {
 		t.Fatalf("metric neighborhoodID = %q, want %q", neighborhood.metricNeighborhoodID, testTargetNeighborhoodID)
+	}
+	if len(neighborhood.metricQueries) != 1 || neighborhood.metricQueries[0].TargetLayout != "三房" {
+		t.Fatalf("metric queries = %#v, want target watchlist layout 三房", neighborhood.metricQueries)
 	}
 	if result.Action != domaindecision.ActionBargain || result.Confidence != domaindecision.ConfidenceMedium {
 		t.Fatalf("result = %#v", result)
@@ -151,9 +154,9 @@ func TestGetActionWindowUsesRequestedNeighborhoodID(t *testing.T) {
 	neighborhood := &stubNeighborhoodReader{
 		watchlist: []appneighborhood.WatchlistItemSummary{
 			{NeighborhoodID: testTargetNeighborhoodID, Name: "备选小区", TargetLayout: "三房"},
-			{NeighborhoodID: requestedNeighborhoodID},
+			{NeighborhoodID: requestedNeighborhoodID, TargetLayout: "两房"},
 		},
-		neighborhood: appneighborhood.Neighborhood{ID: requestedNeighborhoodID, Name: "请求小区", Area: "南城", TargetLayout: "两房"},
+		neighborhood: appneighborhood.Neighborhood{ID: requestedNeighborhoodID, Name: "请求小区", Area: "南城"},
 		metric: appneighborhood.MetricWithSignal{
 			Metric: appneighborhood.MetricSnapshot{
 				TransactionMomentum: domainneighborhood.TransactionMomentumStrong,
@@ -181,6 +184,9 @@ func TestGetActionWindowUsesRequestedNeighborhoodID(t *testing.T) {
 	if neighborhood.metricNeighborhoodID != requestedNeighborhoodID {
 		t.Fatalf("metric neighborhoodID = %q, want %q", neighborhood.metricNeighborhoodID, requestedNeighborhoodID)
 	}
+	if len(neighborhood.metricQueries) == 0 || neighborhood.metricQueries[0].TargetLayout != "两房" {
+		t.Fatalf("metric queries = %#v, want requested watchlist layout 两房", neighborhood.metricQueries)
+	}
 	if result.Action != domaindecision.ActionAct {
 		t.Fatalf("Action = %q, want %q", result.Action, domaindecision.ActionAct)
 	}
@@ -197,7 +203,7 @@ func TestGetActionWindowRaisesBargainConfidenceForTraceableBetterAlternative(t *
 			{NeighborhoodID: testTargetNeighborhoodID, Name: "目标小区", TargetLayout: "三房"},
 			{NeighborhoodID: testCandidateNeighborhoodID, Name: "更优候选", Area: "南城", TargetLayout: "三房"},
 		},
-		neighborhood: appneighborhood.Neighborhood{ID: testTargetNeighborhoodID, Name: "目标小区", Area: "北城", TargetLayout: "三房"},
+		neighborhood: appneighborhood.Neighborhood{ID: testTargetNeighborhoodID, Name: "目标小区", Area: "北城"},
 		metrics: map[string]appneighborhood.MetricWithSignal{
 			testTargetNeighborhoodID: targetMetric, testCandidateNeighborhoodID: candidateMetric,
 		},
@@ -234,7 +240,7 @@ func TestGetActionWindowKeepsBargainConfidenceMediumWhenAlternativeMetricIsMissi
 			{NeighborhoodID: testTargetNeighborhoodID, Name: "目标小区", TargetLayout: "三房"},
 			{NeighborhoodID: testCandidateNeighborhoodID, Name: "缺指标候选", TargetLayout: "三房"},
 		},
-		neighborhood: appneighborhood.Neighborhood{ID: testTargetNeighborhoodID, Name: "目标小区", TargetLayout: "三房"},
+		neighborhood: appneighborhood.Neighborhood{ID: testTargetNeighborhoodID, Name: "目标小区"},
 		metrics:      map[string]appneighborhood.MetricWithSignal{testTargetNeighborhoodID: targetMetric},
 		metricErrors: map[string]error{testCandidateNeighborhoodID: appneighborhood.ErrMetricNotFound},
 	}
@@ -264,7 +270,7 @@ func TestGetActionWindowFailsWhenAlternativeMetricReadFails(t *testing.T) {
 			{NeighborhoodID: testTargetNeighborhoodID, Name: "目标小区", TargetLayout: "三房"},
 			{NeighborhoodID: testCandidateNeighborhoodID, Name: "读取失败候选", TargetLayout: "三房"},
 		},
-		neighborhood: appneighborhood.Neighborhood{ID: testTargetNeighborhoodID, Name: "目标小区", TargetLayout: "三房"},
+		neighborhood: appneighborhood.Neighborhood{ID: testTargetNeighborhoodID, Name: "目标小区"},
 		metrics:      map[string]appneighborhood.MetricWithSignal{testTargetNeighborhoodID: targetMetric},
 		metricErrors: map[string]error{testCandidateNeighborhoodID: readErr},
 	}
@@ -495,6 +501,7 @@ type stubNeighborhoodReader struct {
 	watchlistUserID      string
 	watchlistCalled      bool
 	metricNeighborhoodID string
+	metricQueries        []appneighborhood.LatestMetricQuery
 	metricCalled         bool
 	neighborhoodCalled   bool
 	watchlist            []appneighborhood.WatchlistItemSummary
@@ -530,6 +537,7 @@ func (s *stubNeighborhoodReader) GetNeighborhood(_ context.Context, query appnei
 func (s *stubNeighborhoodReader) LatestMetric(_ context.Context, query appneighborhood.LatestMetricQuery) (appneighborhood.MetricWithSignal, error) {
 	s.metricCalled = true
 	s.metricNeighborhoodID = query.NeighborhoodID
+	s.metricQueries = append(s.metricQueries, query)
 	if err := s.metricErrors[query.NeighborhoodID]; err != nil {
 		return appneighborhood.MetricWithSignal{}, err
 	}

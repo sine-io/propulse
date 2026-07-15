@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -114,10 +116,40 @@ func (r *CollectionRepository) SaveCollectionRun(ctx context.Context, batch appc
 				return err
 			}
 		}
+		layouts := neighborhoodLayoutModels(batch)
+		if len(layouts) > 0 {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&layouts).Error; err != nil {
+				return err
+			}
+		}
 		result = appcollection.SaveCollectionRunResult{Run: collectionRunFromModel(run), Created: true}
 		return nil
 	})
 	return result, err
+}
+
+func neighborhoodLayoutModels(batch appcollection.ImportBatch) []NeighborhoodLayoutModel {
+	seen := make(map[string]struct{}, len(batch.Listings)+len(batch.Transactions))
+	for _, observation := range batch.Listings {
+		if layout := strings.TrimSpace(observation.Layout); layout != "" {
+			seen[layout] = struct{}{}
+		}
+	}
+	for _, observation := range batch.Transactions {
+		if layout := strings.TrimSpace(observation.Layout); layout != "" {
+			seen[layout] = struct{}{}
+		}
+	}
+	layouts := make([]string, 0, len(seen))
+	for layout := range seen {
+		layouts = append(layouts, layout)
+	}
+	sort.Strings(layouts)
+	models := make([]NeighborhoodLayoutModel, 0, len(layouts))
+	for _, layout := range layouts {
+		models = append(models, NeighborhoodLayoutModel{NeighborhoodID: batch.Run.NeighborhoodID, Layout: layout})
+	}
+	return models
 }
 
 func (r *CollectionRepository) GetCollectionRun(ctx context.Context, id string) (appcollection.CollectionRunDetail, error) {

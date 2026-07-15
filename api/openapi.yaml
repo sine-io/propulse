@@ -95,7 +95,7 @@ paths:
   /api/v1/neighborhoods:
     get:
       summary: Search neighborhoods
-      description: Public, anonymous. Supports fuzzy query, area/layout filters and pagination.
+      description: Public, anonymous. Returns only neighborhoods with a trusted city and at least one catalog layout. Filter options are not truncated by pagination.
       parameters:
         - name: q
           in: query
@@ -103,6 +103,11 @@ paths:
           schema:
             type: string
         - name: area
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: city
           in: query
           required: false
           schema:
@@ -194,6 +199,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+        - in: query
+          name: targetLayout
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          description: Catalog layout used to project supply and scarcity.
       responses:
         '200':
           description: Latest metric found
@@ -201,6 +215,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NeighborhoodMetricResponse'
+        '400':
+          description: Missing or unavailable target layout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Metric not found
           content:
@@ -216,6 +236,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+        - in: query
+          name: targetLayout
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          description: Catalog layout used to project supply for every history point.
         - in: query
           name: from
           required: false
@@ -281,6 +310,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The neighborhood is already on the current user's watchlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: watchlist_item_exists
+                  message: the neighborhood is already on the watchlist
   /api/v1/watchlist:
     get:
       summary: List the user's watchlist
@@ -927,32 +966,52 @@ components:
           format: date-time
     CreateNeighborhoodRequest:
       type: object
-      required: [name, area, targetLayout]
+      required: [name, city, area, availableLayouts]
       properties:
         name:
           type: string
+          minLength: 1
+          maxLength: 256
+        city:
+          type: string
+          minLength: 1
+          maxLength: 128
         area:
           type: string
-        targetLayout:
-          type: string
+          minLength: 1
+          maxLength: 128
+        availableLayouts:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
     NeighborhoodResponse:
       type: object
-      required: [id, name, area, targetLayout]
+      required: [id, name, city, area, availableLayouts]
       properties:
         id:
           type: string
+          format: uuid
         name:
           type: string
+        city:
+          type: string
+          nullable: true
         area:
           type: string
-        targetLayout:
-          type: string
+        availableLayouts:
+          type: array
+          items:
+            type: string
         createdAt:
           type: string
           format: date-time
     NeighborhoodSearchResponse:
       type: object
-      required: [items, total, page, pageSize]
+      required: [items, total, page, pageSize, filters]
       properties:
         items:
           type: array
@@ -964,6 +1023,28 @@ components:
           type: integer
         pageSize:
           type: integer
+        filters:
+          $ref: '#/components/schemas/NeighborhoodSearchFilters'
+    NeighborhoodSearchFilters:
+      type: object
+      required: [cities, areas]
+      properties:
+        cities:
+          type: array
+          items:
+            type: string
+        areas:
+          type: array
+          items:
+            $ref: '#/components/schemas/NeighborhoodAreaFilter'
+    NeighborhoodAreaFilter:
+      type: object
+      required: [city, area]
+      properties:
+        city:
+          type: string
+        area:
+          type: string
     NeighborhoodMetricResponse:
       type: object
       required:
@@ -979,6 +1060,7 @@ components:
         - avgDaysOnMarket
         - transactionMomentum
         - transactionEvidence
+        - targetLayout
         - targetLayoutSupply
         - listingSampleCount
         - transactionSampleCount
@@ -1038,6 +1120,8 @@ components:
           enum: [unknown, weak, stable, strong]
         transactionEvidence:
           $ref: '#/components/schemas/TransactionMomentumEvidence'
+        targetLayout:
+          type: string
         targetLayoutSupply:
           type: integer
         listingSampleCount:
@@ -1180,6 +1264,7 @@ components:
         - priceCutHomes
         - transactionMomentum
         - transactionEvidence
+        - targetLayoutSupply
         - listingSampleCount
         - transactionSampleCount
         - coverage
@@ -1222,6 +1307,8 @@ components:
           enum: [unknown, weak, stable, strong]
         transactionEvidence:
           $ref: '#/components/schemas/TransactionMomentumEvidence'
+        targetLayoutSupply:
+          type: integer
         listingSampleCount:
           type: integer
         transactionSampleCount:
@@ -1245,7 +1332,7 @@ components:
           $ref: '#/components/schemas/MetricComparison'
     MetricHistoryResponse:
       type: object
-      required: [status, neighborhoodId, algorithmVersion, window, items]
+      required: [status, neighborhoodId, targetLayout, algorithmVersion, window, items]
       properties:
         status:
           type: string
@@ -1253,6 +1340,8 @@ components:
         neighborhoodId:
           type: string
           format: uuid
+        targetLayout:
+          type: string
         algorithmVersion:
           type: string
         window:
@@ -1271,17 +1360,26 @@ components:
             $ref: '#/components/schemas/MetricHistoryPoint'
     AddWatchlistItemRequest:
       type: object
-      required: [neighborhoodId]
+      required: [neighborhoodId, targetLayout]
       properties:
         neighborhoodId:
           type: string
+          format: uuid
+        targetLayout:
+          type: string
+          minLength: 1
+          maxLength: 64
     AddWatchlistItemResponse:
       type: object
-      required: [id, neighborhoodId, userId, createdAt]
+      required: [id, neighborhoodId, targetLayout, userId, createdAt]
       properties:
         id:
           type: string
+          format: uuid
         neighborhoodId:
+          type: string
+          format: uuid
+        targetLayout:
           type: string
         userId:
           type: string
@@ -1302,12 +1400,15 @@ components:
         - id
         - neighborhoodId
         - name
+        - city
         - area
         - targetLayout
         - status
         - listedHomes
         - priceCutHomes
         - transactionMomentum
+        - targetLayoutSupply
+        - targetLayoutScarcity
         - advice
         - hasMetric
         - sourceIds
@@ -1325,6 +1426,9 @@ components:
           type: string
         name:
           type: string
+        city:
+          type: string
+          nullable: true
         area:
           type: string
         targetLayout:
@@ -1341,6 +1445,14 @@ components:
         transactionMomentum:
           type: string
           enum: [unknown, weak, stable, strong]
+          nullable: true
+        targetLayoutSupply:
+          type: integer
+          minimum: 0
+          nullable: true
+        targetLayoutScarcity:
+          type: string
+          enum: [unknown, low, medium, high]
           nullable: true
         advice:
           type: string

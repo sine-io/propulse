@@ -15,9 +15,9 @@ func TestCalculateCollectionRunUsesLatestRunForProvenance(t *testing.T) {
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	inventoryAt := now.Add(-time.Hour)
 	repo := newMetricMemoryRepository()
-	repo.neighborhood = Neighborhood{ID: "neighborhood_1", TargetLayout: "三房"}
+	repo.neighborhood = Neighborhood{ID: "neighborhood_1"}
 	repo.latestRun = CompletedCollectionRun{ID: "run_latest", DataSourceID: "source_a", NeighborhoodID: "neighborhood_1", CollectedAt: now, Coverage: domainneighborhood.CoveragePartial}
-	repo.marketAggregate = MarketAggregate{CollectionRunID: "run_latest", InventoryCollectionRunID: strPtr("run_full"), SourceIDs: []string{"source_a"}, LatestObservedAt: now, InventoryCollectedAt: &inventoryAt, Coverage: domainneighborhood.CoveragePartial, ListedHomes: 8, PriceCutHomes: 1, AvgDaysOnMarket: floatPtr(30), ListingPriceMin: floatPtr(500), ListingPriceMax: floatPtr(600), TransactionPriceMin: floatPtr(480), TransactionPriceMax: floatPtr(550), TargetLayoutSupply: 3, ListingSampleCount: 8, TransactionSampleCount: 4, LastThirtyDayTransactionCount: 2, PrecedingSixtyDayTransactionCount: 2}
+	repo.marketAggregate = MarketAggregate{CollectionRunID: "run_latest", InventoryCollectionRunID: strPtr("run_full"), SourceIDs: []string{"source_a"}, LatestObservedAt: now, InventoryCollectedAt: &inventoryAt, Coverage: domainneighborhood.CoveragePartial, ListedHomes: 8, PriceCutHomes: 1, AvgDaysOnMarket: floatPtr(30), ListingPriceMin: floatPtr(500), ListingPriceMax: floatPtr(600), TransactionPriceMin: floatPtr(480), TransactionPriceMax: floatPtr(550), TargetLayoutSupplyByLayout: map[string]int{"三房": 3}, ListingSampleCount: 8, TransactionSampleCount: 4, LastThirtyDayTransactionCount: 2, PrecedingSixtyDayTransactionCount: 2}
 
 	err := NewServiceWithClock(repo, testMetricAlgorithmVersion, func() time.Time { return now }).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1"})
 	if err != nil {
@@ -37,15 +37,18 @@ func TestCalculateCollectionRunUsesLatestRunForProvenance(t *testing.T) {
 	if got.QualityState != domainneighborhood.MarketQualityLowConfidence {
 		t.Fatalf("QualityState = %q, want low_confidence", got.QualityState)
 	}
+	if got.TargetLayoutSupplyByLayout["三房"] != 3 {
+		t.Fatalf("layout supply = %#v", got.TargetLayoutSupplyByLayout)
+	}
 }
 
 func TestCalculateCollectionRunUsesLatestFullRunForInventory(t *testing.T) {
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	fullAt := now.Add(-24 * time.Hour)
 	repo := newMetricMemoryRepository()
-	repo.neighborhood = Neighborhood{ID: "neighborhood_1", TargetLayout: "三房"}
+	repo.neighborhood = Neighborhood{ID: "neighborhood_1"}
 	repo.completedRuns["partial_new"] = CompletedCollectionRun{ID: "partial_new", DataSourceID: "source_a", NeighborhoodID: "neighborhood_1", CollectedAt: now, Coverage: domainneighborhood.CoveragePartial}
-	repo.marketAggregate = MarketAggregate{CollectionRunID: "partial_new", InventoryCollectionRunID: strPtr("full_old"), SourceIDs: []string{"source_a"}, LatestObservedAt: now, InventoryCollectedAt: &fullAt, Coverage: domainneighborhood.CoveragePartial, ListedHomes: 11, PriceCutHomes: 2, AvgDaysOnMarket: floatPtr(41), ListingPriceMin: floatPtr(510), ListingPriceMax: floatPtr(650), TransactionPriceMin: floatPtr(500), TransactionPriceMax: floatPtr(620), TargetLayoutSupply: 6, ListingSampleCount: 11, TransactionSampleCount: 5, LastThirtyDayTransactionCount: 2, PrecedingSixtyDayTransactionCount: 3}
+	repo.marketAggregate = MarketAggregate{CollectionRunID: "partial_new", InventoryCollectionRunID: strPtr("full_old"), SourceIDs: []string{"source_a"}, LatestObservedAt: now, InventoryCollectedAt: &fullAt, Coverage: domainneighborhood.CoveragePartial, ListedHomes: 11, PriceCutHomes: 2, AvgDaysOnMarket: floatPtr(41), ListingPriceMin: floatPtr(510), ListingPriceMax: floatPtr(650), TransactionPriceMin: floatPtr(500), TransactionPriceMax: floatPtr(620), TargetLayoutSupplyByLayout: map[string]int{"三房": 6}, ListingSampleCount: 11, TransactionSampleCount: 5, LastThirtyDayTransactionCount: 2, PrecedingSixtyDayTransactionCount: 3}
 
 	if err := NewServiceWithClock(repo, testMetricAlgorithmVersion, func() time.Time { return now }).CalculateCollectionRun(context.Background(), CalculateCollectionRunCommand{NeighborhoodID: "neighborhood_1", CollectionRunID: "partial_new"}); err != nil {
 		t.Fatalf("CalculateCollectionRun() error = %v", err)
@@ -247,7 +250,7 @@ func sufficientMetricRepo() *memoryRepository {
 	now := fixedMetricClock()
 	inventoryAt := now.Add(-time.Hour)
 	repo := newMetricMemoryRepository()
-	repo.neighborhood = Neighborhood{ID: "neighborhood_1", TargetLayout: "三房"}
+	repo.neighborhood = Neighborhood{ID: "neighborhood_1"}
 	repo.completedRuns["run_1"] = CompletedCollectionRun{ID: "run_1", DataSourceID: "source_a", NeighborhoodID: "neighborhood_1", CollectedAt: now, Coverage: domainneighborhood.CoverageFull}
 	repo.marketAggregate = MarketAggregate{
 		CollectionRunID:                   "run_1",
@@ -263,7 +266,7 @@ func sufficientMetricRepo() *memoryRepository {
 		ListingPriceMax:                   floatPtr(600),
 		TransactionPriceMin:               floatPtr(480),
 		TransactionPriceMax:               floatPtr(550),
-		TargetLayoutSupply:                3,
+		TargetLayoutSupplyByLayout:        map[string]int{"三房": 3, "四房": 5},
 		ListingSampleCount:                8,
 		TransactionSampleCount:            5,
 		LastThirtyDayTransactionCount:     2,

@@ -34,6 +34,8 @@ func TestEmbeddedMigrationSetIsCompleteAndOrdered(t *testing.T) {
 		"000005_remove_legacy_demo_neighborhoods.up.sql",
 		"000006_versioned_metric_evidence.down.sql",
 		"000006_versioned_metric_evidence.up.sql",
+		"000007_watchlist_target_layout.down.sql",
+		"000007_watchlist_target_layout.up.sql",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("embedded migrations = %#v, want %#v", names, want)
@@ -78,6 +80,35 @@ func TestEmbeddedMigrationSetIsCompleteAndOrdered(t *testing.T) {
 	const stableUserDefault = "user_id TEXT NOT NULL DEFAULT 'propulse-user'"
 	if count := strings.Count(string(body), stableUserDefault); count != 2 {
 		t.Fatalf("initial schema has %d %q defaults, want 2", count, stableUserDefault)
+	}
+}
+
+func TestWatchlistTargetLayoutMigrationDoesNotInventCityOrLayout(t *testing.T) {
+	body, err := fs.ReadFile(FS, "000007_watchlist_target_layout.up.sql")
+	if err != nil {
+		t.Fatalf("ReadFile(version 7) error = %v", err)
+	}
+
+	for _, required := range []string{
+		"HAVING count(DISTINCT btrim(ds.city)) = 1",
+		"CREATE TABLE neighborhood_layouts",
+		"FROM listing_observations",
+		"FROM transaction_observations",
+		"ADD COLUMN target_layout TEXT",
+		"FOREIGN KEY (neighborhood_id, target_layout)",
+		"target_layout_supply_by_layout JSONB",
+		"jsonb_build_object",
+		"DROP COLUMN target_layout_supply",
+		"DROP COLUMN target_layout",
+	} {
+		if !strings.Contains(string(body), required) {
+			t.Fatalf("watchlist target migration is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"青枫", "默认城市", "默认户型"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("watchlist target migration contains inferred fallback %q", forbidden)
+		}
 	}
 }
 

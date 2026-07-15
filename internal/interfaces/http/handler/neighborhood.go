@@ -32,24 +32,37 @@ func NewNeighborhood(app NeighborhoodApplication) Neighborhood {
 }
 
 type createNeighborhoodRequest struct {
-	Name         string `json:"name"`
-	Area         string `json:"area"`
-	TargetLayout string `json:"targetLayout"`
+	Name             string   `json:"name"`
+	City             string   `json:"city"`
+	Area             string   `json:"area"`
+	AvailableLayouts []string `json:"availableLayouts"`
 }
 
 type neighborhoodResponse struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Area         string `json:"area"`
-	TargetLayout string `json:"targetLayout"`
-	CreatedAt    string `json:"createdAt,omitempty"`
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	City             *string  `json:"city"`
+	Area             string   `json:"area"`
+	AvailableLayouts []string `json:"availableLayouts"`
+	CreatedAt        string   `json:"createdAt,omitempty"`
 }
 
 type neighborhoodSearchResponse struct {
-	Items    []neighborhoodResponse `json:"items"`
-	Total    int                    `json:"total"`
-	Page     int                    `json:"page"`
-	PageSize int                    `json:"pageSize"`
+	Items    []neighborhoodResponse            `json:"items"`
+	Total    int                               `json:"total"`
+	Page     int                               `json:"page"`
+	PageSize int                               `json:"pageSize"`
+	Filters  neighborhoodSearchFiltersResponse `json:"filters"`
+}
+
+type neighborhoodSearchFiltersResponse struct {
+	Cities []string                         `json:"cities"`
+	Areas  []neighborhoodAreaFilterResponse `json:"areas"`
+}
+
+type neighborhoodAreaFilterResponse struct {
+	City string `json:"city"`
+	Area string `json:"area"`
 }
 
 type metricResponse struct {
@@ -70,6 +83,7 @@ type metricResponse struct {
 	TransactionPriceMax      *float64                               `json:"transactionPriceMax"`
 	TransactionMomentum      domainneighborhood.TransactionMomentum `json:"transactionMomentum"`
 	TransactionEvidence      *transactionMomentumEvidenceResponse   `json:"transactionEvidence"`
+	TargetLayout             string                                 `json:"targetLayout"`
 	TargetLayoutSupply       int                                    `json:"targetLayoutSupply"`
 	ListingSampleCount       int                                    `json:"listingSampleCount"`
 	TransactionSampleCount   int                                    `json:"transactionSampleCount"`
@@ -100,6 +114,7 @@ type transactionMomentumEvidenceResponse struct {
 type metricHistoryResponse struct {
 	Status           appneighborhood.MetricHistoryStatus `json:"status"`
 	NeighborhoodID   string                              `json:"neighborhoodId"`
+	TargetLayout     string                              `json:"targetLayout"`
 	AlgorithmVersion string                              `json:"algorithmVersion"`
 	Window           metricHistoryWindowResponse         `json:"window"`
 	Items            []metricHistoryPointResponse        `json:"items"`
@@ -149,6 +164,7 @@ type metricHistoryPointResponse struct {
 	PriceCutHomes          int                                    `json:"priceCutHomes"`
 	TransactionMomentum    domainneighborhood.TransactionMomentum `json:"transactionMomentum"`
 	TransactionEvidence    *transactionMomentumEvidenceResponse   `json:"transactionEvidence"`
+	TargetLayoutSupply     int                                    `json:"targetLayoutSupply"`
 	ListingSampleCount     int                                    `json:"listingSampleCount"`
 	TransactionSampleCount int                                    `json:"transactionSampleCount"`
 	Coverage               domainneighborhood.Coverage            `json:"coverage"`
@@ -166,19 +182,20 @@ func (h Neighborhood) CreateNeighborhood(c *gin.Context) {
 		return
 	}
 	request.Name = strings.TrimSpace(request.Name)
+	request.City = strings.TrimSpace(request.City)
 	request.Area = strings.TrimSpace(request.Area)
-	request.TargetLayout = strings.TrimSpace(request.TargetLayout)
-	if request.Name == "" || request.Area == "" || request.TargetLayout == "" {
-		writeError(c, http.StatusBadRequest, "invalid_request", "name, area, and targetLayout are required")
-		return
-	}
 
 	neighborhood, err := h.app.CreateNeighborhood(c.Request.Context(), appneighborhood.CreateNeighborhoodCommand{
-		Name:         request.Name,
-		Area:         request.Area,
-		TargetLayout: request.TargetLayout,
+		Name:             request.Name,
+		City:             request.City,
+		Area:             request.Area,
+		AvailableLayouts: request.AvailableLayouts,
 	})
 	if err != nil {
+		if errors.Is(err, appneighborhood.ErrInvalidNeighborhood) {
+			writeError(c, http.StatusBadRequest, "invalid_request", "name, city, area, and at least one available layout are required")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
@@ -200,6 +217,7 @@ func (h Neighborhood) SearchNeighborhoods(c *gin.Context) {
 
 	result, err := h.app.SearchNeighborhoods(c.Request.Context(), appneighborhood.SearchNeighborhoodsQuery{
 		Query:        strings.TrimSpace(c.Query("q")),
+		City:         strings.TrimSpace(c.Query("city")),
 		Area:         strings.TrimSpace(c.Query("area")),
 		TargetLayout: strings.TrimSpace(c.Query("targetLayout")),
 		Page:         page,
@@ -219,6 +237,7 @@ func (h Neighborhood) SearchNeighborhoods(c *gin.Context) {
 		Total:    result.Total,
 		Page:     result.Page,
 		PageSize: result.PageSize,
+		Filters:  newNeighborhoodSearchFiltersResponse(result.Filters),
 	})
 }
 
@@ -249,8 +268,15 @@ func (h Neighborhood) GetNeighborhood(c *gin.Context) {
 }
 
 func (h Neighborhood) GetMetrics(c *gin.Context) {
-	metric, err := h.app.LatestMetric(c.Request.Context(), appneighborhood.LatestMetricQuery{NeighborhoodID: c.Param("id")})
+	metric, err := h.app.LatestMetric(c.Request.Context(), appneighborhood.LatestMetricQuery{
+		NeighborhoodID: c.Param("id"),
+		TargetLayout:   strings.TrimSpace(c.Query("targetLayout")),
+	})
 	if err != nil {
+		if errors.Is(err, appneighborhood.ErrInvalidTargetLayout) {
+			writeError(c, http.StatusBadRequest, "invalid_target_layout", "targetLayout must belong to the neighborhood layout catalog")
+			return
+		}
 		if errors.Is(err, appneighborhood.ErrMetricNotFound) || errors.Is(err, appneighborhood.ErrNeighborhoodNotFound) {
 			writeError(c, http.StatusNotFound, "not_found", "neighborhood metric not found")
 			return
@@ -275,10 +301,15 @@ func (h Neighborhood) GetMetricHistory(c *gin.Context) {
 	}
 	result, err := h.app.MetricHistory(c.Request.Context(), appneighborhood.MetricHistoryQuery{
 		NeighborhoodID: c.Param("id"),
+		TargetLayout:   strings.TrimSpace(c.Query("targetLayout")),
 		From:           from,
 		To:             to,
 	})
 	if err != nil {
+		if errors.Is(err, appneighborhood.ErrInvalidTargetLayout) {
+			writeError(c, http.StatusBadRequest, "invalid_target_layout", "targetLayout must belong to the neighborhood layout catalog")
+			return
+		}
 		if errors.Is(err, appneighborhood.ErrNeighborhoodNotFound) {
 			writeError(c, http.StatusNotFound, "not_found", "neighborhood not found")
 			return
@@ -302,13 +333,25 @@ func parseOptionalRFC3339(raw string) (time.Time, error) {
 
 func newNeighborhoodResponse(neighborhood appneighborhood.Neighborhood) neighborhoodResponse {
 	response := neighborhoodResponse{
-		ID:           neighborhood.ID,
-		Name:         neighborhood.Name,
-		Area:         neighborhood.Area,
-		TargetLayout: neighborhood.TargetLayout,
+		ID:               neighborhood.ID,
+		Name:             neighborhood.Name,
+		City:             neighborhood.City,
+		Area:             neighborhood.Area,
+		AvailableLayouts: append([]string{}, neighborhood.AvailableLayouts...),
 	}
 	if !neighborhood.CreatedAt.IsZero() {
 		response.CreatedAt = neighborhood.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	return response
+}
+
+func newNeighborhoodSearchFiltersResponse(filters appneighborhood.NeighborhoodSearchFilters) neighborhoodSearchFiltersResponse {
+	response := neighborhoodSearchFiltersResponse{
+		Cities: append([]string{}, filters.Cities...),
+		Areas:  make([]neighborhoodAreaFilterResponse, 0, len(filters.Areas)),
+	}
+	for _, area := range filters.Areas {
+		response.Areas = append(response.Areas, neighborhoodAreaFilterResponse{City: area.City, Area: area.Area})
 	}
 	return response
 }
@@ -332,6 +375,7 @@ func newMetricResponse(metric appneighborhood.MetricWithSignal) metricResponse {
 		TransactionPriceMax:      metric.Metric.TransactionPriceMax,
 		TransactionMomentum:      metric.Metric.TransactionMomentum,
 		TransactionEvidence:      newTransactionMomentumEvidenceResponse(metric.Metric.TransactionEvidence),
+		TargetLayout:             metric.Metric.TargetLayout,
 		TargetLayoutSupply:       metric.Metric.TargetLayoutSupply,
 		ListingSampleCount:       metric.Metric.ListingSampleCount,
 		TransactionSampleCount:   metric.Metric.TransactionSampleCount,
@@ -369,6 +413,7 @@ func newMetricHistoryResponse(result appneighborhood.MetricHistoryResult) metric
 	response := metricHistoryResponse{
 		Status:           result.Status,
 		NeighborhoodID:   result.NeighborhoodID,
+		TargetLayout:     result.TargetLayout,
 		AlgorithmVersion: result.AlgorithmVersion,
 		Window: metricHistoryWindowResponse{
 			From: result.From.UTC().Format(time.RFC3339),
@@ -390,6 +435,7 @@ func newMetricHistoryResponse(result appneighborhood.MetricHistoryResult) metric
 			PriceCutHomes:          point.Metric.PriceCutHomes,
 			TransactionMomentum:    point.Metric.TransactionMomentum,
 			TransactionEvidence:    newTransactionMomentumEvidenceResponse(point.Metric.TransactionEvidence),
+			TargetLayoutSupply:     point.Metric.TargetLayoutSupply,
 			ListingSampleCount:     point.Metric.ListingSampleCount,
 			TransactionSampleCount: point.Metric.TransactionSampleCount,
 			Coverage:               point.Metric.Coverage,

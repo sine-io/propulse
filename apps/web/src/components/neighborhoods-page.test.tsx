@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { createElement } from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setAccessToken } from "@/lib/access-token";
 import {
+  addWatchlistItem,
   ApiError,
   getMetricHistory,
   getNeighborhood,
@@ -12,6 +13,7 @@ import {
   type MetricHistoryResponse,
   type Neighborhood,
   type NeighborhoodMetricResponse,
+  type NeighborhoodSearchResponse,
 } from "@/lib/api-client";
 
 import { NeighborhoodsPage } from "./neighborhoods-page";
@@ -20,6 +22,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();
   return {
     ...actual,
+    addWatchlistItem: vi.fn(),
     getMetricHistory: vi.fn(),
     getNeighborhood: vi.fn(),
     getNeighborhoodMetrics: vi.fn(),
@@ -28,15 +31,23 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
 });
 
 const neighborhoodID = "11111111-1111-4111-8111-111111111111";
-const secondNeighborhoodID = "22222222-2222-4222-8222-222222222222";
 const collectionRunID = "33333333-3333-4333-8333-333333333333";
 const dataSourceID = "44444444-4444-4444-8444-444444444444";
 
 const neighborhoodFixture: Neighborhood = {
   id: neighborhoodID,
   name: "接口花园",
-  area: "南城",
-  targetLayout: "两房",
+  city: "杭州",
+  area: "滨江",
+  availableLayouts: ["两房", "三房"],
+};
+
+const secondNeighborhoodFixture: Neighborhood = {
+  id: "22222222-2222-4222-8222-222222222222",
+  name: "海岸公寓",
+  city: "上海",
+  area: "浦东",
+  availableLayouts: ["一房"],
 };
 
 const transactionEvidence = {
@@ -66,6 +77,7 @@ const metricFixture: NeighborhoodMetricResponse = {
   transactionPriceMax: 545,
   transactionMomentum: "weak",
   transactionEvidence,
+  targetLayout: "两房",
   targetLayoutSupply: 7,
   listingSampleCount: 18,
   transactionSampleCount: 6,
@@ -104,6 +116,7 @@ function historyPoint(id: string, collectedAt: string, listedHomes: number): Met
     priceCutHomes: 2,
     transactionMomentum: "stable",
     transactionEvidence,
+    targetLayoutSupply: 7,
     listingSampleCount: listedHomes,
     transactionSampleCount: 6,
     coverage: "full",
@@ -118,6 +131,7 @@ function historyPoint(id: string, collectedAt: string, listedHomes: number): Met
 const historyFixture: MetricHistoryResponse = {
   status: "ready",
   neighborhoodId: neighborhoodID,
+  targetLayout: "两房",
   algorithmVersion: "market-metrics/test.1",
   window: { from: "2026-05-19T08:00:00Z", to: "2026-07-14T08:00:00Z" },
   items: [
@@ -126,125 +140,241 @@ const historyFixture: MetricHistoryResponse = {
   ],
 };
 
-describe("NeighborhoodsPage", () => {
+const catalogFixture: NeighborhoodSearchResponse = {
+  items: [neighborhoodFixture, secondNeighborhoodFixture],
+  total: 2,
+  page: 1,
+  pageSize: 100,
+  filters: {
+    cities: ["上海", "杭州"],
+    areas: [
+      { city: "上海", area: "浦东" },
+      { city: "杭州", area: "滨江" },
+    ],
+  },
+};
+
+describe("NeighborhoodsPage add flow", () => {
   beforeEach(() => {
+    vi.mocked(addWatchlistItem).mockReset();
     vi.mocked(getMetricHistory).mockReset();
-    vi.mocked(getNeighborhood).mockReset();
-    vi.mocked(getNeighborhoodMetrics).mockReset();
-    vi.mocked(searchNeighborhoods).mockReset();
-  });
-
-  it("shows a real search selector when no neighborhood ID is present", async () => {
-    vi.mocked(searchNeighborhoods).mockResolvedValueOnce({
-      items: [neighborhoodFixture], total: 1, page: 1, pageSize: 50,
+    vi.mocked(getNeighborhood).mockReset().mockImplementation(async (id) => {
+      if (id === neighborhoodID) return neighborhoodFixture;
+      if (id === secondNeighborhoodFixture.id) return secondNeighborhoodFixture;
+      throw new ApiError("not_found", "missing", 404);
     });
-
-    render(createElement(NeighborhoodsPage, { initialNeighborhoodId: "" }));
-
-    expect(await screen.findByRole("link", { name: /接口花园/ })).toHaveAttribute(
-      "href",
-      `/neighborhoods?id=${neighborhoodID}`,
-    );
-    expect(getNeighborhood).not.toHaveBeenCalled();
+    vi.mocked(getNeighborhoodMetrics).mockReset();
+    vi.mocked(searchNeighborhoods).mockReset().mockResolvedValue(catalogFixture);
+    window.sessionStorage.clear();
+    window.history.replaceState({}, "", "/neighborhoods");
   });
 
-  it("renders identity, latest metrics, backend advice, and real history", async () => {
-    mockReadyNeighborhood();
+  it("selects city, area, neighborhood, and layout, persists the URL, and submits the exact target", async () => {
+    setAccessToken("secret-token");
+    const navigate = vi.fn();
+    vi.mocked(addWatchlistItem).mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+      neighborhoodId: neighborhoodID,
+      targetLayout: "三房",
+      userId: "default-user",
+      createdAt: "2026-07-15T00:00:00Z",
+    });
+    render(<NeighborhoodsPage initialNeighborhoodId="" navigate={navigate} />);
 
-    render(createElement(NeighborhoodsPage, { initialNeighborhoodId: neighborhoodID }));
+    await selectTarget("杭州", "滨江", neighborhoodID, "三房");
+    expect(window.location.search).toContain("city=%E6%9D%AD%E5%B7%9E");
+    expect(window.location.search).toContain(`neighborhoodId=${neighborhoodID}`);
+    expect(window.location.search).toContain("targetLayout=%E4%B8%89%E6%88%BF");
+
+    fireEvent.click(screen.getByRole("button", { name: "加入观察池" }));
+    await waitFor(() => expect(addWatchlistItem).toHaveBeenCalledWith({
+      neighborhoodId: neighborhoodID,
+      targetLayout: "三房",
+    }));
+    expect(navigate).toHaveBeenCalledWith("/watchlist");
+  });
+
+  it("clears downstream selections when an upstream value changes", async () => {
+    render(<NeighborhoodsPage initialNeighborhoodId="" />);
+    await selectTarget("杭州", "滨江", neighborhoodID, "两房");
+
+    fireEvent.change(screen.getByLabelText("城市"), { target: { value: "上海" } });
+    expect(screen.getByLabelText("板块")).toHaveValue("");
+    expect(screen.getByLabelText("小区")).toHaveValue("");
+    expect(screen.getByLabelText("目标户型")).toHaveValue("");
+    expect(window.location.search).not.toContain("neighborhoodId");
+    expect(window.location.search).not.toContain("targetLayout");
+  });
+
+  it("restores selection from the URL and follows popstate changes", async () => {
+    window.history.replaceState({}, "", `/neighborhoods?city=%E6%9D%AD%E5%B7%9E&area=%E6%BB%A8%E6%B1%9F&q=%E6%8E%A5%E5%8F%A3&neighborhoodId=${neighborhoodID}&targetLayout=%E4%B8%A4%E6%88%BF`);
+    render(<NeighborhoodsPage initialNeighborhoodId="" />);
+
+    expect(await screen.findByLabelText("城市")).toHaveValue("杭州");
+    await waitFor(() => expect(screen.getByLabelText("目标户型")).toHaveValue("两房"));
+    expect(screen.getByLabelText("小区名称")).toHaveValue("接口");
+
+    window.history.pushState({}, "", "/neighborhoods?city=%E4%B8%8A%E6%B5%B7&area=%E6%B5%A6%E4%B8%9C");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(screen.getByLabelText("城市")).toHaveValue("上海"));
+    expect(screen.getByLabelText("板块")).toHaveValue("浦东");
+    expect(screen.getByLabelText("小区")).toHaveValue("");
+  });
+
+  it("reports and clears a stale layout restored from the URL", async () => {
+    window.history.replaceState({}, "", `/neighborhoods?city=%E6%9D%AD%E5%B7%9E&area=%E6%BB%A8%E6%B1%9F&neighborhoodId=${neighborhoodID}&targetLayout=%E4%BA%94%E6%88%BF`);
+    render(<NeighborhoodsPage initialNeighborhoodId="" />);
+
+    expect(await screen.findByText("原选择已失效")).toBeInTheDocument();
+    expect(screen.getByText("原目标户型已不在该小区目录中。")).toBeInTheDocument();
+    expect(screen.getByLabelText("目标户型")).toHaveValue("");
+    expect(window.location.search).not.toContain("targetLayout");
+  });
+
+  it("cancels without creating an item", async () => {
+    const navigate = vi.fn();
+    render(<NeighborhoodsPage initialNeighborhoodId="" navigate={navigate} />);
+    fireEvent.click(await screen.findByRole("button", { name: "取消" }));
+
+    expect(navigate).toHaveBeenCalledWith("/");
+    expect(addWatchlistItem).not.toHaveBeenCalled();
+  });
+
+  it("keeps the complete selection while locked and can submit after unlock", async () => {
+    const navigate = vi.fn();
+    vi.mocked(addWatchlistItem).mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+      neighborhoodId: neighborhoodID,
+      targetLayout: "两房",
+      userId: "default-user",
+      createdAt: "2026-07-15T00:00:00Z",
+    });
+    render(<NeighborhoodsPage initialNeighborhoodId="" navigate={navigate} />);
+    await selectTarget("杭州", "滨江", neighborhoodID, "两房");
+
+    fireEvent.click(screen.getByRole("button", { name: "加入观察池" }));
+    expect(await screen.findByText("个人空间尚未解锁，当前选择已保留。")).toBeInTheDocument();
+    expect(addWatchlistItem).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("目标户型")).toHaveValue("两房");
+
+    setAccessToken("secret-token");
+    fireEvent.click(await screen.findByRole("button", { name: "加入观察池" }));
+    await waitFor(() => expect(addWatchlistItem).toHaveBeenCalled());
+    expect(navigate).toHaveBeenCalledWith("/watchlist");
+  });
+
+  it("renders loading, empty, failed, and retry catalog states", async () => {
+    vi.mocked(searchNeighborhoods).mockReturnValueOnce(new Promise(() => undefined));
+    const { unmount } = render(<NeighborhoodsPage initialNeighborhoodId="" />);
+    expect(await screen.findByText("正在加载小区目录")).toBeInTheDocument();
+    unmount();
+
+    vi.mocked(searchNeighborhoods).mockReset()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(catalogFixture);
+    render(<NeighborhoodsPage initialNeighborhoodId="" />);
+    fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+    await waitFor(() => expect(screen.getByLabelText("城市")).not.toBeDisabled());
+    expect(screen.queryByText("小区搜索失败")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty result after valid city and area filters", async () => {
+    vi.mocked(searchNeighborhoods).mockResolvedValue({ ...catalogFixture, items: [], total: 0 });
+    render(<NeighborhoodsPage initialNeighborhoodId="" />);
+    fireEvent.change(await screen.findByLabelText("城市"), { target: { value: "杭州" } });
+    await waitFor(() => expect(screen.getByLabelText("板块")).not.toBeDisabled());
+    fireEvent.change(screen.getByLabelText("板块"), { target: { value: "滨江" } });
+
+    expect(await screen.findByText("没有匹配的小区")).toBeInTheDocument();
+  });
+
+  it("keeps the target on duplicate and failed submissions, then retries", async () => {
+    setAccessToken("secret-token");
+    vi.mocked(addWatchlistItem).mockRejectedValueOnce(new ApiError("watchlist_item_exists", "exists", 409));
+    const { unmount } = render(<NeighborhoodsPage initialNeighborhoodId="" />);
+    await selectTarget("杭州", "滨江", neighborhoodID, "两房");
+    fireEvent.click(screen.getByRole("button", { name: "加入观察池" }));
+    expect(await screen.findByText("该小区已在观察池中。")).toBeInTheDocument();
+    expect(screen.getByLabelText("目标户型")).toHaveValue("两房");
+    unmount();
+
+    window.history.replaceState({}, "", "/neighborhoods");
+    vi.mocked(addWatchlistItem).mockReset()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({
+        id: "77777777-7777-4777-8777-777777777777",
+        neighborhoodId: neighborhoodID,
+        targetLayout: "两房",
+        userId: "default-user",
+        createdAt: "2026-07-15T00:00:00Z",
+      });
+    const navigate = vi.fn();
+    render(<NeighborhoodsPage initialNeighborhoodId="" navigate={navigate} />);
+    await selectTarget("杭州", "滨江", neighborhoodID, "两房");
+    fireEvent.click(screen.getByRole("button", { name: "加入观察池" }));
+    expect(await screen.findByText("加入观察池失败，当前选择已保留。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重试加入" }));
+    await waitFor(() => expect(addWatchlistItem).toHaveBeenCalledTimes(2));
+    expect(navigate).toHaveBeenCalledWith("/watchlist");
+  });
+});
+
+describe("NeighborhoodsPage detail", () => {
+  beforeEach(() => {
+    vi.mocked(addWatchlistItem).mockReset();
+    vi.mocked(getNeighborhood).mockReset().mockResolvedValue(neighborhoodFixture);
+    vi.mocked(getNeighborhoodMetrics).mockReset().mockResolvedValue(metricFixture);
+    vi.mocked(getMetricHistory).mockReset().mockResolvedValue(historyFixture);
+    vi.mocked(searchNeighborhoods).mockReset();
+    window.sessionStorage.clear();
+    window.history.replaceState({}, "", `/neighborhoods?id=${neighborhoodID}&targetLayout=%E4%B8%A4%E6%88%BF`);
+  });
+
+  it("requests and renders metrics for the explicit detail layout", async () => {
+    render(<NeighborhoodsPage initialNeighborhoodId={neighborhoodID} />);
 
     expect(await screen.findByRole("heading", { name: "接口花园" })).toBeInTheDocument();
-    expect(screen.getByText("南城")).toBeInTheDocument();
-    expect(screen.getByText("520-610 万")).toBeInTheDocument();
-    expect(screen.getByText("使用真实成交区间校准报价。")).toBeInTheDocument();
-    expect(screen.getByLabelText("真实挂牌与降价批次趋势图")).toBeInTheDocument();
-    expect(screen.queryByText("带看转定率")).not.toBeInTheDocument();
-    expect(screen.queryByText("更新时间: 今天 10:30")).not.toBeInTheDocument();
+    expect(await screen.findByText("520-610 万")).toBeInTheDocument();
+    expect(getNeighborhoodMetrics).toHaveBeenCalledWith(neighborhoodID, "两房", expect.any(AbortSignal));
+    expect(getMetricHistory).toHaveBeenCalledWith(neighborhoodID, "两房", {}, expect.any(AbortSignal));
+    expect(screen.getByLabelText("目标户型")).toHaveValue("两房");
+    expect(screen.queryByText("降价提醒")).not.toBeInTheDocument();
   });
 
-  it("shows no metric without rendering zero values or a recommendation", async () => {
-    vi.mocked(getNeighborhood).mockResolvedValueOnce(neighborhoodFixture);
-    vi.mocked(getNeighborhoodMetrics).mockRejectedValueOnce(new ApiError("not_found", "missing", 404));
-    vi.mocked(getMetricHistory).mockResolvedValueOnce({ ...historyFixture, status: "empty", items: [] });
+  it("does not request metrics until a detail layout is selected", async () => {
+    window.history.replaceState({}, "", `/neighborhoods?id=${neighborhoodID}`);
+    render(<NeighborhoodsPage initialNeighborhoodId={neighborhoodID} />);
 
-    render(createElement(NeighborhoodsPage, { initialNeighborhoodId: neighborhoodID }));
+    expect(await screen.findByText("请选择目标户型")).toBeInTheDocument();
+    expect(getNeighborhoodMetrics).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("目标户型"), { target: { value: "三房" } });
+    await waitFor(() => expect(getNeighborhoodMetrics).toHaveBeenCalledWith(neighborhoodID, "三房", expect.any(AbortSignal)));
+    expect(window.location.search).toContain("targetLayout=%E4%B8%89%E6%88%BF");
+  });
+
+  it("shows no metric without synthetic zero values", async () => {
+    vi.mocked(getNeighborhoodMetrics).mockRejectedValueOnce(new ApiError("not_found", "missing", 404));
+    render(<NeighborhoodsPage initialNeighborhoodId={neighborhoodID} />);
 
     expect(await screen.findByText("该小区暂无市场指标")).toBeInTheDocument();
     expect(screen.queryByText("0 套")).not.toBeInTheDocument();
-    expect(screen.queryByText("适合砍价")).not.toBeInTheDocument();
-  });
-
-  it("marks stale and insufficient metrics without opening a buyer window", async () => {
-    mockReadyNeighborhood({
-      freshness: "stale",
-      qualityState: "low_confidence",
-      transactionMomentum: "unknown",
-      status: "数据不足",
-      advice: "等待补充数据。",
-      qualityWarnings: ["stale_data", "insufficient_transaction_samples"],
-    });
-
-    render(createElement(NeighborhoodsPage, { initialNeighborhoodId: neighborhoodID }));
-
-    expect(await screen.findByRole("heading", { name: "市场数据已陈旧" })).toBeInTheDocument();
-    expect(screen.getByText("数据不足")).toBeInTheDocument();
-    expect(screen.queryByText("买方窗口开启")).not.toBeInTheDocument();
-  });
-
-  it("keeps current metrics when only history fails and offers retry", async () => {
-    vi.mocked(getNeighborhood).mockResolvedValueOnce(neighborhoodFixture);
-    vi.mocked(getNeighborhoodMetrics).mockResolvedValueOnce(metricFixture);
-    vi.mocked(getMetricHistory).mockRejectedValueOnce(new Error("history offline"));
-
-    render(createElement(NeighborhoodsPage, { initialNeighborhoodId: neighborhoodID }));
-
-    expect(await screen.findByText("历史趋势读取失败")).toBeInTheDocument();
-    expect(screen.getByText("520-610 万")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
-  });
-
-  it("retries a failed core request", async () => {
-    vi.mocked(getNeighborhood)
-      .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce(neighborhoodFixture);
-    vi.mocked(getNeighborhoodMetrics)
-      .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce(metricFixture);
-    vi.mocked(getMetricHistory)
-      .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce(historyFixture);
-
-    render(createElement(NeighborhoodsPage, { initialNeighborhoodId: neighborhoodID }));
-    fireEvent.click(await screen.findByRole("button", { name: "重试" }));
-
-    expect(await screen.findByRole("heading", { name: "接口花园" })).toBeInTheDocument();
-    expect(screen.queryByText("小区数据读取失败")).not.toBeInTheDocument();
-  });
-
-  it("clears the previous neighborhood while a new ID is loading", async () => {
-    mockReadyNeighborhood();
-    const { rerender } = render(createElement(NeighborhoodsPage, { initialNeighborhoodId: neighborhoodID }));
-    expect(await screen.findByRole("heading", { name: "接口花园" })).toBeInTheDocument();
-
-    vi.mocked(getNeighborhood).mockReturnValueOnce(new Promise(() => undefined));
-    vi.mocked(getNeighborhoodMetrics).mockReturnValueOnce(new Promise(() => undefined));
-    vi.mocked(getMetricHistory).mockReturnValueOnce(new Promise(() => undefined));
-    rerender(createElement(NeighborhoodsPage, { initialNeighborhoodId: secondNeighborhoodID }));
-
-    expect(await screen.findByText("正在加载小区身份、指标与历史")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "接口花园" })).not.toBeInTheDocument();
   });
 
   it("rejects malformed IDs without making API requests", async () => {
-    render(createElement(NeighborhoodsPage, { initialNeighborhoodId: "not-a-uuid" }));
+    render(<NeighborhoodsPage initialNeighborhoodId="not-a-uuid" />);
 
     expect(await screen.findByText("找不到该小区")).toBeInTheDocument();
     expect(getNeighborhood).not.toHaveBeenCalled();
   });
 });
 
-function mockReadyNeighborhood(metricOverrides: Partial<NeighborhoodMetricResponse> = {}) {
-  vi.mocked(getNeighborhood).mockResolvedValueOnce(neighborhoodFixture);
-  vi.mocked(getNeighborhoodMetrics).mockResolvedValueOnce({ ...metricFixture, ...metricOverrides });
-  vi.mocked(getMetricHistory).mockResolvedValueOnce(historyFixture);
+async function selectTarget(city: string, area: string, neighborhoodId: string, targetLayout: string) {
+  fireEvent.change(await screen.findByLabelText("城市"), { target: { value: city } });
+  await waitFor(() => expect(screen.getByLabelText("板块")).not.toBeDisabled());
+  fireEvent.change(screen.getByLabelText("板块"), { target: { value: area } });
+  await waitFor(() => expect(screen.getByLabelText("小区")).not.toBeDisabled());
+  fireEvent.change(screen.getByLabelText("小区"), { target: { value: neighborhoodId } });
+  await waitFor(() => expect(screen.getByLabelText("目标户型")).not.toBeDisabled());
+  fireEvent.change(screen.getByLabelText("目标户型"), { target: { value: targetLayout } });
+  await waitFor(() => expect(screen.getByLabelText("目标户型")).toHaveValue(targetLayout));
 }

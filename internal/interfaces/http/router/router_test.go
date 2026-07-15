@@ -103,18 +103,18 @@ func TestInMemoryWatchlistListsItemsByInsertionOrder(t *testing.T) {
 	ctx := context.Background()
 
 	for _, input := range []appneighborhood.CreateNeighborhoodInput{
-		{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"},
-		{ID: "neighborhood_2", Name: "云栖苑", Area: "未来科技城", TargetLayout: "三房"},
-		{ID: "neighborhood_3", Name: "晓风印月", Area: "奥体", TargetLayout: "四房"},
+		{ID: "neighborhood_1", Name: "青枫花园", City: "杭州", Area: "滨江核心", AvailableLayouts: []string{"三房"}},
+		{ID: "neighborhood_2", Name: "云栖苑", City: "杭州", Area: "未来科技城", AvailableLayouts: []string{"三房"}},
+		{ID: "neighborhood_3", Name: "晓风印月", City: "杭州", Area: "奥体", AvailableLayouts: []string{"四房"}},
 	} {
 		if _, err := repo.CreateNeighborhood(ctx, input); err != nil {
 			t.Fatalf("CreateNeighborhood(%q) error = %v", input.ID, err)
 		}
 	}
 
-	for _, neighborhoodID := range []string{"neighborhood_2", "neighborhood_1", "neighborhood_3"} {
-		if _, err := repo.AddWatchlistItem(ctx, user.SingleUserID, neighborhoodID); err != nil {
-			t.Fatalf("AddWatchlistItem(%q) error = %v", neighborhoodID, err)
+	for _, item := range []struct{ neighborhoodID, targetLayout string }{{"neighborhood_2", "三房"}, {"neighborhood_1", "三房"}, {"neighborhood_3", "四房"}} {
+		if _, err := repo.AddWatchlistItem(ctx, user.SingleUserID, item.neighborhoodID, item.targetLayout); err != nil {
+			t.Fatalf("AddWatchlistItem(%q) error = %v", item.neighborhoodID, err)
 		}
 	}
 
@@ -406,11 +406,11 @@ func TestNeighborhoodAndWatchlistAPIRoutes(t *testing.T) {
 		status int
 		auth   bool
 	}{
-		{method: http.MethodPost, path: "/api/v1/neighborhoods", body: `{"name":"青枫花园","area":"滨江核心","targetLayout":"三房"}`, status: http.StatusCreated, auth: true},
+		{method: http.MethodPost, path: "/api/v1/neighborhoods", body: `{"name":"青枫花园","city":"杭州","area":"滨江核心","availableLayouts":["三房"]}`, status: http.StatusCreated, auth: true},
 		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1", status: http.StatusOK},
-		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1/metrics", status: http.StatusOK},
-		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1/metrics/history", status: http.StatusOK},
-		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{"neighborhoodId":"neighborhood_1"}`, status: http.StatusCreated, auth: true},
+		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1/metrics?targetLayout=三房", status: http.StatusOK},
+		{method: http.MethodGet, path: "/api/v1/neighborhoods/neighborhood_1/metrics/history?targetLayout=三房", status: http.StatusOK},
+		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{"neighborhoodId":"11111111-1111-4111-8111-111111111111","targetLayout":"三房"}`, status: http.StatusCreated, auth: true},
 		{method: http.MethodGet, path: "/api/v1/watchlist", status: http.StatusOK, auth: true},
 	} {
 		req := httptest.NewRequest(route.method, route.path, strings.NewReader(route.body))
@@ -491,8 +491,9 @@ func TestInjectedInMemoryApplicationsShareNeighborhoodStateWithCollectionImports
 
 	createNeighborhood := httptest.NewRequest(http.MethodPost, "/api/v1/neighborhoods", strings.NewReader(`{
 		"name": "青枫花园",
+		"city": "杭州",
 		"area": "滨江核心",
-		"targetLayout": "三房"
+		"availableLayouts": ["三房"]
 	}`))
 	createNeighborhood.Header.Set("Content-Type", "application/json")
 	createNeighborhood.Header.Set("Authorization", "Bearer secret-token")
@@ -553,10 +554,11 @@ func TestInMemoryCollectionRepositorySavesTrustedRunsInSharedMarketState(t *test
 	neighborhoods := newInMemoryNeighborhoodRepository(marketState)
 	repo := newInMemoryCollectionRepository(neighborhoods, marketState)
 	neighborhood, err := neighborhoods.CreateNeighborhood(ctx, appneighborhood.CreateNeighborhoodInput{
-		ID:           "neighborhood_1",
-		Name:         "青枫花园",
-		Area:         "滨江核心",
-		TargetLayout: "三房",
+		ID:               "neighborhood_1",
+		Name:             "青枫花园",
+		City:             "杭州",
+		Area:             "滨江核心",
+		AvailableLayouts: []string{"三房"},
 	})
 	if err != nil {
 		t.Fatalf("CreateNeighborhood() error = %v", err)
@@ -754,18 +756,18 @@ type stubNeighborhoodApplication struct {
 
 func (s *stubNeighborhoodApplication) CreateNeighborhood(_ context.Context, _ appneighborhood.CreateNeighborhoodCommand) (appneighborhood.Neighborhood, error) {
 	s.calls++
-	return appneighborhood.Neighborhood{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"}, nil
+	return appneighborhood.Neighborhood{ID: "neighborhood_1", Name: "青枫花园", City: memoryStringPtr("杭州"), Area: "滨江核心", AvailableLayouts: []string{"三房"}}, nil
 }
 
 func (s *stubNeighborhoodApplication) GetNeighborhood(_ context.Context, _ appneighborhood.GetNeighborhoodQuery) (appneighborhood.Neighborhood, error) {
 	s.calls++
-	return appneighborhood.Neighborhood{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"}, nil
+	return appneighborhood.Neighborhood{ID: "neighborhood_1", Name: "青枫花园", City: memoryStringPtr("杭州"), Area: "滨江核心", AvailableLayouts: []string{"三房"}}, nil
 }
 
 func (s *stubNeighborhoodApplication) SearchNeighborhoods(_ context.Context, _ appneighborhood.SearchNeighborhoodsQuery) (appneighborhood.SearchNeighborhoodsPage, error) {
 	s.calls++
 	return appneighborhood.SearchNeighborhoodsPage{
-		Items:    []appneighborhood.Neighborhood{{ID: "neighborhood_1", Name: "青枫花园", Area: "滨江核心", TargetLayout: "三房"}},
+		Items:    []appneighborhood.Neighborhood{{ID: "neighborhood_1", Name: "青枫花园", City: memoryStringPtr("杭州"), Area: "滨江核心", AvailableLayouts: []string{"三房"}}},
 		Total:    1,
 		Page:     1,
 		PageSize: 20,
@@ -797,7 +799,7 @@ func (s *stubNeighborhoodApplication) MetricHistory(_ context.Context, _ appneig
 
 func (s *stubNeighborhoodApplication) AddWatchlistItem(_ context.Context, _ appneighborhood.AddWatchlistItemCommand) (appneighborhood.WatchlistItem, error) {
 	s.calls++
-	return appneighborhood.WatchlistItem{ID: "watch_1", UserID: user.SingleUserID, NeighborhoodID: "neighborhood_1"}, nil
+	return appneighborhood.WatchlistItem{ID: "watch_1", UserID: user.SingleUserID, NeighborhoodID: "neighborhood_1", TargetLayout: "三房"}, nil
 }
 
 func (s *stubNeighborhoodApplication) ListWatchlist(_ context.Context, _ appneighborhood.ListWatchlistQuery) ([]appneighborhood.WatchlistItemSummary, error) {
