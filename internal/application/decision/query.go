@@ -18,6 +18,7 @@ var ErrMetricRequired = errors.New("metric required")
 var ErrMetricStale = errors.New("metric stale")
 var ErrMetricInsufficient = errors.New("metric insufficient")
 var ErrInvalidNeighborhoodID = errors.New("invalid neighborhood id")
+var ErrNeighborhoodNotWatched = errors.New("neighborhood not watched")
 
 type CapacityReader interface {
 	LatestCalculation(ctx context.Context, query appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error)
@@ -56,32 +57,37 @@ type GetActionWindowQuery struct {
 }
 
 func (s *Service) GetActionWindow(ctx context.Context, query GetActionWindowQuery) (ActionWindowResult, error) {
-	capacity, err := s.capacity.LatestCalculation(ctx, appcapacity.LatestCalculationQuery{UserID: s.userID})
+	requestedNeighborhoodID := strings.TrimSpace(query.NeighborhoodID)
+	if requestedNeighborhoodID == "" {
+		return ActionWindowResult{}, ErrWatchlistRequired
+	}
+	parsedNeighborhoodID, err := uuid.Parse(requestedNeighborhoodID)
 	if err != nil {
-		if errors.Is(err, appcapacity.ErrCalculationNotFound) {
-			return ActionWindowResult{}, ErrCapacityRequired
-		}
-		return ActionWindowResult{}, err
+		return ActionWindowResult{}, ErrInvalidNeighborhoodID
 	}
 
 	watchlist, err := s.neighborhood.ListWatchlist(ctx, appneighborhood.ListWatchlistQuery{UserID: s.userID})
 	if err != nil {
 		return ActionWindowResult{}, err
 	}
-
-	explicitNeighborhoodID := strings.TrimSpace(query.NeighborhoodID)
-	if explicitNeighborhoodID != "" {
-		if _, err := uuid.Parse(explicitNeighborhoodID); err != nil {
-			return ActionWindowResult{}, ErrInvalidNeighborhoodID
+	neighborhoodID := parsedNeighborhoodID.String()
+	isWatched := false
+	for _, item := range watchlist {
+		if item.NeighborhoodID == neighborhoodID {
+			isWatched = true
+			break
 		}
 	}
-
-	neighborhoodID := explicitNeighborhoodID
-	if neighborhoodID == "" && len(watchlist) > 0 {
-		neighborhoodID = watchlist[0].NeighborhoodID
+	if !isWatched {
+		return ActionWindowResult{}, ErrNeighborhoodNotWatched
 	}
-	if neighborhoodID == "" {
-		return ActionWindowResult{}, ErrWatchlistRequired
+
+	capacity, err := s.capacity.LatestCalculation(ctx, appcapacity.LatestCalculationQuery{UserID: s.userID})
+	if err != nil {
+		if errors.Is(err, appcapacity.ErrCalculationNotFound) {
+			return ActionWindowResult{}, ErrCapacityRequired
+		}
+		return ActionWindowResult{}, err
 	}
 
 	metric, err := s.neighborhood.LatestMetric(ctx, appneighborhood.LatestMetricQuery{NeighborhoodID: neighborhoodID})

@@ -434,7 +434,7 @@ func TestDecisionActionWindowRoute(t *testing.T) {
 		AccessToken:         "secret-token",
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/decision/action-window", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/decision/action-window?neighborhoodId=11111111-1111-1111-1111-111111111111", nil)
 	req.Header.Set("Authorization", "Bearer secret-token")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)

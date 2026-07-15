@@ -36,8 +36,12 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
   };
 });
 
+const actionTargetNeighborhoodID = "11111111-1111-1111-1111-111111111111";
+const actionAlternativeNeighborhoodID = "99999999-9999-4999-8999-999999999999";
+
 beforeEach(() => {
 	window.sessionStorage.clear();
+	window.history.replaceState({}, "", "/");
   vi.mocked(createCapacityCalculation).mockReset();
   vi.mocked(getActionWindow).mockReset();
   vi.mocked(getCapacityAssumptions).mockReset();
@@ -406,13 +410,105 @@ describe("CalculatorPanel", () => {
 });
 
 describe("ActionWindowPage", () => {
+	beforeEach(() => {
+		window.history.replaceState(
+			{},
+			"",
+			`/action-window?neighborhoodId=${actionTargetNeighborhoodID}`,
+		);
+		vi.mocked(getWatchlist).mockResolvedValue({
+			items: [
+				watchlistFixture({
+					id: "watchlist_action_target",
+					neighborhoodId: actionTargetNeighborhoodID,
+					name: "接口花园",
+					area: "滨江核心",
+					targetLayout: "三房",
+				}),
+				watchlistFixture({
+					id: "watchlist_action_alternative",
+					neighborhoodId: actionAlternativeNeighborhoodID,
+					name: "真实备选花园",
+					area: "西城",
+					targetLayout: "三房",
+				}),
+			],
+		});
+	});
+
 	it("stays locked without requesting private decision data", async () => {
 		render(createElement(ActionWindowPage));
 
 		expect(await screen.findByText("出手窗口已锁定")).toBeInTheDocument();
+		expect(getWatchlist).not.toHaveBeenCalled();
 		expect(getActionWindow).not.toHaveBeenCalled();
 		expect(screen.queryByText("当前核心策略")).not.toBeInTheDocument();
 		expect(screen.queryByText("决策因子与证据")).not.toBeInTheDocument();
+	});
+
+	it("shows an add-target entry for an empty watchlist without requesting a recommendation", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getWatchlist).mockResolvedValueOnce({ items: [] });
+		render(createElement(ActionWindowPage));
+
+		expect(await screen.findByText("观察池暂无小区")).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "添加目标小区" })).toHaveAttribute("href", "/neighborhoods");
+		expect(getActionWindow).not.toHaveBeenCalled();
+	});
+
+	it("requires an explicit first selection even when watched neighborhoods exist", async () => {
+		setAccessToken("secret-token");
+		window.history.replaceState({}, "", "/action-window");
+		render(createElement(ActionWindowPage));
+
+		expect(await screen.findByText("选择目标小区")).toBeInTheDocument();
+		expect(screen.getByRole("combobox", { name: "目标小区" })).toHaveValue("");
+		expect(getActionWindow).not.toHaveBeenCalled();
+	});
+
+	it("persists a selection in the URL and requests that neighborhood", async () => {
+		setAccessToken("secret-token");
+		window.history.replaceState({}, "", "/action-window");
+		vi.mocked(getActionWindow).mockReturnValueOnce(new Promise(() => undefined));
+		render(createElement(ActionWindowPage));
+
+		const selector = await screen.findByRole("combobox", { name: "目标小区" });
+		fireEvent.change(selector, { target: { value: actionAlternativeNeighborhoodID } });
+
+		await waitFor(() => {
+			expect(getActionWindow).toHaveBeenCalledWith(
+				actionAlternativeNeighborhoodID,
+				expect.any(AbortSignal),
+			);
+		});
+		expect(window.location.search).toBe(`?neighborhoodId=${actionAlternativeNeighborhoodID}`);
+		expect(await screen.findByText("正在检查出手窗口")).toBeInTheDocument();
+	});
+
+	it("restores a valid URL selection on refresh", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getActionWindow).mockReturnValueOnce(new Promise(() => undefined));
+		render(createElement(ActionWindowPage));
+
+		expect(await screen.findByRole("combobox", { name: "目标小区" })).toHaveValue(actionTargetNeighborhoodID);
+		await waitFor(() => expect(getActionWindow).toHaveBeenCalledWith(
+			actionTargetNeighborhoodID,
+			expect.any(AbortSignal),
+		));
+	});
+
+	it("requires reselection when the URL target is no longer watched", async () => {
+		setAccessToken("secret-token");
+		window.history.replaceState(
+			{},
+			"",
+			"/action-window?neighborhoodId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		);
+		render(createElement(ActionWindowPage));
+
+		expect(await screen.findByText("目标已不在观察池")).toBeInTheDocument();
+		expect(screen.getByRole("combobox", { name: "目标小区" })).toHaveValue("");
+		expect(getActionWindow).not.toHaveBeenCalled();
 	});
 
 	it("renders a loading state without stale recommendation content", async () => {
@@ -437,7 +533,7 @@ describe("ActionWindowPage", () => {
 
 	it.each([
 		["capacity_required", "需要换房测算", "/calculator"],
-		["watchlist_required", "需要目标小区", "/neighborhoods"],
+		["watchlist_required", "需要目标小区", "/watchlist"],
 		["metric_required", "需要市场数据", "/data"],
 		["metric_stale", "指标已经过期", "/data"],
 		["metric_insufficient", "市场数据不足", "/data"],
@@ -471,6 +567,76 @@ describe("ActionWindowPage", () => {
 
 		expect(await screen.findByText("建议等")).toBeInTheDocument();
 		expect(screen.queryByText("决策服务不可用")).not.toBeInTheDocument();
+	});
+
+	it("clears the previous recommendation and checklist while switching neighborhoods", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getActionWindow)
+			.mockResolvedValueOnce(actionWindowFixture({
+				summary: "第一小区建议仍在展示。",
+				checklist: ["第一小区核验项。"],
+			}))
+			.mockReturnValueOnce(new Promise(() => undefined));
+		render(createElement(ActionWindowPage));
+
+		const checkbox = await screen.findByRole("checkbox", { name: "第一小区核验项。" });
+		fireEvent.click(checkbox);
+		expect(checkbox).toBeChecked();
+
+		fireEvent.change(screen.getByRole("combobox", { name: "目标小区" }), {
+			target: { value: actionAlternativeNeighborhoodID },
+		});
+
+		expect(await screen.findByText("正在检查出手窗口")).toBeInTheDocument();
+		expect(screen.queryByText("第一小区建议仍在展示。")).not.toBeInTheDocument();
+		expect(screen.queryByRole("checkbox", { name: "第一小区核验项。" })).not.toBeInTheDocument();
+		await waitFor(() => expect(getActionWindow).toHaveBeenLastCalledWith(
+			actionAlternativeNeighborhoodID,
+			expect.any(AbortSignal),
+		));
+	});
+
+	it("follows browser history selections without retaining the previous target", async () => {
+		setAccessToken("secret-token");
+		vi.mocked(getActionWindow)
+			.mockResolvedValueOnce(actionWindowFixture({ summary: "第一目标建议。" }))
+			.mockResolvedValueOnce(actionWindowFixture({
+				summary: "第二目标建议。",
+				target: {
+					neighborhoodId: actionAlternativeNeighborhoodID,
+					name: "真实备选花园",
+					area: "西城",
+					targetLayout: "三房",
+				},
+			}))
+			.mockResolvedValueOnce(actionWindowFixture({ summary: "返回第一目标建议。" }));
+		render(createElement(ActionWindowPage));
+
+		expect(await screen.findByText("第一目标建议。")).toBeInTheDocument();
+		act(() => {
+			window.history.pushState(
+				{},
+				"",
+				`/action-window?neighborhoodId=${actionAlternativeNeighborhoodID}`,
+			);
+			window.dispatchEvent(new PopStateEvent("popstate"));
+		});
+		expect(await screen.findByText("第二目标建议。")).toBeInTheDocument();
+		expect(screen.queryByText("第一目标建议。")).not.toBeInTheDocument();
+
+		act(() => {
+			window.history.replaceState(
+				{},
+				"",
+				`/action-window?neighborhoodId=${actionTargetNeighborhoodID}`,
+			);
+			window.dispatchEvent(new PopStateEvent("popstate"));
+		});
+		expect(await screen.findByText("返回第一目标建议。")).toBeInTheDocument();
+		expect(getActionWindow).toHaveBeenLastCalledWith(
+			actionTargetNeighborhoodID,
+			expect.any(AbortSignal),
+		);
 	});
 
   it("renders API action window recommendations", async () => {
@@ -530,6 +696,14 @@ describe("ActionWindowPage", () => {
     expect(screen.queryByText(/已添加 2 个/)).not.toBeInTheDocument();
     expect(screen.getByText("确认贷款批复。")).toBeInTheDocument();
     expect(screen.getByText("不要因为稀缺而突破预算。")).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "接口花园出手窗口" })).toBeInTheDocument();
+		expect(screen.getByRole("option", { name: "接口花园 · 三房", selected: true })).toBeInTheDocument();
+		expect(screen.getAllByText(/指标采集/).length).toBeGreaterThanOrEqual(2);
+		expect(screen.getByText(/挂牌 42 \/ 成交 5/)).toHaveTextContent("2026");
+		expect(getActionWindow).toHaveBeenCalledWith(
+			actionTargetNeighborhoodID,
+			expect.any(AbortSignal),
+		);
   });
 
   it("renders an unknown alternative without inventing comparison values", async () => {

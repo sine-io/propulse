@@ -87,10 +87,10 @@ describe("api-client", () => {
         }),
       );
 
-    await getActionWindow(signal);
+    await getActionWindow("11111111-1111-1111-1111-111111111111", signal);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/decision/action-window",
+      "/api/v1/decision/action-window?neighborhoodId=11111111-1111-1111-1111-111111111111",
       { signal },
     );
   });
@@ -187,11 +187,11 @@ describe("api-client", () => {
       ),
     );
 
-    await expect(getActionWindow()).rejects.toMatchObject({
+		await expect(getActionWindow("11111111-1111-1111-1111-111111111111")).rejects.toMatchObject({
       code: "capacity_required",
       message: "create a capacity calculation before requesting an action window",
     });
-    await expect(getActionWindow()).rejects.toBeInstanceOf(ApiError);
+		await expect(getActionWindow("11111111-1111-1111-1111-111111111111")).rejects.toBeInstanceOf(ApiError);
   });
 
   it("reads protected data sources with the session token", async () => {
