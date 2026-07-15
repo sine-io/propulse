@@ -111,6 +111,13 @@ make verify
 sudo docker compose up --build
 ```
 
+Compose 默认只把 HTTP、PostgreSQL 和 Redis 端口绑定到
+`127.0.0.1`。可在 `.env` 中通过 `PROPULSE_HTTP_PORT`、
+`PROPULSE_POSTGRES_PORT` 和 `PROPULSE_REDIS_PORT` 调整宿主机端口。
+容器固定命名为 `propulse`、`propulse-worker`、
+`propulse-scheduler`、`propulse-migrate`、`propulse-postgres` 和
+`propulse-redis`，并统一加入 `propulse-network`。
+
 服务启动后可分别检查进程健康状态和依赖就绪状态：
 
 ```bash
@@ -118,12 +125,19 @@ curl http://127.0.0.1:8317/healthz
 curl http://127.0.0.1:8317/readyz
 ```
 
-Compose 会为个人与管理 API 设置 `PROPULSE_ACCESS_TOKEN=local-access-token`。调用受保护接口时需要传入 bearer token，例如读取个人关注列表：
+未在 `.env` 中配置时，Compose 会为个人与管理 API 设置
+`PROPULSE_ACCESS_TOKEN=local-access-token`。调用受保护接口时需要传入
+实际生效的 bearer token，例如读取个人关注列表：
 
 ```bash
+ACCESS_TOKEN="$(sudo docker compose exec -T propulse printenv PROPULSE_ACCESS_TOKEN)"
 curl http://127.0.0.1:8317/api/v1/watchlist \
-  -H "Authorization: Bearer local-access-token"
+  -H "Authorization: Bearer ${ACCESS_TOKEN}"
 ```
+
+PostgreSQL 和 Redis 数据分别保存在 `propulse-postgres-data` 和
+`propulse-redis-data` 命名卷中。普通 `sudo docker compose down` 会保留数据；
+需要彻底重置本地数据时执行 `sudo docker compose down -v`。
 
 嵌入式网页不会把令牌编译进静态文件。打开网页后使用顶部的“解锁”入口输入令牌；令牌只保存在当前浏览器会话中。
 

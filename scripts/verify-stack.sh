@@ -6,22 +6,26 @@ cd "$ROOT_DIR"
 
 sudo docker compose up --build -d
 
+API_ADDRESS="$(sudo docker compose port propulse 8080)"
+BASE_URL="http://${API_ADDRESS}"
+ACCESS_TOKEN="$(sudo docker compose exec -T propulse printenv PROPULSE_ACCESS_TOKEN | tr -d '\r\n')"
+
 for _ in $(seq 1 30); do
   if curl -fsS --connect-timeout 1 --max-time 2 \
-    http://127.0.0.1:8317/readyz >/dev/null; then
+    "${BASE_URL}/readyz" >/dev/null; then
     break
   fi
   sleep 1
 done
 
 curl -fsS --connect-timeout 1 --max-time 2 \
-  http://127.0.0.1:8317/healthz >/dev/null
+  "${BASE_URL}/healthz" >/dev/null
 curl -fsS --connect-timeout 1 --max-time 2 \
-  http://127.0.0.1:8317/readyz >/dev/null
+  "${BASE_URL}/readyz" >/dev/null
 curl -fsS --connect-timeout 1 --max-time 2 \
-  -H "Authorization: Bearer local-access-token" \
-  http://127.0.0.1:8317/api/v1/watchlist >/dev/null
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  "${BASE_URL}/api/v1/watchlist" >/dev/null
 
-PROPULSE_E2E_BASE_URL=http://127.0.0.1:8317 \
-PROPULSE_E2E_ACCESS_TOKEN=local-access-token \
+PROPULSE_E2E_BASE_URL="${BASE_URL}" \
+PROPULSE_E2E_ACCESS_TOKEN="${ACCESS_TOKEN}" \
 go test ./internal/platform/app -run TestE2ESmoke -v
