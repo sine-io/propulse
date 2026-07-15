@@ -55,7 +55,6 @@ export function ActionWindowPage() {
   const [recommendationState, setRecommendationState] = useState<RecommendationState>("idle");
   const [recommendation, setRecommendation] = useState<ActionWindowResponse>();
   const [blocked, setBlocked] = useState<BlockedState>();
-  const [checkedItems, setCheckedItems] = useState<string[]>([]);
   const [watchlistRequestVersion, setWatchlistRequestVersion] = useState(0);
   const [recommendationRequestVersion, setRecommendationRequestVersion] = useState(0);
 
@@ -76,7 +75,6 @@ export function ActionWindowPage() {
       setSelectedNeighborhoodID(readNeighborhoodIDFromURL());
       setRecommendation(undefined);
       setBlocked(undefined);
-      setCheckedItems([]);
       setRejectedNeighborhoodID(undefined);
       setRecommendationState("idle");
       setRecommendationRequestVersion((version) => version + 1);
@@ -92,7 +90,6 @@ export function ActionWindowPage() {
       setWatchlistState("idle");
       setRecommendation(undefined);
       setBlocked(undefined);
-      setCheckedItems([]);
       setRecommendationState("idle");
       return;
     }
@@ -103,7 +100,6 @@ export function ActionWindowPage() {
     setWatchlistState("loading");
     setRecommendation(undefined);
     setBlocked(undefined);
-    setCheckedItems([]);
     setRecommendationState("idle");
     getWatchlist(controller.signal)
       .then((response) => {
@@ -140,7 +136,6 @@ export function ActionWindowPage() {
     let active = true;
     setRecommendation(undefined);
     setBlocked(undefined);
-    setCheckedItems([]);
     setRecommendationState("loading");
     getActionWindow(selectedNeighborhoodID, controller.signal)
       .then((response) => {
@@ -155,7 +150,6 @@ export function ActionWindowPage() {
           return;
         }
         setRecommendation(response);
-        setCheckedItems([]);
         setRecommendationState("ready");
       })
       .catch((error: unknown) => {
@@ -197,18 +191,9 @@ export function ActionWindowPage() {
     window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
     setRecommendation(undefined);
     setBlocked(undefined);
-    setCheckedItems([]);
     setRejectedNeighborhoodID(undefined);
     setRecommendationState("idle");
     setSelectedNeighborhoodID(neighborhoodID);
-  };
-
-  const toggleChecklistItem = (item: string) => {
-    setCheckedItems((current) =>
-      current.includes(item)
-        ? current.filter((value) => value !== item)
-        : [...current, item],
-    );
   };
 
   const displayedTarget = hasValidSelection
@@ -420,33 +405,29 @@ export function ActionWindowPage() {
 
           <AlternativeComparisonSection comparison={recommendation.alternativeComparison} />
 
-          <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="bg-slate-900 p-6 text-white shadow-sm">
-              <h3 className="mb-4 flex items-center text-lg font-bold">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <section
+              aria-labelledby="action-checklist-heading"
+              className="bg-slate-900 p-6 text-white shadow-sm"
+            >
+              <h3 id="action-checklist-heading" className="mb-4 flex items-center text-lg font-bold">
                 <CheckCircle aria-hidden="true" className="h-5 w-5" />
                 <span className="ml-2">行动清单</span>
               </h3>
-              <ul className="space-y-3 text-sm text-slate-200">
-                {recommendation.checklist.map((item) => {
-                  const checked = checkedItems.includes(item);
-                  return (
-                    <li key={item}>
-                      <label className="flex cursor-pointer items-start gap-3">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleChecklistItem(item)}
-                          className="mt-0.5 h-4 w-4 flex-none rounded border-slate-500 bg-slate-800 text-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-                        />
-                        <span className={checked ? "text-slate-400 line-through" : undefined}>{item}</span>
-                      </label>
-                    </li>
-                  );
-                })}
+              <ul aria-labelledby="action-checklist-heading" className="space-y-3 text-sm text-slate-200">
+                {recommendation.checklist.map((item) => (
+                  <li key={item} className="flex items-start gap-3">
+                    <CheckCircle
+                      aria-hidden="true"
+                      className="mt-0.5 h-4 w-4 flex-none text-emerald-400"
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
               </ul>
-            </div>
+            </section>
 
-            <div className="border border-rose-200 bg-rose-50 p-6">
+            <section className="border border-rose-200 bg-rose-50 p-6">
               <h3 className="mb-4 flex items-center text-lg font-bold text-rose-900">
                 <AlertTriangle aria-hidden="true" className="h-5 w-5" />
                 <span className="ml-2">风险警示</span>
@@ -459,8 +440,8 @@ export function ActionWindowPage() {
                   </li>
                 ))}
               </ul>
-            </div>
-          </section>
+            </section>
+          </div>
         </>
       ) : null}
     </main>
