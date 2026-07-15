@@ -606,9 +606,7 @@ describe("ActionWindowPage", () => {
 			.mockReturnValueOnce(new Promise(() => undefined));
 		render(createElement(ActionWindowPage));
 
-		const checkbox = await screen.findByRole("checkbox", { name: "第一小区核验项。" });
-		fireEvent.click(checkbox);
-		expect(checkbox).toBeChecked();
+		expect(await screen.findByText("第一小区核验项。")).toBeInTheDocument();
 
 		fireEvent.change(screen.getByRole("combobox", { name: "目标小区" }), {
 			target: { value: actionAlternativeNeighborhoodID },
@@ -616,7 +614,7 @@ describe("ActionWindowPage", () => {
 
 		expect(await screen.findByText("正在检查出手窗口")).toBeInTheDocument();
 		expect(screen.queryByText("第一小区建议仍在展示。")).not.toBeInTheDocument();
-		expect(screen.queryByRole("checkbox", { name: "第一小区核验项。" })).not.toBeInTheDocument();
+		expect(screen.queryByText("第一小区核验项。")).not.toBeInTheDocument();
 		await waitFor(() => expect(getActionWindow).toHaveBeenLastCalledWith(
 			actionAlternativeNeighborhoodID,
 			expect.any(AbortSignal),
@@ -783,7 +781,7 @@ describe("ActionWindowPage", () => {
     expect(screen.queryByText("0 万元")).not.toBeInTheDocument();
   });
 
-  it("lets the user tick off checklist items (ACTION-005)", async () => {
+  it("renders the action checklist as a non-interactive list (ACTION-005)", async () => {
 	setAccessToken("secret-token");
     vi.mocked(getActionWindow).mockResolvedValueOnce(actionWindowFixture({
       action: "出手",
@@ -794,10 +792,19 @@ describe("ActionWindowPage", () => {
     }));
     render(createElement(ActionWindowPage));
 
-    const checkbox = await screen.findByRole("checkbox", { name: "确认贷款批复。" });
-    expect(checkbox).not.toBeChecked();
-    fireEvent.click(checkbox);
-    expect(checkbox).toBeChecked();
+    const checklist = await screen.findByRole("list", { name: "行动清单" });
+    const items = within(checklist).getAllByRole("listitem");
+
+    expect(items).toHaveLength(2);
+    expect(within(checklist).getByText("确认贷款批复。")).toBeInTheDocument();
+    expect(within(checklist).getByText("准备谈价底线。")).toBeInTheDocument();
+    expect(within(checklist).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(checklist).queryByRole("button")).not.toBeInTheDocument();
+    for (const item of items) {
+      expect(item).not.toHaveAttribute("tabindex");
+      expect(item).not.toHaveAttribute("role", "button");
+      expect(item.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    }
   });
 });
 
