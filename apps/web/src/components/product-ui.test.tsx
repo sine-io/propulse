@@ -19,6 +19,7 @@ import {
   type CapacityAssumptionsResponse,
   type WatchlistItem,
 } from "@/lib/api-client";
+import { decisionTemplates } from "@/lib/template-catalog";
 import { AppHeader } from "./app-header";
 import { ActionWindowPage } from "./action-window-page";
 import { CalculatorPanel } from "./calculator-panel";
@@ -995,6 +996,7 @@ describe("WatchlistPage", () => {
 
 		expect(await screen.findByText("观察池已锁定")).toBeInTheDocument();
 		expect(getWatchlist).not.toHaveBeenCalled();
+		expect(screen.getByRole("button", { name: "解锁后可导出" })).toBeDisabled();
 		expect(screen.queryByText("观察小区")).not.toBeInTheDocument();
 	});
 
@@ -1004,6 +1006,7 @@ describe("WatchlistPage", () => {
 		render(createElement(WatchlistPage));
 
 		expect(await screen.findByText("正在加载观察池")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "观察池加载中" })).toBeDisabled();
 		expect(screen.queryByText("观察小区")).not.toBeInTheDocument();
 		expect(screen.queryByRole("article")).not.toBeInTheDocument();
 	});
@@ -1012,8 +1015,8 @@ describe("WatchlistPage", () => {
 		setAccessToken("secret-token");
 		render(createElement(WatchlistPage));
 
-		expect(screen.getByText("导出本周报表")).toBeInTheDocument();
 		expect(await screen.findByText("观察池读取失败")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "数据读取失败" })).toBeDisabled();
 		expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
 		expect(screen.queryByText("观察小区")).not.toBeInTheDocument();
 		expect(
@@ -1024,29 +1027,41 @@ describe("WatchlistPage", () => {
 
   it("renders API watchlist items when available", async () => {
     setAccessToken("secret-token");
-    vi.mocked(getWatchlist).mockResolvedValueOnce({
-      items: [
-        watchlistFixture({
-          id: "watchlist_1",
-          neighborhoodId: "neighborhood_api",
-          name: "接口花园",
-          area: "南城",
-          targetLayout: "两房",
-          status: "重点看",
-          listedHomes: 18,
-          priceCutHomes: 6,
-          transactionMomentum: "strong",
-          advice: "API 返回的重点建议。",
-        }),
-      ],
+    const downloadReport = vi.fn(() => "propulse-watchlist-2026-07-13.csv");
+    const item = watchlistFixture({
+      id: "watchlist_1",
+      neighborhoodId: "neighborhood_api",
+      name: "接口花园",
+      area: "南城",
+      targetLayout: "两房",
+      status: "重点看",
+      listedHomes: 18,
+      priceCutHomes: 6,
+      transactionMomentum: "strong",
+      advice: "API 返回的重点建议。",
     });
-    render(createElement(WatchlistPage));
+    vi.mocked(getWatchlist).mockResolvedValueOnce({
+      items: [item],
+    });
+    render(<WatchlistPage downloadReport={downloadReport} />);
 
     expect(await screen.findByRole("heading", { name: "接口花园" })).toBeInTheDocument();
     expect(screen.getByText("18 套")).toBeInTheDocument();
     expect(
       screen.getByText((content) => content.includes("API 返回的重点建议。")),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "导出本周 CSV" }));
+    expect(downloadReport).toHaveBeenCalledWith([item]);
+    expect(screen.getByText("propulse-watchlist-2026-07-13.csv 已开始下载。")).toBeInTheDocument();
+  });
+
+  it("shows a visible error when CSV download setup fails", async () => {
+    setAccessToken("secret-token");
+    vi.mocked(getWatchlist).mockResolvedValueOnce({ items: [watchlistFixture()] });
+    render(<WatchlistPage downloadReport={() => { throw new Error("blob unavailable"); }} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "导出本周 CSV" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("CSV 导出失败，请重试。");
   });
 
   it("renders an empty watchlist state for a successful empty API response", async () => {
@@ -1062,6 +1077,7 @@ describe("WatchlistPage", () => {
 
     expect(screen.getAllByText("0")).toHaveLength(5);
     expect(screen.getByText("观察池暂无小区")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "暂无数据可导出" })).toBeDisabled();
     expect(
       screen.queryByRole("heading", { name: "云澜府 城东新区 · 四房" }),
     ).not.toBeInTheDocument();
@@ -1252,24 +1268,37 @@ describe("TemplatesPage", () => {
     }
   });
 
-  it("copies the template structure to the clipboard (TEMPLATE-001)", async () => {
+  it("copies every complete, versioned template to the clipboard (TEMPLATE-001)", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     render(createElement(TemplatesPage));
 
-    const [firstCopyButton] = screen.getAllByRole("button", {
-      name: "复制模板结构",
-    });
-    fireEvent.click(firstCopyButton);
+    for (const [index, template] of decisionTemplates.entries()) {
+      const card = screen.getByRole("heading", { name: template.title }).closest("article");
+      expect(card).not.toBeNull();
+      fireEvent.click(within(card!).getByRole("button", { name: "复制模板结构" }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(index + 1));
+      const copied = writeText.mock.calls[index]?.[0] as string;
+      expect(copied).toContain(`propulse-template id="${template.id}" version="${template.version}"`);
+      expect(copied).toContain(`## ${template.sections[0].title}`);
+      expect(copied).toContain(`- ${template.sections.at(-1)?.fields.at(-1)}：`);
+      expect(within(card!).getByRole("status")).toHaveTextContent(
+        `${template.title} ${template.version} 已复制到剪贴板。`,
+      );
+    }
 
-    await waitFor(() => {
-      expect(writeText).toHaveBeenCalledTimes(1);
-    });
-    const copied = writeText.mock.calls[0][0] as string;
-    expect(copied).toContain("# 换房预算表");
-    expect(copied).toContain("- 现金：");
-    expect(await screen.findByText("已复制到剪贴板")).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
 
+  it("announces clipboard failures accessibly", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("permission denied"));
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(createElement(TemplatesPage));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "复制模板结构" })[0]);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "换房预算表 复制失败，请检查剪贴板权限后重试。",
+    );
     vi.unstubAllGlobals();
   });
 });
