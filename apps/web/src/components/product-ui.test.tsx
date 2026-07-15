@@ -19,6 +19,7 @@ import {
   type CapacityAssumptionsResponse,
   type WatchlistItem,
 } from "@/lib/api-client";
+import { methodArticles } from "@/lib/method-articles";
 import { decisionTemplates } from "@/lib/template-catalog";
 import { AppHeader } from "./app-header";
 import { ActionWindowPage } from "./action-window-page";
@@ -315,15 +316,28 @@ describe("CalculatorPanel", () => {
     expect(screen.getByLabelText("交易税费（万）")).toBeInTheDocument();
   });
 
-  it("links the method cards to a real, keyboard-reachable page", async () => {
-    // CALC-007：方法卡片是真实链接而非假 <article>。
+  it("links each method card to its exact keyboard-reachable article", async () => {
     render(createElement(CalculatorPanel));
 	await screen.findByLabelText("年利率（%）");
 
-    const link = screen.getByRole("link", {
+    const monthlyPaymentLink = screen.getByRole("link", {
       name: /为什么月供安全线比总价更重要/,
     });
-    expect(link).toHaveAttribute("href", "/methods");
+    const oldHomeDelayLink = screen.getByRole("link", {
+      name: /旧房迟迟卖不掉怎么办/,
+    });
+
+    expect(monthlyPaymentLink).toHaveAttribute("href", "/methods/monthly-payment-safety");
+    expect(oldHomeDelayLink).toHaveAttribute("href", "/methods/old-home-sale-delay");
+    expect(monthlyPaymentLink.tagName).toBe("A");
+    expect(oldHomeDelayLink.tagName).toBe("A");
+    expect(monthlyPaymentLink.tabIndex).toBe(0);
+    expect(oldHomeDelayLink.tabIndex).toBe(0);
+
+    monthlyPaymentLink.focus();
+    expect(document.activeElement).toBe(monthlyPaymentLink);
+    oldHomeDelayLink.focus();
+    expect(document.activeElement).toBe(oldHomeDelayLink);
   });
 
   it("submits current loan and city policy parameters on every calculation", async () => {
@@ -951,41 +965,62 @@ function betterAlternativeComparisonFixture(): ActionWindowResponse["alternative
 }
 
 describe("MethodsPage", () => {
-  it("matches the reference methodology article structure", () => {
+  it("renders the default article with the complete methodology structure", () => {
     render(createElement(MethodsPage));
 
     expect(screen.getByText("问题场景目录")).toBeInTheDocument();
-    expect(screen.getByText("✕")).toBeInTheDocument();
-    expect(screen.queryByText("x")).not.toBeInTheDocument();
+    expect(screen.getByText("真实问题")).toBeInTheDocument();
     expect(screen.getByText("常见误判")).toBeInTheDocument();
+    expect(screen.getByText("正确判断")).toBeInTheDocument();
     expect(screen.getByText("你需要盯住的关键指标")).toBeInTheDocument();
+    expect(screen.getByText("示例（仅用于说明判断过程）")).toBeInTheDocument();
+    expect(screen.getByText("行动建议")).toBeInTheDocument();
     expect(screen.getByText("前往目标小区实践")).toBeInTheDocument();
   });
 
-  it("does not fake navigation for topics without content (METHOD-001)", () => {
+  it("uses real article links and marks only the default article as current", () => {
     render(createElement(MethodsPage));
 
-    // 已完成的主题是真实锚点。
-    expect(
-      screen.getByRole("link", { name: "挂牌变多但成交弱，说明什么？" }),
-    ).toHaveAttribute("href", "#main-method");
-    // 未完成主题不再是假链接，且明确标注即将上线。
-    expect(
-      screen.queryByRole("link", { name: /为什么不能只看挂牌均价/ }),
-    ).not.toBeInTheDocument();
-    expect(screen.getAllByText("即将上线")).toHaveLength(5);
+    for (const [index, article] of methodArticles.entries()) {
+      const link = screen.getByRole("link", { name: article.title });
+      expect(link).toHaveAttribute("href", `/methods/${article.slug}`);
+      if (index === 0) {
+        expect(link).toHaveAttribute("aria-current", "page");
+      } else {
+        expect(link).not.toHaveAttribute("aria-current");
+      }
+    }
+    expect(screen.queryByText("即将上线")).not.toBeInTheDocument();
   });
 
-  it("replaces fixed magnitudes with qualitative wording and shows provenance (METHOD-002)", () => {
+  it("keeps the selected article, heading, body, and active navigation in sync", () => {
+    for (const article of methodArticles) {
+      const view = render(createElement(MethodsPage, { article }));
+
+      expect(screen.getByRole("heading", { level: 2, name: article.title })).toBeInTheDocument();
+      expect(screen.getByText(article.realQuestion)).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: article.title })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(screen.getByRole("link", { name: article.title })).toHaveAttribute(
+        "href",
+        `/methods/${article.slug}`,
+      );
+
+      view.unmount();
+    }
+  });
+
+  it("shows rule provenance without fixed price or bargaining promises", () => {
     render(createElement(MethodsPage));
 
-    // 固定幅度承诺已去除。
     expect(screen.queryByText(/超过 20%/)).not.toBeInTheDocument();
     expect(screen.queryByText(/砍 3%-5%/)).not.toBeInTheDocument();
-    // 来源/适用范围与版本可见。
     expect(screen.getByText("方法适用范围与来源")).toBeInTheDocument();
     expect(screen.getByText(/规则版本 2026.07.14/)).toBeInTheDocument();
-    expect(screen.getByText("适用范围")).toBeInTheDocument();
+    expect(screen.getByText("本文适用范围")).toBeInTheDocument();
+    expect(screen.getByText("规则适用范围")).toBeInTheDocument();
     expect(screen.getByText("来源")).toBeInTheDocument();
   });
 });

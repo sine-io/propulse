@@ -322,8 +322,8 @@ export function CalculatorPanel() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <MethodLink href="/methods" title="为什么月供安全线比总价更重要？" description="了解现金流断裂的风险" />
-          <MethodLink href="/methods" title="旧房迟迟卖不掉怎么办？" description="学会测算“底线成交价”" />
+          <MethodLink href="/methods/monthly-payment-safety" title="为什么月供安全线比总价更重要？" description="了解现金流断裂的风险" />
+          <MethodLink href="/methods/old-home-sale-delay" title="旧房迟迟卖不掉怎么办？" description="学会测算“底线成交价”" />
         </div>
       </section>
     </div>

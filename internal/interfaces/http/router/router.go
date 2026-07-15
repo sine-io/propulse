@@ -38,14 +38,21 @@ type Dependencies struct {
 }
 
 var frontendRoutes = map[string]string{
-	"/":              "index.html",
-	"/calculator":    "calculator.html",
-	"/data":          "data.html",
-	"/watchlist":     "watchlist.html",
-	"/action-window": "action-window.html",
-	"/neighborhoods": "neighborhoods.html",
-	"/methods":       "methods.html",
-	"/templates":     "templates.html",
+	"/":                                      "index.html",
+	"/calculator":                            "calculator.html",
+	"/data":                                  "data.html",
+	"/watchlist":                             "watchlist.html",
+	"/action-window":                         "action-window.html",
+	"/neighborhoods":                         "neighborhoods.html",
+	"/methods":                               "methods.html",
+	"/methods/listings-up-transactions-weak": "methods/listings-up-transactions-weak.html",
+	"/methods/asking-price-vs-transactions":  "methods/asking-price-vs-transactions.html",
+	"/methods/buyer-window":                  "methods/buyer-window.html",
+	"/methods/more-price-cuts":               "methods/more-price-cuts.html",
+	"/methods/upgrade-price-gap":             "methods/upgrade-price-gap.html",
+	"/methods/monthly-payment-safety":        "methods/monthly-payment-safety.html",
+	"/methods/old-home-sale-delay":           "methods/old-home-sale-delay.html",
+	"/templates":                             "templates.html",
 }
 
 func New(deps Dependencies) (*gin.Engine, error) {
