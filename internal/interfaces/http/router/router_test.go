@@ -308,7 +308,24 @@ func TestFrontendRoutesServeEmbeddedHTML(t *testing.T) {
 		StaticFS: webembed.Embedded(),
 	})
 
-	for _, path := range []string{"/", "/calculator", "/data", "/data/imports/33333333-3333-3333-3333-333333333333", "/watchlist", "/action-window", "/neighborhoods", "/methods", "/templates"} {
+	for _, path := range []string{
+		"/",
+		"/calculator",
+		"/data",
+		"/data/imports/33333333-3333-3333-3333-333333333333",
+		"/watchlist",
+		"/action-window",
+		"/neighborhoods",
+		"/methods",
+		"/methods/listings-up-transactions-weak",
+		"/methods/asking-price-vs-transactions",
+		"/methods/buyer-window",
+		"/methods/more-price-cuts",
+		"/methods/upgrade-price-gap",
+		"/methods/monthly-payment-safety",
+		"/methods/old-home-sale-delay",
+		"/templates",
+	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)

@@ -1,188 +1,241 @@
+import {
+  ArrowRight,
+  BarChart3,
+  CheckCircle2,
+  CircleAlert,
+  ClipboardCheck,
+  Lightbulb,
+  ListChecks,
+  Target,
+} from "lucide-react";
 import Link from "next/link";
 
+import {
+  buildMethodPath,
+  defaultMethodArticle,
+  methodArticles,
+  type MethodArticle,
+} from "@/lib/method-articles";
 import { methodRuleMeta } from "@/lib/method-rules";
 
-// 目录只对已完成的文章开放跳转；其余主题标注为即将上线，不再假装可点击（METHOD-001）。
-const topics: Array<{ title: string; available: boolean }> = [
-  { title: "挂牌变多但成交弱，说明什么？", available: true },
-  { title: "为什么不能只看挂牌均价？", available: false },
-  { title: "什么是真正的“买方窗口”？", available: false },
-  { title: "降价房源变多，一定会大跌吗？", available: false },
-  { title: "改善换房为什么要看新旧差？", available: false },
-  { title: "为什么月供安全线比总价重要？", available: false },
-];
+interface MethodsPageProps {
+  article?: MethodArticle;
+}
 
-export function MethodsPage() {
+export function MethodsPage({ article = defaultMethodArticle }: MethodsPageProps) {
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <section className="mx-auto mb-8 max-w-2xl text-center">
+      <header className="mx-auto mb-8 max-w-3xl text-center">
         <h1 className="text-3xl font-bold text-slate-900">
           不是死记术语，而是学会判断
         </h1>
         <p className="mt-3 text-slate-500">
-          每一个判断方法都对应一个真实的买房难题。掌握底层逻辑，你就不再需要听信中介的涨跌预测。
+          从真实购房问题出发，核对家庭边界、市场证据和数据质量，再决定下一步行动。
         </p>
-      </section>
+      </header>
 
-      <section className="flex flex-col gap-8 md:flex-row">
-        <aside className="w-full md:w-1/3 lg:w-1/4">
-          <div className="sticky top-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex flex-col gap-8 md:flex-row md:items-start">
+        <aside className="w-full shrink-0 md:sticky md:top-6 md:w-1/3 lg:w-1/4">
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
             <h2 className="border-b border-slate-100 bg-slate-50 p-4 font-semibold text-slate-800">
               问题场景目录
             </h2>
-            <nav className="text-sm font-medium text-slate-600" aria-label="问题场景目录">
-              {topics.map((topic) =>
-                topic.available ? (
-                  <a
-                    key={topic.title}
-                    href="#main-method"
-                    aria-current="page"
-                    className="block border-l-4 border-blue-600 bg-blue-50 px-4 py-3 text-blue-700 transition-colors"
+            <nav className="text-sm font-medium" aria-label="问题场景目录">
+              {methodArticles.map((topic) => {
+                const isCurrent = topic.slug === article.slug;
+                return (
+                  <Link
+                    key={topic.slug}
+                    href={buildMethodPath(topic.slug)}
+                    aria-current={isCurrent ? "page" : undefined}
+                    className={`block border-l-4 px-4 py-3 leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
+                      isCurrent
+                        ? "border-blue-600 bg-blue-50 text-blue-800"
+                        : "border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    }`}
                   >
                     {topic.title}
-                  </a>
-                ) : (
-                  <span
-                    key={topic.title}
-                    aria-disabled="true"
-                    className="flex items-center justify-between gap-2 border-l-4 border-transparent px-4 py-3 text-slate-400"
-                  >
-                    <span>{topic.title}</span>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-400">
-                      即将上线
-                    </span>
-                  </span>
-                ),
-              )}
+                  </Link>
+                );
+              })}
             </nav>
           </div>
         </aside>
 
-        <div className="w-full space-y-6 md:w-2/3 lg:w-3/4">
-          <article
-            id="main-method"
-            className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
-          >
-            <h2 className="mb-6 text-2xl font-bold text-slate-900">
-              挂牌变多但成交弱，说明什么？
-            </h2>
+        <div className="min-w-0 flex-1">
+          <article className="space-y-8 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+            <header className="border-b border-slate-200 pb-6">
+              <p className="mb-2 text-sm font-semibold text-blue-700">购房判断方法</p>
+              <h2 className="text-2xl font-bold leading-9 text-slate-900">
+                {article.title}
+              </h2>
+            </header>
 
-            <div className="space-y-8">
-              <section>
-                <h3 className="mb-2 flex items-center font-bold text-rose-600">
-                  <span className="mr-2 flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-sm">
-                    ✕
-                  </span>
+            <section aria-labelledby="real-question-heading">
+              <h3
+                id="real-question-heading"
+                className="mb-3 flex items-center gap-2 font-bold text-slate-900"
+              >
+                <Target aria-hidden="true" className="h-5 w-5 text-blue-600" />
+                真实问题
+              </h3>
+              <p className="leading-7 text-slate-700">{article.realQuestion}</p>
+            </section>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <section aria-labelledby="common-mistake-heading">
+                <h3
+                  id="common-mistake-heading"
+                  className="mb-3 flex items-center gap-2 font-bold text-rose-700"
+                >
+                  <CircleAlert aria-hidden="true" className="h-5 w-5" />
                   常见误判
                 </h3>
-                <p className="rounded-lg border border-slate-100 bg-slate-50 p-3 italic text-slate-600">
-                  “小区挂牌量越来越多了，供大于求，房价肯定马上要暴跌，我再等等。”
+                <p className="h-full border-l-4 border-rose-200 bg-rose-50 p-4 leading-7 text-slate-700">
+                  {article.commonMistake}
                 </p>
               </section>
 
-              <section>
-                <h3 className="mb-2 flex items-center font-bold text-emerald-600">
-                  <span className="mr-2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-sm">
-                    ✓
-                  </span>
-                  正确看法
+              <section aria-labelledby="correct-judgment-heading">
+                <h3
+                  id="correct-judgment-heading"
+                  className="mb-3 flex items-center gap-2 font-bold text-emerald-700"
+                >
+                  <CheckCircle2 aria-hidden="true" className="h-5 w-5" />
+                  正确判断
                 </h3>
-                <p className="leading-relaxed text-slate-700">
-                  单纯看挂牌量增加是没有意义的，必须要结合
-                  <strong className="text-slate-900">成交量</strong>
-                  一起看。如果挂牌持续增加，但成交量没有同步放大（甚至萎缩），这意味着
-                  <strong className="bg-blue-100 px-1 text-blue-800">
-                    库存积压严重，房东的竞争加剧
-                  </strong>
-                  。这时候，部分急缺资金的房东为了成交，会率先打破价格僵局，你的议价空间（砍价余地）被打开了。
-                </p>
-              </section>
-
-              <section>
-                <h3 className="mb-3 border-b border-slate-200 pb-2 font-bold text-slate-800">
-                  你需要盯住的关键指标
-                </h3>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-lg border border-slate-100 bg-white p-3">
-                    <p className="text-sm font-semibold text-slate-800">在售套数增幅</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      连续多周持续增加，比单周波动更能说明供应转松。
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-slate-100 bg-white p-3">
-                    <p className="text-sm font-semibold text-slate-800">降价房源占比</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      明显偏高且仍在上升，说明房东预期开始松动。
-                    </p>
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-xl border border-blue-100 bg-blue-50 p-5">
-                <h3 className="mb-2 font-bold text-blue-900">
-                  你应该怎么用这个知识？
-                </h3>
-                <p className="text-sm leading-relaxed text-blue-800">
-                  当在你的目标小区看到这个信号时：
-                  <br />
-                  1. <strong className="text-blue-900">开始看房：</strong>{" "}
-                  因为房源多，你有充分的挑选余地。
-                  <br />
-                  2. <strong className="text-blue-900">不急下定：</strong>{" "}
-                  不要怕被别人抢走，耐心挑瑕疵。
-                  <br />
-                  3. <strong className="text-blue-900">大胆砍价：</strong>{" "}
-                  专挑挂牌时间长、有过降价记录的房源，以近期成交低位为锚点小幅试探底线。
-                </p>
-              </section>
-
-              <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="font-bold text-slate-800">方法适用范围与来源</h3>
-                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
-                    规则版本 {methodRuleMeta.version}
-                  </span>
-                </div>
-                <dl className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                  <div>
-                    <dt className="font-semibold text-slate-700">适用范围</dt>
-                    <dd className="mt-0.5">{methodRuleMeta.applicableScope}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-semibold text-slate-700">样本要求</dt>
-                    <dd className="mt-0.5">{methodRuleMeta.sampleRequirement}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-semibold text-slate-700">来源</dt>
-                    <dd className="mt-0.5">{methodRuleMeta.source}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-semibold text-slate-700">局限</dt>
-                    <dd className="mt-0.5">{methodRuleMeta.limitation}</dd>
-                  </div>
-                </dl>
-                <p className="mt-3 text-xs text-slate-400">
-                  更新时间 {methodRuleMeta.updatedAt}，生效日期 {methodRuleMeta.effectiveDate}；
-                  方法规则与测算规则共用同一版本方案。
+                <p className="h-full border-l-4 border-emerald-200 bg-emerald-50 p-4 leading-7 text-slate-700">
+                  {article.correctJudgment}
                 </p>
               </section>
             </div>
+
+            <section aria-labelledby="key-metrics-heading">
+              <h3
+                id="key-metrics-heading"
+                className="mb-3 flex items-center gap-2 font-bold text-slate-900"
+              >
+                <BarChart3 aria-hidden="true" className="h-5 w-5 text-blue-600" />
+                你需要盯住的关键指标
+              </h3>
+              <ul className="divide-y divide-slate-100 border-y border-slate-200">
+                {article.keyMetrics.map((metric) => (
+                  <li
+                    key={metric.name}
+                    className="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
+                  >
+                    <span className="font-semibold text-slate-800">{metric.name}</span>
+                    <span className="text-sm leading-6 text-slate-600">{metric.usage}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section
+              aria-labelledby="method-example-heading"
+              className="rounded-lg border border-blue-100 bg-blue-50 p-5"
+            >
+              <h3
+                id="method-example-heading"
+                className="mb-3 flex items-center gap-2 font-bold text-blue-900"
+              >
+                <Lightbulb aria-hidden="true" className="h-5 w-5" />
+                示例（仅用于说明判断过程）
+              </h3>
+              <dl className="space-y-3 text-sm leading-6 text-blue-950">
+                <div>
+                  <dt className="font-semibold">情境</dt>
+                  <dd>{article.example.situation}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold">判断</dt>
+                  <dd>{article.example.interpretation}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section aria-labelledby="method-actions-heading">
+              <h3
+                id="method-actions-heading"
+                className="mb-3 flex items-center gap-2 font-bold text-slate-900"
+              >
+                <ListChecks aria-hidden="true" className="h-5 w-5 text-blue-600" />
+                行动建议
+              </h3>
+              <ol className="space-y-3">
+                {article.actions.map((action, index) => (
+                  <li key={action} className="flex gap-3 text-sm leading-6 text-slate-700">
+                    <span
+                      aria-hidden="true"
+                      className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white"
+                    >
+                      {index + 1}
+                    </span>
+                    <span>{action}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+
+            <section
+              aria-labelledby="method-provenance-heading"
+              className="rounded-lg border border-slate-200 bg-slate-50 p-5"
+            >
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <h3
+                  id="method-provenance-heading"
+                  className="flex items-center gap-2 font-bold text-slate-800"
+                >
+                  <ClipboardCheck aria-hidden="true" className="h-5 w-5" />
+                  方法适用范围与来源
+                </h3>
+                <span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700">
+                  规则版本 {methodRuleMeta.version}
+                </span>
+              </div>
+              <dl className="grid gap-4 text-sm text-slate-600 sm:grid-cols-2">
+                <div>
+                  <dt className="font-semibold text-slate-800">本文适用范围</dt>
+                  <dd className="mt-1 leading-6">{article.applicableScope}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-slate-800">规则适用范围</dt>
+                  <dd className="mt-1 leading-6">{methodRuleMeta.applicableScope}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-slate-800">样本要求</dt>
+                  <dd className="mt-1 leading-6">{methodRuleMeta.sampleRequirement}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-slate-800">来源</dt>
+                  <dd className="mt-1 leading-6">{methodRuleMeta.source}</dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold text-slate-800">局限</dt>
+                  <dd className="mt-1 leading-6">{methodRuleMeta.limitation}</dd>
+                </div>
+              </dl>
+              <p className="mt-4 text-xs leading-5 text-slate-500">
+                更新时间 {methodRuleMeta.updatedAt}，生效日期 {methodRuleMeta.effectiveDate}；方法规则与测算规则共用同一版本方案。
+              </p>
+            </section>
           </article>
 
-          <section className="rounded-2xl bg-slate-900 p-6 text-center text-white">
-            <h3 className="mb-2 font-bold">学以致用：本周复盘练习</h3>
-            <p className="mb-4 text-sm text-slate-400">
-              去你的目标小区详情页，记录本周的挂牌和成交变化，写下你的行动判断。
+          <section className="mt-6 rounded-lg bg-slate-900 p-6 text-center text-white">
+            <h3 className="font-bold">用目标小区的真实数据练习判断</h3>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-300">
+              查看最新批次、来源和质量状态，再把本文方法转化为自己的观察与行动依据。
             </p>
             <Link
               href="/neighborhoods"
-              className="inline-flex rounded-lg bg-white px-6 py-2 font-medium text-slate-900 transition-colors hover:bg-slate-100"
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white px-5 py-2 font-medium text-slate-900 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
               前往目标小区实践
+              <ArrowRight aria-hidden="true" className="h-4 w-4" />
             </Link>
           </section>
         </div>
-      </section>
+      </div>
     </main>
   );
 }
