@@ -24,37 +24,36 @@ type Repository interface {
 }
 
 type Neighborhood struct {
-	ID           string
-	TargetLayout string
+	ID string
 }
 
 type MetricSnapshot struct {
-	ID                       string
-	NeighborhoodID           string
-	CollectionRunID          string
-	AlgorithmVersion         string
-	InventoryCollectionRunID *string
-	SourceIDs                []string
-	LatestObservedAt         time.Time
-	ListedHomes              int
-	PriceCutHomes            int
-	AvgDaysOnMarket          *float64
-	ListingPriceMin          *float64
-	ListingPriceMax          *float64
-	TransactionPriceMin      *float64
-	TransactionPriceMax      *float64
-	TransactionMomentum      domainneighborhood.TransactionMomentum
-	TransactionEvidence      *domainneighborhood.TransactionMomentumEvidence
-	TargetLayoutSupply       int
-	ListingSampleCount       int
-	TransactionSampleCount   int
-	Coverage                 domainneighborhood.Coverage
-	Freshness                domainneighborhood.Freshness
-	InventoryCollectedAt     *time.Time
-	ListedHomesChangePct     *float64
-	QualityWarnings          []domainneighborhood.QualityWarning
-	QualityState             domainneighborhood.MarketQualityState
-	CalculatedAt             time.Time
+	ID                         string
+	NeighborhoodID             string
+	CollectionRunID            string
+	AlgorithmVersion           string
+	InventoryCollectionRunID   *string
+	SourceIDs                  []string
+	LatestObservedAt           time.Time
+	ListedHomes                int
+	PriceCutHomes              int
+	AvgDaysOnMarket            *float64
+	ListingPriceMin            *float64
+	ListingPriceMax            *float64
+	TransactionPriceMin        *float64
+	TransactionPriceMax        *float64
+	TransactionMomentum        domainneighborhood.TransactionMomentum
+	TransactionEvidence        *domainneighborhood.TransactionMomentumEvidence
+	TargetLayoutSupplyByLayout map[string]int
+	ListingSampleCount         int
+	TransactionSampleCount     int
+	Coverage                   domainneighborhood.Coverage
+	Freshness                  domainneighborhood.Freshness
+	InventoryCollectedAt       *time.Time
+	ListedHomesChangePct       *float64
+	QualityWarnings            []domainneighborhood.QualityWarning
+	QualityState               domainneighborhood.MarketQualityState
+	CalculatedAt               time.Time
 }
 
 type CalculateCollectionRunCommand struct {
@@ -65,7 +64,6 @@ type CalculateCollectionRunCommand struct {
 type AggregateMarketParams struct {
 	NeighborhoodID string
 	TriggerRunID   string
-	TargetLayout   string
 }
 
 type CompletedCollectionRun struct {
@@ -90,7 +88,7 @@ type MarketAggregate struct {
 	ListingPriceMax                   *float64
 	TransactionPriceMin               *float64
 	TransactionPriceMax               *float64
-	TargetLayoutSupply                int
+	TargetLayoutSupplyByLayout        map[string]int
 	ListingSampleCount                int
 	TransactionSampleCount            int
 	LastThirtyDayTransactionCount     int

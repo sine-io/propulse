@@ -3,17 +3,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearAccessToken, getAccessToken, setAccessToken } from "./access-token";
 
 import {
+  addWatchlistItem,
   ApiError,
+  createCapacityCalculation,
   getCSVImportTemplate,
+  getActionWindow,
+  getMetricHistory,
+  getNeighborhood,
+  getNeighborhoodMetrics,
+  getWatchlist,
   importCSVCollectionRun,
   importJSONCollectionRun,
   listDataSources,
-  createCapacityCalculation,
-  getActionWindow,
-	getNeighborhood,
-	getNeighborhoodMetrics,
-	getMetricHistory,
-  getWatchlist,
+  searchNeighborhoods,
   verifyAccessToken,
   type HousingCapacityInput,
 } from "./api-client";
@@ -95,48 +97,72 @@ describe("api-client", () => {
     );
   });
 
-	it("queries metric history with an encoded inclusive window", async () => {
-		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-			jsonResponse({
-				status: "empty",
-				neighborhoodId: "neighborhood/1",
-				algorithmVersion: "market-metrics/test.1",
-				window: { from: "2026-05-19T00:00:00Z", to: "2026-07-14T00:00:00Z" },
-				items: [],
-			}),
-		);
+  it("queries metric history with the selected layout and encoded inclusive window", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        status: "empty",
+        neighborhoodId: "neighborhood/1",
+        targetLayout: "三 房",
+        algorithmVersion: "market-metrics/test.1",
+        window: { from: "2026-05-19T00:00:00Z", to: "2026-07-14T00:00:00Z" },
+        items: [],
+      }),
+    );
 
-		await getMetricHistory("neighborhood/1", {
-			from: "2026-05-19T00:00:00Z",
-			to: "2026-07-14T00:00:00Z",
-		});
+    await getMetricHistory("neighborhood/1", "三 房", {
+      from: "2026-05-19T00:00:00Z",
+      to: "2026-07-14T00:00:00Z",
+    });
 
-		expect(fetchMock).toHaveBeenCalledWith(
-			"/api/v1/neighborhoods/neighborhood%2F1/metrics/history?from=2026-05-19T00%3A00%3A00Z&to=2026-07-14T00%3A00%3A00Z",
-			undefined,
-		);
-	});
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/neighborhoods/neighborhood%2F1/metrics/history?targetLayout=%E4%B8%89+%E6%88%BF&from=2026-05-19T00%3A00%3A00Z&to=2026-07-14T00%3A00%3A00Z",
+      undefined,
+    );
+  });
 
-	it("reads neighborhood identity and latest metrics with encoded IDs", async () => {
-		const fetchMock = vi.spyOn(globalThis, "fetch")
-			.mockResolvedValueOnce(jsonResponse({ id: "neighborhood/1", name: "接口花园", area: "南城", targetLayout: "两房" }))
-			.mockResolvedValueOnce(jsonResponse({ id: "metric-1", neighborhoodId: "neighborhood/1" }));
-		const signal = new AbortController().signal;
+  it("reads neighborhood identity and latest metrics with encoded IDs and layout", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ id: "neighborhood/1", name: "接口花园", city: "杭州", area: "南城", availableLayouts: ["两房"] }))
+      .mockResolvedValueOnce(jsonResponse({ id: "metric-1", neighborhoodId: "neighborhood/1", targetLayout: "两房" }));
+    const signal = new AbortController().signal;
 
-		await getNeighborhood("neighborhood/1", signal);
-		await getNeighborhoodMetrics("neighborhood/1", signal);
+    await getNeighborhood("neighborhood/1", signal);
+    await getNeighborhoodMetrics("neighborhood/1", "两房", signal);
 
-		expect(fetchMock).toHaveBeenNthCalledWith(
-			1,
-			"/api/v1/neighborhoods/neighborhood%2F1",
-			{ signal },
-		);
-		expect(fetchMock).toHaveBeenNthCalledWith(
-			2,
-			"/api/v1/neighborhoods/neighborhood%2F1/metrics",
-			{ signal },
-		);
-	});
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/neighborhoods/neighborhood%2F1",
+      { signal },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/neighborhoods/neighborhood%2F1/metrics?targetLayout=%E4%B8%A4%E6%88%BF",
+      { signal },
+    );
+  });
+
+  it("searches with catalog filters and creates the exact watchlist target", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, pageSize: 100, filters: { cities: [], areas: [] } }))
+      .mockResolvedValueOnce(jsonResponse({ id: "item-1", neighborhoodId: "11111111-1111-4111-8111-111111111111", targetLayout: "三房" }, { status: 201 }));
+
+    await searchNeighborhoods({ city: "杭州", area: "滨江", q: "花园", targetLayout: "三房", pageSize: 100 });
+    await addWatchlistItem({ neighborhoodId: "11111111-1111-4111-8111-111111111111", targetLayout: "三房" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/neighborhoods?page=1&pageSize=100&q=%E8%8A%B1%E5%9B%AD&city=%E6%9D%AD%E5%B7%9E&area=%E6%BB%A8%E6%B1%9F&targetLayout=%E4%B8%89%E6%88%BF",
+      undefined,
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/watchlist/items",
+      expect.objectContaining({
+        body: JSON.stringify({ neighborhoodId: "11111111-1111-4111-8111-111111111111", targetLayout: "三房" }),
+        method: "POST",
+      }),
+    );
+  });
 
   it("validates and attaches bearer access tokens", async () => {
     const fetchMock = vi

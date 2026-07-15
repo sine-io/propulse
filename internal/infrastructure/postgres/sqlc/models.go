@@ -60,11 +60,17 @@ type ListingObservation struct {
 }
 
 type Neighborhood struct {
-	ID           pgtype.UUID
-	Name         string
-	Area         string
-	TargetLayout string
-	CreatedAt    pgtype.Timestamptz
+	ID        pgtype.UUID
+	Name      string
+	Area      string
+	CreatedAt pgtype.Timestamptz
+	City      pgtype.Text
+}
+
+type NeighborhoodLayout struct {
+	NeighborhoodID pgtype.UUID
+	Layout         string
+	CreatedAt      pgtype.Timestamptz
 }
 
 type NeighborhoodMetric struct {
@@ -78,7 +84,6 @@ type NeighborhoodMetric struct {
 	TransactionPriceMin            pgtype.Numeric
 	TransactionPriceMax            pgtype.Numeric
 	TransactionMomentum            string
-	TargetLayoutSupply             int32
 	CalculatedAt                   pgtype.Timestamptz
 	CollectionRunID                pgtype.UUID
 	InventoryCollectionRunID       pgtype.UUID
@@ -99,6 +104,7 @@ type NeighborhoodMetric struct {
 	Preceding60DayTransactionCount pgtype.Int4
 	Recent30DayMonthlyFrequency    pgtype.Numeric
 	Preceding60DayMonthlyFrequency pgtype.Numeric
+	TargetLayoutSupplyByLayout     []byte
 }
 
 type ReviewNote struct {
@@ -131,4 +137,5 @@ type WatchlistItem struct {
 	NeighborhoodID pgtype.UUID
 	UserID         string
 	CreatedAt      pgtype.Timestamptz
+	TargetLayout   string
 }

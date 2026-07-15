@@ -2,6 +2,8 @@ package neighborhood
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"time"
 
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
@@ -22,6 +24,7 @@ const (
 
 type SearchNeighborhoodsQuery struct {
 	Query        string
+	City         string
 	Area         string
 	TargetLayout string
 	Page         int
@@ -33,6 +36,7 @@ type SearchNeighborhoodsPage struct {
 	Total    int
 	Page     int
 	PageSize int
+	Filters  NeighborhoodSearchFilters
 }
 
 // SearchNeighborhoods 归一分页参数后委托 repository 查询，返回当页结果与总数。
@@ -50,9 +54,10 @@ func (s *Service) SearchNeighborhoods(ctx context.Context, query SearchNeighborh
 	}
 
 	result, err := s.repo.SearchNeighborhoods(ctx, SearchNeighborhoodsInput{
-		Query:        query.Query,
-		Area:         query.Area,
-		TargetLayout: query.TargetLayout,
+		Query:        strings.TrimSpace(query.Query),
+		City:         strings.TrimSpace(query.City),
+		Area:         strings.TrimSpace(query.Area),
+		TargetLayout: strings.TrimSpace(query.TargetLayout),
 		Limit:        pageSize,
 		Offset:       (page - 1) * pageSize,
 	})
@@ -65,6 +70,7 @@ func (s *Service) SearchNeighborhoods(ctx context.Context, query SearchNeighborh
 		Total:    result.Total,
 		Page:     page,
 		PageSize: pageSize,
+		Filters:  result.Filters,
 	}, nil
 }
 
@@ -82,24 +88,27 @@ func (s *Service) ListWatchlist(ctx context.Context, query ListWatchlistQuery) (
 	for _, item := range items {
 		if !item.HasMetric {
 			summaries = append(summaries, WatchlistItemSummary{
-				ID:                  item.ID,
-				NeighborhoodID:      item.NeighborhoodID,
-				Name:                item.Name,
-				Area:                item.Area,
-				TargetLayout:        item.TargetLayout,
-				Status:              domainneighborhood.NeighborhoodStatusInsufficientData,
-				TransactionMomentum: domainneighborhood.TransactionMomentumUnknown,
-				Advice:              "暂无指标数据，等待导入或计算后再判断。",
-				HasMetric:           false,
-				SourceIDs:           []string{},
-				Coverage:            domainneighborhood.CoverageUnknown,
-				Freshness:           domainneighborhood.FreshnessUnknown,
-				QualityState:        domainneighborhood.MarketQualityInsufficientData,
-				QualityWarnings:     []domainneighborhood.QualityWarning{domainneighborhood.WarningMetricUnavailable},
+				ID:                   item.ID,
+				NeighborhoodID:       item.NeighborhoodID,
+				Name:                 item.Name,
+				City:                 item.City,
+				Area:                 item.Area,
+				TargetLayout:         item.TargetLayout,
+				Status:               domainneighborhood.NeighborhoodStatusInsufficientData,
+				TransactionMomentum:  domainneighborhood.TransactionMomentumUnknown,
+				TargetLayoutScarcity: domainneighborhood.ScarcityUnknown,
+				Advice:               "暂无指标数据，等待导入或计算后再判断。",
+				HasMetric:            false,
+				SourceIDs:            []string{},
+				Coverage:             domainneighborhood.CoverageUnknown,
+				Freshness:            domainneighborhood.FreshnessUnknown,
+				QualityState:         domainneighborhood.MarketQualityInsufficientData,
+				QualityWarnings:      []domainneighborhood.QualityWarning{domainneighborhood.WarningMetricUnavailable},
 			})
 			continue
 		}
 
+		item.Metric = projectMetric(item.Metric, item.TargetLayout)
 		item.Metric = refreshMetricQuality(item.Metric, s.now())
 		weeklyComparison, err := s.weeklyComparisonForMetric(ctx, item.Metric)
 		if err != nil {
@@ -111,12 +120,15 @@ func (s *Service) ListWatchlist(ctx context.Context, query ListWatchlistQuery) (
 			ID:                     item.ID,
 			NeighborhoodID:         item.NeighborhoodID,
 			Name:                   item.Name,
+			City:                   item.City,
 			Area:                   item.Area,
 			TargetLayout:           item.TargetLayout,
 			Status:                 signal.Status,
 			ListedHomes:            item.Metric.ListedHomes,
 			PriceCutHomes:          item.Metric.PriceCutHomes,
 			TransactionMomentum:    item.Metric.TransactionMomentum,
+			TargetLayoutSupply:     item.Metric.TargetLayoutSupply,
+			TargetLayoutScarcity:   signal.TargetLayoutScarcity,
 			Advice:                 signal.NextAction,
 			HasMetric:              true,
 			CollectionRunID:        item.Metric.CollectionRunID,
@@ -137,19 +149,35 @@ func (s *Service) ListWatchlist(ctx context.Context, query ListWatchlistQuery) (
 
 type LatestMetricQuery struct {
 	NeighborhoodID string
+	TargetLayout   string
 }
 
 func (s *Service) LatestMetric(ctx context.Context, query LatestMetricQuery) (MetricWithSignal, error) {
+	neighborhood, err := s.repo.GetNeighborhood(ctx, query.NeighborhoodID)
+	if err != nil {
+		return MetricWithSignal{}, err
+	}
+	targetLayout := strings.TrimSpace(query.TargetLayout)
+	if targetLayout == "" || !slices.Contains(neighborhood.AvailableLayouts, targetLayout) {
+		return MetricWithSignal{}, ErrInvalidTargetLayout
+	}
 	metric, err := s.repo.LatestMetric(ctx, query.NeighborhoodID)
 	if err != nil {
 		return MetricWithSignal{}, err
 	}
+	metric = projectMetric(metric, targetLayout)
 	metric = refreshMetricQuality(metric, s.now())
 
 	return MetricWithSignal{
 		Metric: metric,
 		Signal: evaluateMetric("", metric),
 	}, nil
+}
+
+func projectMetric(metric MetricSnapshot, targetLayout string) MetricSnapshot {
+	metric.TargetLayout = targetLayout
+	metric.TargetLayoutSupply = metric.TargetLayoutSupplyByLayout[targetLayout]
+	return metric
 }
 
 func refreshMetricQuality(metric MetricSnapshot, now time.Time) MetricSnapshot {

@@ -24,7 +24,7 @@ func TestRepositoryAggregateCollectionRunUsesOnlyItsFullInventory(t *testing.T) 
 	insertMetricListing(t, ctx, db, oldFull, neighborhoodID, "b", "两房", 610, "active", oldFull.collectedAt)
 	insertMetricListing(t, ctx, db, newPartial, neighborhoodID, "c", "三房", 700, "active", newPartial.collectedAt)
 
-	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: newPartial.id, TargetLayout: "三房"})
+	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: newPartial.id})
 	if err != nil {
 		t.Fatalf("AggregateMarketObservations() error = %v", err)
 	}
@@ -33,6 +33,9 @@ func TestRepositoryAggregateCollectionRunUsesOnlyItsFullInventory(t *testing.T) 
 	}
 	if got.ListedHomes != 2 {
 		t.Fatalf("ListedHomes = %d, want 2", got.ListedHomes)
+	}
+	if got.TargetLayoutSupplyByLayout["三房"] != 1 || got.TargetLayoutSupplyByLayout["两房"] != 1 {
+		t.Fatalf("layout supply = %#v, want one listing per layout", got.TargetLayoutSupplyByLayout)
 	}
 }
 
@@ -44,7 +47,7 @@ func TestRepositoryAggregateCollectionRunDerivesPriceCutsFromPriorObservations(t
 	insertMetricListing(t, ctx, db, oldRun, neighborhoodID, "same-listing", "三房", 620, "active", oldRun.collectedAt)
 	insertMetricListing(t, ctx, db, newRun, neighborhoodID, "same-listing", "三房", 590, "active", newRun.collectedAt)
 
-	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: newRun.id, TargetLayout: "三房"})
+	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: newRun.id})
 	if err != nil {
 		t.Fatalf("AggregateMarketObservations() error = %v", err)
 	}
@@ -62,7 +65,7 @@ func TestRepositoryAggregateCollectionRunDoesNotCompareIDsAcrossSources(t *testi
 	insertMetricListing(t, ctx, db, oldRun, neighborhoodID, "same-external-id", "三房", 620, "active", oldRun.collectedAt)
 	insertMetricListing(t, ctx, db, newRun, neighborhoodID, "same-external-id", "三房", 590, "active", newRun.collectedAt)
 
-	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: newRun.id, TargetLayout: "三房"})
+	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: newRun.id})
 	if err != nil {
 		t.Fatalf("AggregateMarketObservations() error = %v", err)
 	}
@@ -83,7 +86,7 @@ func TestRepositoryAggregateCollectionRunUsesTransactionsWithinNinetyDays(t *tes
 	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-91", 540, triggerAt.AddDate(0, 0, -91))
 	insertMetricTransaction(t, ctx, db, run, neighborhoodID, "tx-future", 550, triggerAt.AddDate(0, 0, 1))
 
-	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: run.id, TargetLayout: "三房"})
+	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: run.id})
 	if err != nil {
 		t.Fatalf("AggregateMarketObservations() error = %v", err)
 	}
@@ -104,7 +107,7 @@ func TestRepositoryAggregateCollectionRunDeduplicatesTransactionsWithinSource(t 
 	insertMetricTransaction(t, ctx, db, triggerRun, neighborhoodID, "same-record", 510, triggerAt.AddDate(0, 0, -10))
 	insertMetricTransaction(t, ctx, db, otherSourceRun, neighborhoodID, "same-record", 520, triggerAt.AddDate(0, 0, -5))
 
-	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: triggerRun.id, TargetLayout: "三房"})
+	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: triggerRun.id})
 	if err != nil {
 		t.Fatalf("AggregateMarketObservations() error = %v", err)
 	}
@@ -118,7 +121,7 @@ func TestRepositoryAggregateCollectionRunReturnsZeroTransactionEvidence(t *testi
 	neighborhoodID, sourceID := createMetricFixtures(t, ctx, db)
 	run := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC), "full")
 
-	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: run.id, TargetLayout: "三房"})
+	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: run.id})
 	if err != nil {
 		t.Fatalf("AggregateMarketObservations() error = %v", err)
 	}
@@ -138,28 +141,28 @@ func TestRepositoryUpsertNeighborhoodMetricPersistsProvenance(t *testing.T) {
 	evidence := domainneighborhood.NewTransactionMomentumEvidence(run.collectedAt, 1, 2)
 
 	got, err := repo.UpsertNeighborhoodMetric(ctx, appmetric.MetricSnapshot{
-		NeighborhoodID:           neighborhoodID,
-		CollectionRunID:          run.id,
-		AlgorithmVersion:         "market-metrics/test.1",
-		InventoryCollectionRunID: &run.id,
-		SourceIDs:                []string{sourceID},
-		LatestObservedAt:         run.collectedAt,
-		ListedHomes:              6,
-		PriceCutHomes:            1,
-		AvgDaysOnMarket:          &avg,
-		ListingPriceMin:          &minPrice,
-		ListingPriceMax:          &maxPrice,
-		TransactionPriceMin:      &minPrice,
-		TransactionPriceMax:      &maxPrice,
-		TransactionMomentum:      domainneighborhood.TransactionMomentumStable,
-		TransactionEvidence:      &evidence,
-		TargetLayoutSupply:       2,
-		ListingSampleCount:       6,
-		TransactionSampleCount:   3,
-		Coverage:                 domainneighborhood.CoverageFull,
-		Freshness:                domainneighborhood.FreshnessCurrent,
-		InventoryCollectedAt:     &inventoryAt,
-		QualityState:             domainneighborhood.MarketQualitySufficient,
+		NeighborhoodID:             neighborhoodID,
+		CollectionRunID:            run.id,
+		AlgorithmVersion:           "market-metrics/test.1",
+		InventoryCollectionRunID:   &run.id,
+		SourceIDs:                  []string{sourceID},
+		LatestObservedAt:           run.collectedAt,
+		ListedHomes:                6,
+		PriceCutHomes:              1,
+		AvgDaysOnMarket:            &avg,
+		ListingPriceMin:            &minPrice,
+		ListingPriceMax:            &maxPrice,
+		TransactionPriceMin:        &minPrice,
+		TransactionPriceMax:        &maxPrice,
+		TransactionMomentum:        domainneighborhood.TransactionMomentumStable,
+		TransactionEvidence:        &evidence,
+		TargetLayoutSupplyByLayout: map[string]int{"三房": 2},
+		ListingSampleCount:         6,
+		TransactionSampleCount:     3,
+		Coverage:                   domainneighborhood.CoverageFull,
+		Freshness:                  domainneighborhood.FreshnessCurrent,
+		InventoryCollectedAt:       &inventoryAt,
+		QualityState:               domainneighborhood.MarketQualitySufficient,
 	})
 	if err != nil {
 		t.Fatalf("UpsertNeighborhoodMetric() error = %v", err)
@@ -169,6 +172,9 @@ func TestRepositoryUpsertNeighborhoodMetricPersistsProvenance(t *testing.T) {
 	}
 	if got.AlgorithmVersion != "market-metrics/test.1" || got.TransactionEvidence == nil || got.TransactionEvidence.PrecedingSixtyDayMonthlyFrequency != 1 {
 		t.Fatalf("persisted version/evidence = %#v", got)
+	}
+	if got.TargetLayoutSupplyByLayout["三房"] != 2 {
+		t.Fatalf("persisted layout supply = %#v", got.TargetLayoutSupplyByLayout)
 	}
 }
 
@@ -286,8 +292,11 @@ func createMetricFixtures(t *testing.T, ctx context.Context, db *pgxpool.Pool) (
 	t.Helper()
 	neighborhoodID := uuid.NewString()
 	sourceID := insertMetricSource(t, ctx, db)
-	if _, err := db.Exec(ctx, `INSERT INTO neighborhoods (id, name, area, target_layout) VALUES ($1, $2, $3, $4)`, neighborhoodID, "metric-neighborhood-"+neighborhoodID, "area", "三房"); err != nil {
+	if _, err := db.Exec(ctx, `INSERT INTO neighborhoods (id, name, city, area) VALUES ($1, $2, $3, $4)`, neighborhoodID, "metric-neighborhood-"+neighborhoodID, "测试城市", "area"); err != nil {
 		t.Fatalf("insert neighborhood error = %v", err)
+	}
+	if _, err := db.Exec(ctx, `INSERT INTO neighborhood_layouts (neighborhood_id, layout) VALUES ($1, '三房'), ($1, '两房')`, neighborhoodID); err != nil {
+		t.Fatalf("insert neighborhood layouts error = %v", err)
 	}
 	return neighborhoodID, sourceID
 }

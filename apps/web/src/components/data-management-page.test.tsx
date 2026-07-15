@@ -47,8 +47,9 @@ const sourceFixture: DataSource = {
 const neighborhoodFixture: Neighborhood = {
   id: "22222222-2222-2222-2222-222222222222",
   name: "真实花园",
+  city: "杭州",
   area: "滨江",
-  targetLayout: "三房",
+  availableLayouts: ["三房", "四房"],
   createdAt: "2026-07-14T06:00:00Z",
 };
 
@@ -128,6 +129,7 @@ describe("DataManagementPage", () => {
       total: 1,
       page: 1,
       pageSize: 50,
+      filters: { cities: ["杭州"], areas: [{ city: "杭州", area: "滨江" }] },
     });
   });
 
@@ -160,6 +162,7 @@ describe("DataManagementPage", () => {
       total: 0,
       page: 1,
       pageSize: 50,
+      filters: { cities: [], areas: [] },
     });
     render(<DataManagementPage />);
 
@@ -193,11 +196,17 @@ describe("DataManagementPage", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "新建" })[1]);
     fireEvent.change(screen.getByLabelText("小区名称"), { target: { value: "新增小区" } });
+    fireEvent.change(screen.getByLabelText("城市"), { target: { value: "杭州" } });
     fireEvent.change(screen.getByLabelText("区域"), { target: { value: "滨江" } });
-    fireEvent.change(screen.getByLabelText("关注户型"), { target: { value: "三房" } });
+    fireEvent.change(screen.getByLabelText("可选户型（逗号分隔）"), { target: { value: "三房，四房" } });
     fireEvent.click(screen.getByRole("button", { name: "创建小区" }));
 
-    await waitFor(() => expect(createNeighborhood).toHaveBeenCalled());
+    await waitFor(() => expect(createNeighborhood).toHaveBeenCalledWith({
+      name: "新增小区",
+      city: "杭州",
+      area: "滨江",
+      availableLayouts: ["三房", "四房"],
+    }));
     expect(screen.getByLabelText("小区")).toHaveValue(created.id);
   });
 

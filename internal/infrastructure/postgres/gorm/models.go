@@ -19,11 +19,21 @@ func (CapacityCalculationModel) TableName() string {
 }
 
 type NeighborhoodModel struct {
-	ID           string    `gorm:"column:id;type:uuid;primaryKey"`
-	Name         string    `gorm:"column:name"`
-	Area         string    `gorm:"column:area"`
-	TargetLayout string    `gorm:"column:target_layout"`
-	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
+	ID        string    `gorm:"column:id;type:uuid;primaryKey"`
+	Name      string    `gorm:"column:name"`
+	City      *string   `gorm:"column:city"`
+	Area      string    `gorm:"column:area"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+type NeighborhoodLayoutModel struct {
+	NeighborhoodID string    `gorm:"column:neighborhood_id;type:uuid;primaryKey"`
+	Layout         string    `gorm:"column:layout;primaryKey"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (NeighborhoodLayoutModel) TableName() string {
+	return "neighborhood_layouts"
 }
 
 func (NeighborhoodModel) TableName() string {
@@ -34,6 +44,7 @@ type WatchlistItemModel struct {
 	ID             string    `gorm:"column:id;type:uuid;primaryKey"`
 	NeighborhoodID string    `gorm:"column:neighborhood_id;type:uuid"`
 	UserID         string    `gorm:"column:user_id"`
+	TargetLayout   string    `gorm:"column:target_layout"`
 	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime"`
 }
 

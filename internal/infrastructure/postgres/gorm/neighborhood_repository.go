@@ -26,38 +26,46 @@ func NewNeighborhoodRepository(db *gorm.DB) *NeighborhoodRepository {
 }
 
 func NewNeighborhoodRepositoryWithMetricReader(db *gorm.DB, metricReader metricReader) *NeighborhoodRepository {
-	return &NeighborhoodRepository{
-		db:           db,
-		metricReader: metricReader,
-	}
+	return &NeighborhoodRepository{db: db, metricReader: metricReader}
 }
 
 func (r *NeighborhoodRepository) CreateNeighborhood(ctx context.Context, input appneighborhood.CreateNeighborhoodInput) (appneighborhood.Neighborhood, error) {
-	var existing NeighborhoodModel
-	err := r.db.WithContext(ctx).
-		Where("name = ? AND area = ? AND target_layout = ?", input.Name, input.Area, input.TargetLayout).
-		First(&existing).Error
-	if err == nil {
-		return neighborhoodFromModel(existing), nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return appneighborhood.Neighborhood{}, err
-	}
+	var result appneighborhood.Neighborhood
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var model NeighborhoodModel
+		err := tx.Where("name = ? AND city = ? AND area = ?", input.Name, input.City, input.Area).First(&model).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			id := input.ID
+			if id == "" {
+				id = uuid.NewString()
+			}
+			city := input.City
+			model = NeighborhoodModel{ID: id, Name: input.Name, City: &city, Area: input.Area}
+			if err := tx.Create(&model).Error; err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
 
-	id := input.ID
-	if id == "" {
-		id = uuid.NewString()
-	}
-	model := NeighborhoodModel{
-		ID:           id,
-		Name:         input.Name,
-		Area:         input.Area,
-		TargetLayout: input.TargetLayout,
-	}
-	if err := r.db.WithContext(ctx).Create(&model).Error; err != nil {
-		return appneighborhood.Neighborhood{}, err
-	}
-	return neighborhoodFromModel(model), nil
+		layouts := make([]NeighborhoodLayoutModel, 0, len(input.AvailableLayouts))
+		for _, layout := range input.AvailableLayouts {
+			layouts = append(layouts, NeighborhoodLayoutModel{NeighborhoodID: model.ID, Layout: layout})
+		}
+		if len(layouts) > 0 {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&layouts).Error; err != nil {
+				return err
+			}
+		}
+
+		loaded, err := neighborhoodFromModel(ctx, tx, model)
+		if err != nil {
+			return err
+		}
+		result = loaded
+		return nil
+	})
+	return result, err
 }
 
 func (r *NeighborhoodRepository) GetNeighborhood(ctx context.Context, id string) (appneighborhood.Neighborhood, error) {
@@ -69,21 +77,26 @@ func (r *NeighborhoodRepository) GetNeighborhood(ctx context.Context, id string)
 		}
 		return appneighborhood.Neighborhood{}, err
 	}
-	return neighborhoodFromModel(model), nil
+	return neighborhoodFromModel(ctx, r.db, model)
 }
 
 func (r *NeighborhoodRepository) SearchNeighborhoods(ctx context.Context, input appneighborhood.SearchNeighborhoodsInput) (appneighborhood.SearchNeighborhoodsResult, error) {
-	query := r.db.WithContext(ctx).Model(&NeighborhoodModel{})
+	query := r.db.WithContext(ctx).
+		Model(&NeighborhoodModel{}).
+		Where("city IS NOT NULL").
+		Where("EXISTS (SELECT 1 FROM neighborhood_layouts nl WHERE nl.neighborhood_id = neighborhoods.id)")
 
-	if trimmed := strings.TrimSpace(input.Query); trimmed != "" {
-		like := "%" + trimmed + "%"
-		query = query.Where("name ILIKE ? OR area ILIKE ?", like, like)
+	if value := strings.TrimSpace(input.Query); value != "" {
+		query = query.Where("name ILIKE ?", "%"+value+"%")
+	}
+	if city := strings.TrimSpace(input.City); city != "" {
+		query = query.Where("city = ?", city)
 	}
 	if area := strings.TrimSpace(input.Area); area != "" {
 		query = query.Where("area = ?", area)
 	}
 	if layout := strings.TrimSpace(input.TargetLayout); layout != "" {
-		query = query.Where("target_layout = ?", layout)
+		query = query.Where("EXISTS (SELECT 1 FROM neighborhood_layouts nl WHERE nl.neighborhood_id = neighborhoods.id AND nl.layout = ?)", layout)
 	}
 
 	var total int64
@@ -92,66 +105,80 @@ func (r *NeighborhoodRepository) SearchNeighborhoods(ctx context.Context, input 
 	}
 
 	var models []NeighborhoodModel
-	err := query.
-		Order("name ASC").
+	if err := query.
+		Order("city ASC, area ASC, name ASC, id ASC").
 		Limit(input.Limit).
 		Offset(input.Offset).
-		Find(&models).Error
+		Find(&models).Error; err != nil {
+		return appneighborhood.SearchNeighborhoodsResult{}, err
+	}
+	layouts, err := layoutsByNeighborhood(ctx, r.db, neighborhoodModelIDs(models))
 	if err != nil {
 		return appneighborhood.SearchNeighborhoodsResult{}, err
 	}
-
 	items := make([]appneighborhood.Neighborhood, 0, len(models))
 	for _, model := range models {
-		items = append(items, neighborhoodFromModel(model))
+		items = append(items, neighborhoodFromLoadedModel(model, layouts[model.ID]))
 	}
 
-	return appneighborhood.SearchNeighborhoodsResult{Items: items, Total: int(total)}, nil
+	filters, err := neighborhoodSearchFilters(ctx, r.db)
+	if err != nil {
+		return appneighborhood.SearchNeighborhoodsResult{}, err
+	}
+	return appneighborhood.SearchNeighborhoodsResult{Items: items, Total: int(total), Filters: filters}, nil
 }
 
-func (r *NeighborhoodRepository) AddWatchlistItem(ctx context.Context, userID string, neighborhoodID string) (appneighborhood.WatchlistItem, error) {
-	if _, err := r.GetNeighborhood(ctx, neighborhoodID); err != nil {
+func (r *NeighborhoodRepository) AddWatchlistItem(ctx context.Context, userID string, neighborhoodID string, targetLayout string) (appneighborhood.WatchlistItem, error) {
+	neighborhood, err := r.GetNeighborhood(ctx, neighborhoodID)
+	if err != nil {
 		return appneighborhood.WatchlistItem{}, err
+	}
+	validLayout := false
+	for _, layout := range neighborhood.AvailableLayouts {
+		if layout == targetLayout {
+			validLayout = true
+			break
+		}
+	}
+	if !validLayout {
+		return appneighborhood.WatchlistItem{}, appneighborhood.ErrInvalidTargetLayout
 	}
 
 	model := WatchlistItemModel{
 		ID:             uuid.NewString(),
 		UserID:         userID,
 		NeighborhoodID: neighborhoodID,
+		TargetLayout:   targetLayout,
 	}
-	err := r.db.WithContext(ctx).
+	created := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "user_id"}, {Name: "neighborhood_id"}},
 			DoNothing: true,
 		}).
-		Create(&model).Error
-	if err != nil {
-		return appneighborhood.WatchlistItem{}, err
+		Create(&model)
+	if created.Error != nil {
+		return appneighborhood.WatchlistItem{}, created.Error
 	}
-
-	var saved WatchlistItemModel
-	if err := r.db.WithContext(ctx).
-		First(&saved, "user_id = ? AND neighborhood_id = ?", userID, neighborhoodID).Error; err != nil {
-		return appneighborhood.WatchlistItem{}, err
+	if created.RowsAffected == 0 {
+		return appneighborhood.WatchlistItem{}, appneighborhood.ErrWatchlistItemExists
 	}
-
-	return watchlistItemFromModel(saved), nil
+	return watchlistItemFromModel(model), nil
 }
 
 func (r *NeighborhoodRepository) ListWatchlist(ctx context.Context, userID string) ([]appneighborhood.WatchlistSummary, error) {
 	var rows []struct {
 		WatchlistItemModel
-		Name         string `gorm:"column:name"`
-		Area         string `gorm:"column:area"`
-		TargetLayout string `gorm:"column:target_layout"`
+		Name string  `gorm:"column:name"`
+		City *string `gorm:"column:city"`
+		Area string  `gorm:"column:area"`
 	}
 
 	err := r.db.WithContext(ctx).
 		Table("watchlist_items").
-		Select("watchlist_items.*, neighborhoods.name, neighborhoods.area, neighborhoods.target_layout").
+		Select("watchlist_items.*, neighborhoods.name, neighborhoods.city, neighborhoods.area").
 		Joins("JOIN neighborhoods ON neighborhoods.id = watchlist_items.neighborhood_id").
 		Where("watchlist_items.user_id = ?", userID).
-		Order("watchlist_items.created_at ASC").
+		Order("watchlist_items.created_at ASC, watchlist_items.id ASC").
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -171,6 +198,7 @@ func (r *NeighborhoodRepository) ListWatchlist(ctx context.Context, userID strin
 			ID:             row.ID,
 			NeighborhoodID: row.NeighborhoodID,
 			Name:           row.Name,
+			City:           row.City,
 			Area:           row.Area,
 			TargetLayout:   row.TargetLayout,
 			HasMetric:      hasMetric,
@@ -194,14 +222,78 @@ func (r *NeighborhoodRepository) ListMetricHistory(ctx context.Context, query ap
 	return r.metricReader.ListMetricHistory(ctx, query)
 }
 
-func neighborhoodFromModel(model NeighborhoodModel) appneighborhood.Neighborhood {
-	return appneighborhood.Neighborhood{
-		ID:           model.ID,
-		Name:         model.Name,
-		Area:         model.Area,
-		TargetLayout: model.TargetLayout,
-		CreatedAt:    model.CreatedAt,
+func neighborhoodFromModel(ctx context.Context, db *gorm.DB, model NeighborhoodModel) (appneighborhood.Neighborhood, error) {
+	layouts, err := layoutsByNeighborhood(ctx, db, []string{model.ID})
+	if err != nil {
+		return appneighborhood.Neighborhood{}, err
 	}
+	return neighborhoodFromLoadedModel(model, layouts[model.ID]), nil
+}
+
+func neighborhoodFromLoadedModel(model NeighborhoodModel, layouts []string) appneighborhood.Neighborhood {
+	return appneighborhood.Neighborhood{
+		ID:               model.ID,
+		Name:             model.Name,
+		City:             model.City,
+		Area:             model.Area,
+		AvailableLayouts: append([]string(nil), layouts...),
+		CreatedAt:        model.CreatedAt,
+	}
+}
+
+func layoutsByNeighborhood(ctx context.Context, db *gorm.DB, neighborhoodIDs []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(neighborhoodIDs))
+	if len(neighborhoodIDs) == 0 {
+		return result, nil
+	}
+	var models []NeighborhoodLayoutModel
+	if err := db.WithContext(ctx).
+		Where("neighborhood_id IN ?", neighborhoodIDs).
+		Order("neighborhood_id ASC, layout ASC").
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	for _, model := range models {
+		result[model.NeighborhoodID] = append(result[model.NeighborhoodID], model.Layout)
+	}
+	return result, nil
+}
+
+func neighborhoodModelIDs(models []NeighborhoodModel) []string {
+	ids := make([]string, 0, len(models))
+	for _, model := range models {
+		ids = append(ids, model.ID)
+	}
+	return ids
+}
+
+func neighborhoodSearchFilters(ctx context.Context, db *gorm.DB) (appneighborhood.NeighborhoodSearchFilters, error) {
+	var rows []struct {
+		City string `gorm:"column:city"`
+		Area string `gorm:"column:area"`
+	}
+	if err := db.WithContext(ctx).
+		Table("neighborhoods AS n").
+		Distinct("n.city", "n.area").
+		Where("n.city IS NOT NULL").
+		Where("EXISTS (SELECT 1 FROM neighborhood_layouts nl WHERE nl.neighborhood_id = n.id)").
+		Order("n.city ASC, n.area ASC").
+		Scan(&rows).Error; err != nil {
+		return appneighborhood.NeighborhoodSearchFilters{}, err
+	}
+	filters := appneighborhood.NeighborhoodSearchFilters{
+		Cities: []string{},
+		Areas:  make([]appneighborhood.NeighborhoodAreaFilter, 0, len(rows)),
+	}
+	lastCity := ""
+	for _, row := range rows {
+		if row.City != lastCity {
+			filters.Cities = append(filters.Cities, row.City)
+			lastCity = row.City
+		}
+		filters.Areas = append(filters.Areas, appneighborhood.NeighborhoodAreaFilter{City: row.City, Area: row.Area})
+	}
+	return filters, nil
 }
 
 func watchlistItemFromModel(model WatchlistItemModel) appneighborhood.WatchlistItem {
@@ -209,6 +301,7 @@ func watchlistItemFromModel(model WatchlistItemModel) appneighborhood.WatchlistI
 		ID:             model.ID,
 		UserID:         model.UserID,
 		NeighborhoodID: model.NeighborhoodID,
+		TargetLayout:   model.TargetLayout,
 		CreatedAt:      model.CreatedAt,
 	}
 }

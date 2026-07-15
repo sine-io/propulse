@@ -18,6 +18,7 @@ func (s *Service) compareAlternatives(
 	ctx context.Context,
 	calculation appcapacity.CalculationRecord,
 	target appneighborhood.Neighborhood,
+	targetLayout string,
 	targetMetric appneighborhood.MetricWithSignal,
 	watchlist []appneighborhood.WatchlistItemSummary,
 ) (AlternativeComparisonResult, error) {
@@ -30,8 +31,11 @@ func (s *Service) compareAlternatives(
 
 		candidateContext := alternativeCandidateContext{item: item}
 		comparable := alternativeComparable(item.NeighborhoodID, item.Name, item.TargetLayout, nil)
-		if item.TargetLayout == target.TargetLayout {
-			metric, err := s.neighborhood.LatestMetric(ctx, appneighborhood.LatestMetricQuery{NeighborhoodID: item.NeighborhoodID})
+		if item.TargetLayout == targetLayout {
+			metric, err := s.neighborhood.LatestMetric(ctx, appneighborhood.LatestMetricQuery{
+				NeighborhoodID: item.NeighborhoodID,
+				TargetLayout:   item.TargetLayout,
+			})
 			if err != nil {
 				if !errors.Is(err, appneighborhood.ErrMetricNotFound) {
 					return AlternativeComparisonResult{}, err
@@ -47,7 +51,7 @@ func (s *Service) compareAlternatives(
 
 	domainResult := s.alternativePolicy.Compare(domaindecision.AlternativeComparisonInput{
 		SafeTotalPrice: calculation.Result.SafeTotalPrice,
-		Target:         alternativeComparable(target.ID, target.Name, target.TargetLayout, &targetMetric),
+		Target:         alternativeComparable(target.ID, target.Name, targetLayout, &targetMetric),
 		Candidates:     domainCandidates,
 	})
 	result := AlternativeComparisonResult{

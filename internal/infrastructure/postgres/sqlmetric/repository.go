@@ -34,23 +34,17 @@ func NewRepository(db sqlc.DBTX, algorithmVersion string) *Repository {
 }
 
 func (r *Repository) GetNeighborhood(ctx context.Context, id string) (appmetric.Neighborhood, error) {
-	neighborhoodID, err := uuidParam(id)
+	parsedID, err := uuidParam(id)
 	if err != nil {
 		return appmetric.Neighborhood{}, err
 	}
 
-	var row sqlc.Neighborhood
+	var neighborhoodID pgtype.UUID
 	err = r.db.QueryRow(ctx, `
-SELECT id, name, area, target_layout, created_at
-FROM neighborhoods
-WHERE id = $1
-`, neighborhoodID).Scan(
-		&row.ID,
-		&row.Name,
-		&row.Area,
-		&row.TargetLayout,
-		&row.CreatedAt,
-	)
+	SELECT id
+	FROM neighborhoods
+	WHERE id = $1
+	`, parsedID).Scan(&neighborhoodID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return appmetric.Neighborhood{}, appmetric.ErrNeighborhoodNotFound
@@ -58,10 +52,7 @@ WHERE id = $1
 		return appmetric.Neighborhood{}, err
 	}
 
-	return appmetric.Neighborhood{
-		ID:           uuidString(row.ID),
-		TargetLayout: row.TargetLayout,
-	}, nil
+	return appmetric.Neighborhood{ID: uuidString(neighborhoodID)}, nil
 }
 
 func (r *Repository) GetCompletedCollectionRun(ctx context.Context, id string) (appmetric.CompletedCollectionRun, error) {
@@ -107,7 +98,6 @@ func (r *Repository) AggregateMarketObservations(ctx context.Context, params app
 	row, err := r.queries.AggregateMarketObservations(ctx, sqlc.AggregateMarketObservationsParams{
 		NeighborhoodID: neighborhoodID,
 		TriggerRunID:   triggerRunID,
-		TargetLayout:   params.TargetLayout,
 	})
 	if err != nil {
 		return appmetric.MarketAggregate{}, err
@@ -139,32 +129,40 @@ func (r *Repository) UpsertNeighborhoodMetric(ctx context.Context, snapshot appm
 	if err != nil {
 		return appmetric.MetricSnapshot{}, err
 	}
+	layoutSupplyValues := snapshot.TargetLayoutSupplyByLayout
+	if layoutSupplyValues == nil {
+		layoutSupplyValues = map[string]int{}
+	}
+	layoutSupply, err := json.Marshal(layoutSupplyValues)
+	if err != nil {
+		return appmetric.MetricSnapshot{}, err
+	}
 	row, err := r.queries.UpsertNeighborhoodMetric(ctx, sqlc.UpsertNeighborhoodMetricParams{
-		NeighborhoodID:           neighborhoodID,
-		ListedHomes:              int32(snapshot.ListedHomes),
-		PriceCutHomes:            int32(snapshot.PriceCutHomes),
-		AvgDaysOnMarket:          numericPtrParam(snapshot.AvgDaysOnMarket),
-		ListingPriceMin:          numericPtrParam(snapshot.ListingPriceMin),
-		ListingPriceMax:          numericPtrParam(snapshot.ListingPriceMax),
-		TransactionPriceMin:      numericPtrParam(snapshot.TransactionPriceMin),
-		TransactionPriceMax:      numericPtrParam(snapshot.TransactionPriceMax),
-		TransactionMomentum:      string(snapshot.TransactionMomentum),
-		TargetLayoutSupply:       int32(snapshot.TargetLayoutSupply),
-		CollectionRunID:          collectionRunID,
-		InventoryCollectionRunID: inventoryRunID,
-		SourceIds:                sourceIDs,
-		ListingSampleCount:       int32(snapshot.ListingSampleCount),
-		TransactionSampleCount:   int32(snapshot.TransactionSampleCount),
-		ListedHomesChangePct:     numericPtrParam(snapshot.ListedHomesChangePct),
-		Coverage:                 string(snapshot.Coverage),
-		Freshness:                string(snapshot.Freshness),
-		QualityState:             string(snapshot.QualityState),
-		LatestObservedAt:         timeParam(snapshot.LatestObservedAt),
-		InventoryCollectedAt:     optionalTimeParam(snapshot.InventoryCollectedAt),
-		QualityWarnings:          warnings,
-		AlgorithmVersion:         snapshot.AlgorithmVersion,
-		TransactionWindowStart:   dateParam(snapshot.TransactionEvidence.WindowStart),
-		TransactionWindowEnd:     dateParam(snapshot.TransactionEvidence.WindowEnd),
+		NeighborhoodID:             neighborhoodID,
+		ListedHomes:                int32(snapshot.ListedHomes),
+		PriceCutHomes:              int32(snapshot.PriceCutHomes),
+		AvgDaysOnMarket:            numericPtrParam(snapshot.AvgDaysOnMarket),
+		ListingPriceMin:            numericPtrParam(snapshot.ListingPriceMin),
+		ListingPriceMax:            numericPtrParam(snapshot.ListingPriceMax),
+		TransactionPriceMin:        numericPtrParam(snapshot.TransactionPriceMin),
+		TransactionPriceMax:        numericPtrParam(snapshot.TransactionPriceMax),
+		TransactionMomentum:        string(snapshot.TransactionMomentum),
+		TargetLayoutSupplyByLayout: layoutSupply,
+		CollectionRunID:            collectionRunID,
+		InventoryCollectionRunID:   inventoryRunID,
+		SourceIds:                  sourceIDs,
+		ListingSampleCount:         int32(snapshot.ListingSampleCount),
+		TransactionSampleCount:     int32(snapshot.TransactionSampleCount),
+		ListedHomesChangePct:       numericPtrParam(snapshot.ListedHomesChangePct),
+		Coverage:                   string(snapshot.Coverage),
+		Freshness:                  string(snapshot.Freshness),
+		QualityState:               string(snapshot.QualityState),
+		LatestObservedAt:           timeParam(snapshot.LatestObservedAt),
+		InventoryCollectedAt:       optionalTimeParam(snapshot.InventoryCollectedAt),
+		QualityWarnings:            warnings,
+		AlgorithmVersion:           snapshot.AlgorithmVersion,
+		TransactionWindowStart:     dateParam(snapshot.TransactionEvidence.WindowStart),
+		TransactionWindowEnd:       dateParam(snapshot.TransactionEvidence.WindowEnd),
 		Recent30DayTransactionCount: pgtype.Int4{
 			Int32: int32(snapshot.TransactionEvidence.RecentThirtyDayCount),
 			Valid: true,
@@ -234,63 +232,63 @@ func (r *Repository) ListMetricHistory(ctx context.Context, query appneighborhoo
 
 func metricFromRow(row sqlc.NeighborhoodMetric) appmetric.MetricSnapshot {
 	return appmetric.MetricSnapshot{
-		ID:                       uuidString(row.ID),
-		NeighborhoodID:           uuidString(row.NeighborhoodID),
-		CollectionRunID:          uuidString(row.CollectionRunID),
-		AlgorithmVersion:         row.AlgorithmVersion,
-		InventoryCollectionRunID: uuidStringPtr(row.InventoryCollectionRunID),
-		SourceIDs:                stringSlice(row.SourceIds),
-		LatestObservedAt:         row.LatestObservedAt.Time,
-		ListedHomes:              int(row.ListedHomes),
-		PriceCutHomes:            int(row.PriceCutHomes),
-		AvgDaysOnMarket:          numericFloatPtr(row.AvgDaysOnMarket),
-		ListingPriceMin:          numericFloatPtr(row.ListingPriceMin),
-		ListingPriceMax:          numericFloatPtr(row.ListingPriceMax),
-		TransactionPriceMin:      numericFloatPtr(row.TransactionPriceMin),
-		TransactionPriceMax:      numericFloatPtr(row.TransactionPriceMax),
-		TransactionMomentum:      domainneighborhood.TransactionMomentum(row.TransactionMomentum),
-		TransactionEvidence:      transactionEvidenceFromRow(row),
-		TargetLayoutSupply:       int(row.TargetLayoutSupply),
-		ListingSampleCount:       int(row.ListingSampleCount),
-		TransactionSampleCount:   int(row.TransactionSampleCount),
-		Coverage:                 domainneighborhood.Coverage(row.Coverage),
-		Freshness:                domainneighborhood.Freshness(row.Freshness),
-		InventoryCollectedAt:     timePtr(row.InventoryCollectedAt),
-		ListedHomesChangePct:     numericFloatPtr(row.ListedHomesChangePct),
-		QualityWarnings:          qualityWarnings(row.QualityWarnings),
-		QualityState:             domainneighborhood.MarketQualityState(row.QualityState),
-		CalculatedAt:             row.CalculatedAt.Time,
+		ID:                         uuidString(row.ID),
+		NeighborhoodID:             uuidString(row.NeighborhoodID),
+		CollectionRunID:            uuidString(row.CollectionRunID),
+		AlgorithmVersion:           row.AlgorithmVersion,
+		InventoryCollectionRunID:   uuidStringPtr(row.InventoryCollectionRunID),
+		SourceIDs:                  stringSlice(row.SourceIds),
+		LatestObservedAt:           row.LatestObservedAt.Time,
+		ListedHomes:                int(row.ListedHomes),
+		PriceCutHomes:              int(row.PriceCutHomes),
+		AvgDaysOnMarket:            numericFloatPtr(row.AvgDaysOnMarket),
+		ListingPriceMin:            numericFloatPtr(row.ListingPriceMin),
+		ListingPriceMax:            numericFloatPtr(row.ListingPriceMax),
+		TransactionPriceMin:        numericFloatPtr(row.TransactionPriceMin),
+		TransactionPriceMax:        numericFloatPtr(row.TransactionPriceMax),
+		TransactionMomentum:        domainneighborhood.TransactionMomentum(row.TransactionMomentum),
+		TransactionEvidence:        transactionEvidenceFromRow(row),
+		TargetLayoutSupplyByLayout: intMap(row.TargetLayoutSupplyByLayout),
+		ListingSampleCount:         int(row.ListingSampleCount),
+		TransactionSampleCount:     int(row.TransactionSampleCount),
+		Coverage:                   domainneighborhood.Coverage(row.Coverage),
+		Freshness:                  domainneighborhood.Freshness(row.Freshness),
+		InventoryCollectedAt:       timePtr(row.InventoryCollectedAt),
+		ListedHomesChangePct:       numericFloatPtr(row.ListedHomesChangePct),
+		QualityWarnings:            qualityWarnings(row.QualityWarnings),
+		QualityState:               domainneighborhood.MarketQualityState(row.QualityState),
+		CalculatedAt:               row.CalculatedAt.Time,
 	}
 }
 
 func neighborhoodMetricFromRow(row sqlc.NeighborhoodMetric) appneighborhood.MetricSnapshot {
 	return appneighborhood.MetricSnapshot{
-		ID:                       uuidString(row.ID),
-		NeighborhoodID:           uuidString(row.NeighborhoodID),
-		CollectionRunID:          uuidString(row.CollectionRunID),
-		AlgorithmVersion:         row.AlgorithmVersion,
-		InventoryCollectionRunID: uuidStringPtr(row.InventoryCollectionRunID),
-		SourceIDs:                stringSlice(row.SourceIds),
-		LatestObservedAt:         row.LatestObservedAt.Time,
-		ListedHomes:              int(row.ListedHomes),
-		PriceCutHomes:            int(row.PriceCutHomes),
-		AvgDaysOnMarket:          numericFloatPtr(row.AvgDaysOnMarket),
-		ListingPriceMin:          numericFloatPtr(row.ListingPriceMin),
-		ListingPriceMax:          numericFloatPtr(row.ListingPriceMax),
-		TransactionPriceMin:      numericFloatPtr(row.TransactionPriceMin),
-		TransactionPriceMax:      numericFloatPtr(row.TransactionPriceMax),
-		TransactionMomentum:      domainneighborhood.TransactionMomentum(row.TransactionMomentum),
-		TransactionEvidence:      transactionEvidenceFromRow(row),
-		TargetLayoutSupply:       int(row.TargetLayoutSupply),
-		ListingSampleCount:       int(row.ListingSampleCount),
-		TransactionSampleCount:   int(row.TransactionSampleCount),
-		Coverage:                 domainneighborhood.Coverage(row.Coverage),
-		Freshness:                domainneighborhood.Freshness(row.Freshness),
-		InventoryCollectedAt:     timePtr(row.InventoryCollectedAt),
-		ListedHomesChangePct:     numericFloatPtr(row.ListedHomesChangePct),
-		QualityWarnings:          qualityWarnings(row.QualityWarnings),
-		QualityState:             domainneighborhood.MarketQualityState(row.QualityState),
-		CalculatedAt:             row.CalculatedAt.Time,
+		ID:                         uuidString(row.ID),
+		NeighborhoodID:             uuidString(row.NeighborhoodID),
+		CollectionRunID:            uuidString(row.CollectionRunID),
+		AlgorithmVersion:           row.AlgorithmVersion,
+		InventoryCollectionRunID:   uuidStringPtr(row.InventoryCollectionRunID),
+		SourceIDs:                  stringSlice(row.SourceIds),
+		LatestObservedAt:           row.LatestObservedAt.Time,
+		ListedHomes:                int(row.ListedHomes),
+		PriceCutHomes:              int(row.PriceCutHomes),
+		AvgDaysOnMarket:            numericFloatPtr(row.AvgDaysOnMarket),
+		ListingPriceMin:            numericFloatPtr(row.ListingPriceMin),
+		ListingPriceMax:            numericFloatPtr(row.ListingPriceMax),
+		TransactionPriceMin:        numericFloatPtr(row.TransactionPriceMin),
+		TransactionPriceMax:        numericFloatPtr(row.TransactionPriceMax),
+		TransactionMomentum:        domainneighborhood.TransactionMomentum(row.TransactionMomentum),
+		TransactionEvidence:        transactionEvidenceFromRow(row),
+		TargetLayoutSupplyByLayout: intMap(row.TargetLayoutSupplyByLayout),
+		ListingSampleCount:         int(row.ListingSampleCount),
+		TransactionSampleCount:     int(row.TransactionSampleCount),
+		Coverage:                   domainneighborhood.Coverage(row.Coverage),
+		Freshness:                  domainneighborhood.Freshness(row.Freshness),
+		InventoryCollectedAt:       timePtr(row.InventoryCollectedAt),
+		ListedHomesChangePct:       numericFloatPtr(row.ListedHomesChangePct),
+		QualityWarnings:            qualityWarnings(row.QualityWarnings),
+		QualityState:               domainneighborhood.MarketQualityState(row.QualityState),
+		CalculatedAt:               row.CalculatedAt.Time,
 	}
 }
 
@@ -306,7 +304,7 @@ func neighborhoodMetricFromLatestRow(row sqlc.LatestNeighborhoodMetricRow) appne
 		TransactionPriceMin:            row.TransactionPriceMin,
 		TransactionPriceMax:            row.TransactionPriceMax,
 		TransactionMomentum:            row.TransactionMomentum,
-		TargetLayoutSupply:             row.TargetLayoutSupply,
+		TargetLayoutSupplyByLayout:     row.TargetLayoutSupplyByLayout,
 		CalculatedAt:                   row.CalculatedAt,
 		CollectionRunID:                row.CollectionRunID,
 		InventoryCollectionRunID:       row.InventoryCollectionRunID,
@@ -344,7 +342,7 @@ func metricHistoryRecordFromRow(row sqlc.ListNeighborhoodMetricHistoryRow) appne
 		TransactionPriceMin:            row.TransactionPriceMin,
 		TransactionPriceMax:            row.TransactionPriceMax,
 		TransactionMomentum:            row.TransactionMomentum,
-		TargetLayoutSupply:             row.TargetLayoutSupply,
+		TargetLayoutSupplyByLayout:     row.TargetLayoutSupplyByLayout,
 		CalculatedAt:                   row.CalculatedAt,
 		CollectionRunID:                row.CollectionRunID,
 		InventoryCollectionRunID:       row.InventoryCollectionRunID,
@@ -418,7 +416,7 @@ func marketAggregateFromRow(row sqlc.AggregateMarketObservationsRow) (appmetric.
 		ListingPriceMax:                   numericFloatPtr(row.ListingPriceMax),
 		TransactionPriceMin:               numericFloatPtr(row.TransactionPriceMin),
 		TransactionPriceMax:               numericFloatPtr(row.TransactionPriceMax),
-		TargetLayoutSupply:                int(row.TargetLayoutSupply),
+		TargetLayoutSupplyByLayout:        intMapAny(row.TargetLayoutSupplyByLayout),
 		ListingSampleCount:                int(row.ListingSampleCount),
 		TransactionSampleCount:            int(row.TransactionSampleCount),
 		LastThirtyDayTransactionCount:     int(row.LastThirtyDayTransactionCount),
@@ -562,6 +560,28 @@ func stringSliceAny(raw any) []string {
 	default:
 		encoded, _ := json.Marshal(v)
 		return stringSlice(encoded)
+	}
+}
+
+func intMap(raw []byte) map[string]int {
+	values := map[string]int{}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &values)
+	}
+	return values
+}
+
+func intMapAny(raw any) map[string]int {
+	switch value := raw.(type) {
+	case nil:
+		return map[string]int{}
+	case []byte:
+		return intMap(value)
+	case string:
+		return intMap([]byte(value))
+	default:
+		encoded, _ := json.Marshal(value)
+		return intMap(encoded)
 	}
 }
 

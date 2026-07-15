@@ -26,12 +26,23 @@ export type MetricHistoryResponse = components["schemas"]["MetricHistoryResponse
 export type MetricHistoryPoint = components["schemas"]["MetricHistoryPoint"];
 export type MetricComparison = components["schemas"]["MetricComparison"];
 export type MetricChangeValue = components["schemas"]["MetricChangeValue"];
+export type AddWatchlistItemRequest = components["schemas"]["AddWatchlistItemRequest"];
+export type AddWatchlistItemResponse = components["schemas"]["AddWatchlistItemResponse"];
 export type ImportJSONRequest = components["schemas"]["ImportJSONRequest"];
 export type ImportJSONRecord = components["schemas"]["ImportJSONRecord"];
 export type ImportCollectionRunResponse = components["schemas"]["ImportCollectionRunResponse"];
 export type CollectionRunDetail = components["schemas"]["CollectionRunDetail"];
 export type ValidationIssue = components["schemas"]["ValidationIssue"];
 export type ImportMetadata = Omit<ImportJSONRequest, "records">;
+
+export interface NeighborhoodSearchQuery {
+  area?: string;
+  city?: string;
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  targetLayout?: string;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -77,6 +88,18 @@ export async function getWatchlist(
   );
 }
 
+export async function addWatchlistItem(
+  input: AddWatchlistItemRequest,
+  signal?: AbortSignal,
+): Promise<AddWatchlistItemResponse> {
+  return request<AddWatchlistItemResponse>("/api/v1/watchlist/items", {
+    body: JSON.stringify(input),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    signal,
+  });
+}
+
 export async function getActionWindow(
   neighborhoodId: string,
   signal?: AbortSignal,
@@ -90,15 +113,15 @@ export async function getActionWindow(
 
 export async function getMetricHistory(
   neighborhoodId: string,
+  targetLayout: string,
   window: { from?: string; to?: string } = {},
   signal?: AbortSignal,
 ): Promise<MetricHistoryResponse> {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ targetLayout });
   if (window.from) params.set("from", window.from);
   if (window.to) params.set("to", window.to);
-  const query = params.size > 0 ? `?${params.toString()}` : "";
   return request<MetricHistoryResponse>(
-    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/metrics/history${query}`,
+    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/metrics/history?${params.toString()}`,
     signal ? { signal } : undefined,
   );
 }
@@ -135,12 +158,21 @@ export async function createDataSource(
 }
 
 export async function searchNeighborhoods(
-  query = "",
+  query: string | NeighborhoodSearchQuery = "",
   signal?: AbortSignal,
 ): Promise<NeighborhoodSearchResponse> {
-  const params = new URLSearchParams({ page: "1", pageSize: "50" });
-  if (query.trim()) {
-    params.set("q", query.trim());
+  const filters: NeighborhoodSearchQuery = typeof query === "string" ? { q: query } : query;
+  const params = new URLSearchParams({
+    page: String(filters.page ?? 1),
+    pageSize: String(filters.pageSize ?? 50),
+  });
+  for (const [key, value] of [
+    ["q", filters.q],
+    ["city", filters.city],
+    ["area", filters.area],
+    ["targetLayout", filters.targetLayout],
+  ] as const) {
+    if (value?.trim()) params.set(key, value.trim());
   }
   return request<NeighborhoodSearchResponse>(
     `/api/v1/neighborhoods?${params.toString()}`,
@@ -160,10 +192,12 @@ export async function getNeighborhood(
 
 export async function getNeighborhoodMetrics(
   neighborhoodId: string,
+  targetLayout: string,
   signal?: AbortSignal,
 ): Promise<NeighborhoodMetricResponse> {
+  const params = new URLSearchParams({ targetLayout });
   return request<NeighborhoodMetricResponse>(
-    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/metrics`,
+    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/metrics?${params.toString()}`,
     signal ? { signal } : undefined,
   );
 }

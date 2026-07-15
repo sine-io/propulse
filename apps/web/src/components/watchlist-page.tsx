@@ -225,7 +225,7 @@ function toCommunityView(item: WatchlistItem): CommunityView {
     id: item.id,
     icon: insufficient || stale ? "warning" : canBargain ? "check" : "eye",
     listed: item.hasMetric && item.listedHomes != null ? `${item.listedHomes} 套` : "暂无",
-    meta: `${item.area} · ${item.targetLayout}`,
+    meta: [item.city, item.area, item.targetLayout].filter(Boolean).join(" · "),
     name: item.name,
     qualityLabel: stale
       ? item.freshness === "expired" ? "数据已过期" : "数据已陈旧"

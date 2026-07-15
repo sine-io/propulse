@@ -3,6 +3,8 @@ package neighborhood
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"time"
 
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
@@ -18,13 +20,19 @@ var ErrInvalidMetricHistoryWindow = errors.New("invalid_metric_history_window")
 
 type MetricHistoryQuery struct {
 	NeighborhoodID string
+	TargetLayout   string
 	From           time.Time
 	To             time.Time
 }
 
 func (s *Service) MetricHistory(ctx context.Context, query MetricHistoryQuery) (MetricHistoryResult, error) {
-	if _, err := s.repo.GetNeighborhood(ctx, query.NeighborhoodID); err != nil {
+	neighborhood, err := s.repo.GetNeighborhood(ctx, query.NeighborhoodID)
+	if err != nil {
 		return MetricHistoryResult{}, err
+	}
+	targetLayout := strings.TrimSpace(query.TargetLayout)
+	if targetLayout == "" || !slices.Contains(neighborhood.AvailableLayouts, targetLayout) {
+		return MetricHistoryResult{}, ErrInvalidTargetLayout
 	}
 
 	from, to, err := s.resolveMetricHistoryWindow(query)
@@ -43,6 +51,7 @@ func (s *Service) MetricHistory(ctx context.Context, query MetricHistoryQuery) (
 	result := MetricHistoryResult{
 		Status:           MetricHistoryEmpty,
 		NeighborhoodID:   query.NeighborhoodID,
+		TargetLayout:     targetLayout,
 		AlgorithmVersion: s.algorithmVersion,
 		From:             from,
 		To:               to,
@@ -52,7 +61,8 @@ func (s *Service) MetricHistory(ctx context.Context, query MetricHistoryQuery) (
 		if record.Batch.CollectedAt.Before(from) || record.Batch.CollectedAt.After(to) {
 			continue
 		}
-		metric := refreshMetricQuality(record.Metric, s.now())
+		metric := projectMetric(record.Metric, targetLayout)
+		metric = refreshMetricQuality(metric, s.now())
 		if result.AlgorithmVersion == "" {
 			result.AlgorithmVersion = metric.AlgorithmVersion
 		}
