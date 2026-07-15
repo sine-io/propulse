@@ -18,6 +18,7 @@ import (
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
+	appreview "github.com/sine-io/propulse/internal/application/review"
 	"github.com/sine-io/propulse/internal/application/user"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
@@ -55,6 +56,9 @@ func testCapacityAssumptions() domaincapacity.Assumptions {
 func newTestEngine(t *testing.T, deps Dependencies) http.Handler {
 	t.Helper()
 
+	if deps.UserID == "" {
+		deps.UserID = user.SingleUserID
+	}
 	marketState := newInMemoryMarketState()
 	neighborhoodRepo := newInMemoryNeighborhoodRepository(marketState)
 	if deps.CapacityApplication == nil {
@@ -75,8 +79,8 @@ func newTestEngine(t *testing.T, deps Dependencies) http.Handler {
 			"market-metrics/test.1",
 		)
 	}
-	if deps.UserID == "" {
-		deps.UserID = user.SingleUserID
+	if deps.ReviewApplication == nil {
+		deps.ReviewApplication = appreview.NewService(newInMemoryReviewRepository(), deps.UserID)
 	}
 
 	engine, err := New(deps)
@@ -91,7 +95,7 @@ func TestNewRejectsMissingApplicationDependencies(t *testing.T) {
 	if err == nil {
 		t.Fatal("New() error = nil, want missing dependency error")
 	}
-	for _, name := range []string{"CapacityApplication", "NeighborhoodApplication", "CollectionApplication", "DecisionApplication"} {
+	for _, name := range []string{"CapacityApplication", "NeighborhoodApplication", "CollectionApplication", "DecisionApplication", "ReviewApplication"} {
 		if !strings.Contains(err.Error(), name) {
 			t.Fatalf("New() error = %q, want dependency %q", err, name)
 		}
@@ -444,6 +448,53 @@ func TestDecisionActionWindowRoute(t *testing.T) {
 	}
 }
 
+func TestReviewNoteAPIRoutes(t *testing.T) {
+	engine := newTestEngine(t, Dependencies{
+		Log:         zerolog.New(io.Discard),
+		StaticFS:    webembed.Embedded(),
+		AccessToken: "secret-token",
+	})
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/review-notes", strings.NewReader(`{"kind":"review","content":" first review ","weekStartDate":"2026-07-13"}`))
+	create.Header.Set("Content-Type", "application/json")
+	create.Header.Set("Authorization", "Bearer secret-token")
+	createRecorder := httptest.NewRecorder()
+	engine.ServeHTTP(createRecorder, create)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201; body=%s", createRecorder.Code, createRecorder.Body.String())
+	}
+	var created struct {
+		ID      string `json:"id"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(createRecorder.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if created.ID == "" || created.Content != "first review" || strings.Contains(createRecorder.Body.String(), "userId") {
+		t.Fatalf("create response = %s", createRecorder.Body.String())
+	}
+
+	requests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/review-notes?page=1&pageSize=20"},
+		{method: http.MethodGet, path: "/api/v1/review-notes/" + created.ID},
+		{method: http.MethodPatch, path: "/api/v1/review-notes/" + created.ID, body: `{"content":"updated review"}`},
+	}
+	for _, request := range requests {
+		req := httptest.NewRequest(request.method, request.path, strings.NewReader(request.body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer secret-token")
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s %s status = %d, want 200; body=%s", request.method, request.path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestAdminImportRoute(t *testing.T) {
 	engine := newTestEngine(t, Dependencies{
 		Log:                   zerolog.New(io.Discard),
@@ -658,6 +709,10 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{}`},
 		{method: http.MethodGet, path: "/api/v1/watchlist"},
 		{method: http.MethodGet, path: "/api/v1/decision/action-window"},
+		{method: http.MethodPost, path: "/api/v1/review-notes", body: `{}`},
+		{method: http.MethodGet, path: "/api/v1/review-notes"},
+		{method: http.MethodGet, path: "/api/v1/review-notes/33333333-3333-4333-8333-333333333333"},
+		{method: http.MethodPatch, path: "/api/v1/review-notes/33333333-3333-4333-8333-333333333333", body: `{}`},
 		{method: http.MethodPost, path: "/admin/api/data-sources", body: `{}`},
 		{method: http.MethodGet, path: "/admin/api/data-sources"},
 		{method: http.MethodPost, path: "/admin/api/imports/json", body: `{}`},
@@ -672,6 +727,7 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 			neighborhoodApp := &stubNeighborhoodApplication{}
 			collectionApp := &stubCollectionApplication{}
 			decisionApp := &stubDecisionApplication{}
+			reviewApp := &stubReviewApplication{}
 			engine := newTestEngine(t, Dependencies{
 				Log:                     zerolog.New(io.Discard),
 				StaticFS:                webembed.Embedded(),
@@ -679,6 +735,7 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 				NeighborhoodApplication: neighborhoodApp,
 				CollectionApplication:   collectionApp,
 				DecisionApplication:     decisionApp,
+				ReviewApplication:       reviewApp,
 				AccessToken:             "secret-token",
 			})
 
@@ -690,7 +747,7 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 			if rec.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want 401; body=%s", rec.Code, rec.Body.String())
 			}
-			if calls := capacityApp.calls + neighborhoodApp.calls + collectionApp.calls + decisionApp.calls; calls != 0 {
+			if calls := capacityApp.calls + neighborhoodApp.calls + collectionApp.calls + decisionApp.calls + reviewApp.calls; calls != 0 {
 				t.Fatalf("application calls = %d, want 0", calls)
 			}
 		})
@@ -857,6 +914,30 @@ func (s *stubCollectionApplication) GetCollectionRun(context.Context, appcollect
 
 type stubDecisionApplication struct {
 	calls int
+}
+
+type stubReviewApplication struct {
+	calls int
+}
+
+func (s *stubReviewApplication) CreateNote(context.Context, appreview.CreateNoteCommand) (appreview.Note, error) {
+	s.calls++
+	return appreview.Note{}, nil
+}
+
+func (s *stubReviewApplication) UpdateNote(context.Context, appreview.UpdateNoteCommand) (appreview.Note, error) {
+	s.calls++
+	return appreview.Note{}, nil
+}
+
+func (s *stubReviewApplication) GetNote(context.Context, appreview.GetNoteQuery) (appreview.Note, error) {
+	s.calls++
+	return appreview.Note{}, nil
+}
+
+func (s *stubReviewApplication) ListNotes(context.Context, appreview.ListNotesQuery) (appreview.NotesPage, error) {
+	s.calls++
+	return appreview.NotesPage{Items: []appreview.Note{}, Page: 1, PageSize: 20}, nil
 }
 
 func (s *stubDecisionApplication) GetActionWindow(_ context.Context, _ appdecision.GetActionWindowQuery) (appdecision.ActionWindowResult, error) {

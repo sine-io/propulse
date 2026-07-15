@@ -15,6 +15,7 @@ import (
 	appmetric "github.com/sine-io/propulse/internal/application/metric"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	appqueue "github.com/sine-io/propulse/internal/application/queue"
+	appreview "github.com/sine-io/propulse/internal/application/review"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 	migraterunner "github.com/sine-io/propulse/internal/infrastructure/migrate"
@@ -54,6 +55,13 @@ type CollectionApplication interface {
 
 type DecisionApplication interface {
 	GetActionWindow(ctx context.Context, query appdecision.GetActionWindowQuery) (appdecision.ActionWindowResult, error)
+}
+
+type ReviewApplication interface {
+	CreateNote(ctx context.Context, command appreview.CreateNoteCommand) (appreview.Note, error)
+	UpdateNote(ctx context.Context, command appreview.UpdateNoteCommand) (appreview.Note, error)
+	GetNote(ctx context.Context, query appreview.GetNoteQuery) (appreview.Note, error)
+	ListNotes(ctx context.Context, query appreview.ListNotesQuery) (appreview.NotesPage, error)
 }
 
 type MetricApplication interface {
@@ -225,6 +233,7 @@ func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger, r
 		NeighborhoodApplication: rt.neighborhood,
 		CollectionApplication:   rt.collection,
 		DecisionApplication:     rt.decision,
+		ReviewApplication:       rt.review,
 		AccessToken:             cfg.AccessToken,
 		UserID:                  cfg.UserID,
 		ReadinessChecker:        rt.readiness,

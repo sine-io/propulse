@@ -15,6 +15,7 @@ import (
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appmetric "github.com/sine-io/propulse/internal/application/metric"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
+	appreview "github.com/sine-io/propulse/internal/application/review"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 	postgresgorm "github.com/sine-io/propulse/internal/infrastructure/postgres/gorm"
 	"github.com/sine-io/propulse/internal/infrastructure/postgres/sqlmetric"
@@ -35,6 +36,7 @@ type runtime struct {
 	neighborhood NeighborhoodApplication
 	collection   CollectionApplication
 	decision     DecisionApplication
+	review       ReviewApplication
 	metric       MetricApplication
 	enqueuer     MetricTaskEnqueuer
 	readiness    router.ReadinessChecker
@@ -98,6 +100,7 @@ func openRuntime(ctx context.Context, cfg config.Config, _ zerolog.Logger) (*run
 	metricRepo := sqlmetric.NewRepository(pgxPool, cfg.MetricAlgorithmVersion)
 	neighborhoodRepo := postgresgorm.NewNeighborhoodRepositoryWithMetricReader(gormDB, metricRepo)
 	collectionRepo := postgresgorm.NewCollectionRepository(gormDB)
+	reviewRepo := postgresgorm.NewReviewRepository(gormDB)
 
 	rt.capacity = appcapacity.NewService(capacityRepo, cfg.CapacityAssumptions, time.Now, nil)
 	rt.metric = appmetric.NewService(metricRepo, cfg.MetricAlgorithmVersion)
@@ -110,6 +113,7 @@ func openRuntime(ctx context.Context, cfg config.Config, _ zerolog.Logger) (*run
 		cfg.AlternativeComparisonRuleVersion,
 		cfg.MetricAlgorithmVersion,
 	)
+	rt.review = appreview.NewService(reviewRepo, cfg.UserID)
 
 	return rt, nil
 }

@@ -567,6 +567,236 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/review-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List review notes owned by the configured user */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Review notes ordered by newest first */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReviewNotesPageResponse"];
+                    };
+                };
+                /** @description Invalid pagination parameters */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Review notes could not be listed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create a review note for the configured user */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateReviewNoteRequest"];
+                };
+            };
+            responses: {
+                /** @description Review note created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReviewNoteResponse"];
+                    };
+                };
+                /** @description Invalid JSON, kind, content, neighborhood ID, or week date */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Neighborhood not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Review note could not be stored */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-notes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a review note owned by the configured user */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Review note found */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReviewNoteResponse"];
+                    };
+                };
+                /** @description Invalid review note ID */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Review note not found or not owned by the configured user */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Review note could not be read */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update the content of a review note owned by the configured user */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateReviewNoteRequest"];
+                };
+            };
+            responses: {
+                /** @description Review note content updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReviewNoteResponse"];
+                    };
+                };
+                /** @description Invalid review note ID, JSON, or content */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Review note not found or not owned by the configured user */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Review note could not be updated */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/v1/decision/action-window": {
         parameters: {
             query?: never;
@@ -1061,6 +1291,41 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        ReviewNoteKind: "review" | "viewing_note";
+        CreateReviewNoteRequest: {
+            kind: components["schemas"]["ReviewNoteKind"];
+            /** @description Content is trimmed and measured in Unicode characters. */
+            content: string;
+            /** Format: uuid */
+            neighborhoodId?: string | null;
+            /** Format: date */
+            weekStartDate?: string | null;
+        };
+        UpdateReviewNoteRequest: {
+            /** @description Content is trimmed and measured in Unicode characters. */
+            content: string;
+        };
+        ReviewNoteResponse: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["ReviewNoteKind"];
+            /** Format: uuid */
+            neighborhoodId: string | null;
+            /** Format: date */
+            weekStartDate: string | null;
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ReviewNotesPageResponse: {
+            items: components["schemas"]["ReviewNoteResponse"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
         HousingCapacityInput: {
             /** @description Available cash, in ten-thousand CNY. */
             cashOnHand: number;
@@ -1709,7 +1974,7 @@ export interface components {
                 /**
                  * @example {
                  *       "error": {
-                 *         "code": "access_required",
+                 *         "code": "unauthorized",
                  *         "message": "valid bearer access token is required"
                  *       }
                  *     }

@@ -334,6 +334,168 @@ paths:
                 $ref: '#/components/schemas/WatchlistResponse'
         '401':
           $ref: '#/components/responses/AccessRequired'
+  /api/v1/review-notes:
+    post:
+      summary: Create a review note for the configured user
+      security:
+        - AccessBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewNoteRequest'
+      responses:
+        '201':
+          description: Review note created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewNoteResponse'
+        '400':
+          description: Invalid JSON, kind, content, neighborhood ID, or week date
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '404':
+          description: Neighborhood not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Review note could not be stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      summary: List review notes owned by the configured user
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Review notes ordered by newest first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewNotesPageResponse'
+        '400':
+          description: Invalid pagination parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '500':
+          description: Review notes could not be listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/review-notes/{id}:
+    get:
+      summary: Get a review note owned by the configured user
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Review note found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewNoteResponse'
+        '400':
+          description: Invalid review note ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '404':
+          description: Review note not found or not owned by the configured user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Review note could not be read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update the content of a review note owned by the configured user
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReviewNoteRequest'
+      responses:
+        '200':
+          description: Review note content updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewNoteResponse'
+        '400':
+          description: Invalid review note ID, JSON, or content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '404':
+          description: Review note not found or not owned by the configured user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Review note could not be updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/decision/action-window:
     get:
       summary: Recommend the current action window
@@ -689,9 +851,87 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
           example:
             error:
-              code: access_required
+              code: unauthorized
               message: valid bearer access token is required
   schemas:
+    ReviewNoteKind:
+      type: string
+      enum: [review, viewing_note]
+    CreateReviewNoteRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, content]
+      properties:
+        kind:
+          $ref: '#/components/schemas/ReviewNoteKind'
+        content:
+          type: string
+          minLength: 1
+          maxLength: 8000
+          description: Content is trimmed and measured in Unicode characters.
+        neighborhoodId:
+          type: string
+          format: uuid
+          nullable: true
+        weekStartDate:
+          type: string
+          format: date
+          nullable: true
+    UpdateReviewNoteRequest:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 8000
+          description: Content is trimmed and measured in Unicode characters.
+    ReviewNoteResponse:
+      type: object
+      required: [id, kind, neighborhoodId, weekStartDate, content, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/ReviewNoteKind'
+        neighborhoodId:
+          type: string
+          format: uuid
+          nullable: true
+        weekStartDate:
+          type: string
+          format: date
+          nullable: true
+        content:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ReviewNotesPageResponse:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewNoteResponse'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 100
     HousingCapacityInput:
       type: object
       required:

@@ -68,8 +68,8 @@ func TestAccessAuth(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 				t.Fatalf("json.Unmarshal() error = %v; body=%s", err, rec.Body.String())
 			}
-			if response.Error.Code != "access_required" {
-				t.Fatalf("error code = %q, want access_required", response.Error.Code)
+			if response.Error.Code != "unauthorized" {
+				t.Fatalf("error code = %q, want unauthorized", response.Error.Code)
 			}
 		})
 	}

@@ -31,6 +31,7 @@ type Dependencies struct {
 	NeighborhoodApplication httphandler.NeighborhoodApplication
 	CollectionApplication   CollectionApplication
 	DecisionApplication     httphandler.DecisionApplication
+	ReviewApplication       httphandler.ReviewApplication
 	AccessToken             string
 	UserID                  string
 	ReadinessChecker        ReadinessChecker
@@ -106,6 +107,12 @@ func New(deps Dependencies) (*gin.Engine, error) {
 	decisionHandler := httphandler.NewDecision(deps.DecisionApplication)
 	protected.GET("/decision/action-window", decisionHandler.GetActionWindow)
 
+	reviewHandler := httphandler.NewReview(deps.ReviewApplication)
+	protected.POST("/review-notes", reviewHandler.Create)
+	protected.GET("/review-notes", reviewHandler.List)
+	protected.GET("/review-notes/:id", reviewHandler.Get)
+	protected.PATCH("/review-notes/:id", reviewHandler.Update)
+
 	admin := engine.Group("/admin/api")
 	admin.Use(httpmiddleware.AccessAuth(deps.AccessToken))
 	dataSourcesHandler := httphandler.NewAdminDataSources(deps.CollectionApplication)
@@ -151,6 +158,9 @@ func validateDependencies(deps Dependencies) error {
 	}
 	if deps.DecisionApplication == nil {
 		missing = append(missing, "DecisionApplication")
+	}
+	if deps.ReviewApplication == nil {
+		missing = append(missing, "ReviewApplication")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("router dependencies are required: %s", strings.Join(missing, ", "))
