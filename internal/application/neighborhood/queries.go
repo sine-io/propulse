@@ -88,22 +88,22 @@ func (s *Service) ListWatchlist(ctx context.Context, query ListWatchlistQuery) (
 	for _, item := range items {
 		if !item.HasMetric {
 			summaries = append(summaries, WatchlistItemSummary{
-				ID:                  item.ID,
-				NeighborhoodID:      item.NeighborhoodID,
-				Name:                item.Name,
-				City:                item.City,
-				Area:                item.Area,
-				TargetLayout:        item.TargetLayout,
-				Status:              domainneighborhood.NeighborhoodStatusInsufficientData,
-				TransactionMomentum: domainneighborhood.TransactionMomentumUnknown,
+				ID:                   item.ID,
+				NeighborhoodID:       item.NeighborhoodID,
+				Name:                 item.Name,
+				City:                 item.City,
+				Area:                 item.Area,
+				TargetLayout:         item.TargetLayout,
+				Status:               domainneighborhood.NeighborhoodStatusInsufficientData,
+				TransactionMomentum:  domainneighborhood.TransactionMomentumUnknown,
 				TargetLayoutScarcity: domainneighborhood.ScarcityUnknown,
-				Advice:              "暂无指标数据，等待导入或计算后再判断。",
-				HasMetric:           false,
-				SourceIDs:           []string{},
-				Coverage:            domainneighborhood.CoverageUnknown,
-				Freshness:           domainneighborhood.FreshnessUnknown,
-				QualityState:        domainneighborhood.MarketQualityInsufficientData,
-				QualityWarnings:     []domainneighborhood.QualityWarning{domainneighborhood.WarningMetricUnavailable},
+				Advice:               "暂无指标数据，等待导入或计算后再判断。",
+				HasMetric:            false,
+				SourceIDs:            []string{},
+				Coverage:             domainneighborhood.CoverageUnknown,
+				Freshness:            domainneighborhood.FreshnessUnknown,
+				QualityState:         domainneighborhood.MarketQualityInsufficientData,
+				QualityWarnings:      []domainneighborhood.QualityWarning{domainneighborhood.WarningMetricUnavailable},
 			})
 			continue
 		}

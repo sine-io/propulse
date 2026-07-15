@@ -98,7 +98,11 @@ INSERT INTO neighborhood_metrics (
 	if err != nil {
 		t.Fatalf("query layout catalog: %v", err)
 	}
-	defer rows.Close()
+	t.Cleanup(func() {
+		if err := rows.Close(); err != nil {
+			t.Errorf("close layout rows: %v", err)
+		}
+	})
 	var layouts []string
 	for rows.Next() {
 		var layout string
@@ -106,6 +110,9 @@ INSERT INTO neighborhood_metrics (
 			t.Fatalf("scan layout: %v", err)
 		}
 		layouts = append(layouts, layout)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate layout catalog: %v", err)
 	}
 	if !reflect.DeepEqual(layouts, []string{"三房", "五房", "四房"}) {
 		t.Fatalf("layout catalog = %#v", layouts)
