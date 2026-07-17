@@ -4,15 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAccessToken } from "@/lib/access-token";
 import {
   ApiError,
+  createCapacityPolicy,
   createDataSource,
   createNeighborhood,
   getCollectionRunDetail,
   importCSVCollectionRun,
   importJSONCollectionRun,
+  listCapacityPolicies,
+  listCollectionRuns,
   listDataSources,
   searchNeighborhoods,
   type CollectionRunDetail,
   type DataSource,
+  type HousingPolicyVersion,
   type ImportCollectionRunResponse,
   type Neighborhood,
 } from "@/lib/api-client";
@@ -23,12 +27,15 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();
   return {
     ...actual,
+    createCapacityPolicy: vi.fn(),
     createDataSource: vi.fn(),
     createNeighborhood: vi.fn(),
     getCollectionRunDetail: vi.fn(),
     getCSVImportTemplate: vi.fn(),
     importCSVCollectionRun: vi.fn(),
     importJSONCollectionRun: vi.fn(),
+    listCapacityPolicies: vi.fn(),
+    listCollectionRuns: vi.fn(),
     listDataSources: vi.fn(),
     searchNeighborhoods: vi.fn(),
   };
@@ -51,6 +58,55 @@ const neighborhoodFixture: Neighborhood = {
   area: "滨江",
   availableLayouts: ["三房", "四房"],
   createdAt: "2026-07-14T06:00:00Z",
+};
+
+const policyFixture: HousingPolicyVersion = {
+  id: "66666666-6666-4666-8666-666666666666",
+  city: "天津",
+  version: "tianjin-2026.01.01",
+  name: "天津住房交易测算政策",
+  effectiveFrom: "2026-01-01",
+  effectiveTo: null,
+  enabled: true,
+  createdAt: "2026-01-01T00:00:00Z",
+  rules: {
+    downPayment: {
+      commercialFirst: 0.15,
+      commercialSecond: 0.15,
+      providentFirst: 0.2,
+      providentSecond: 0.2,
+      combinedFirst: 0.2,
+      combinedSecond: 0.2,
+    },
+    interest: {
+      commercialFirst: 0.0305,
+      commercialSecond: 0.0305,
+      providentFirstUpToFiveYears: 0.021,
+      providentFirstOverFiveYears: 0.026,
+      providentSecondUpToFiveYears: 0.02525,
+      providentSecondOverFiveYears: 0.03075,
+    },
+    tax: {
+      deedFirstUpToAreaRate: 0.01,
+      deedFirstOverAreaRate: 0.015,
+      deedSecondUpToAreaRate: 0.01,
+      deedSecondOverAreaRate: 0.02,
+      deedAreaThresholdSqm: 140,
+      vatRate: 0.03,
+      vatExemptHoldingYears: 2,
+      vatSurchargeRate: 0.06,
+      incomeTaxGainRate: 0.2,
+      incomeTaxAssessedRate: 0.01,
+      incomeTaxExemptHoldingYears: 5,
+    },
+  },
+  sources: [{
+    code: "deed_tax",
+    title: "契税政策",
+    issuer: "国家税务总局",
+    url: "https://fgk.chinatax.gov.cn/example",
+    effectiveDate: "2024-12-01",
+  }],
 };
 
 const importResultFixture: ImportCollectionRunResponse = {
@@ -123,6 +179,8 @@ const detailFixture: CollectionRunDetail = {
 
 describe("DataManagementPage", () => {
   beforeEach(() => {
+    vi.mocked(listCapacityPolicies).mockResolvedValue([policyFixture]);
+    vi.mocked(listCollectionRuns).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
     vi.mocked(listDataSources).mockResolvedValue([sourceFixture]);
     vi.mocked(searchNeighborhoods).mockResolvedValue({
       items: [neighborhoodFixture],
@@ -168,7 +226,7 @@ describe("DataManagementPage", () => {
 
     expect(await screen.findByTestId("catalog-empty-state")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "新建" })).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "创建批次" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导入录入房源" })).toBeInTheDocument();
   });
 
   it("creates and selects a real data source", async () => {
@@ -210,8 +268,32 @@ describe("DataManagementPage", () => {
     expect(screen.getByLabelText("小区")).toHaveValue(created.id);
   });
 
+  it("submits manually entered rows through the JSON import path", async () => {
+    vi.mocked(importJSONCollectionRun).mockResolvedValue(importResultFixture);
+    await renderReadyImportForm();
+    fireEvent.change(screen.getByLabelText("来源引用"), { target: { value: "manual-1" } });
+    fireEvent.change(screen.getByLabelText("采集时间"), { target: { value: "2026-07-14T14:00" } });
+    fireEvent.change(screen.getByLabelText("户型"), { target: { value: "三房" } });
+    fireEvent.change(screen.getByLabelText("面积 (㎡)"), { target: { value: "138.6" } });
+    fireEvent.change(screen.getByLabelText("挂牌总价 (万)"), { target: { value: "178" } });
+    fireEvent.change(screen.getByLabelText("挂牌天数"), { target: { value: "45" } });
+    fireEvent.click(screen.getByRole("button", { name: "导入录入房源" }));
+
+    await waitFor(() => {
+      expect(importJSONCollectionRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceRef: "manual-1",
+          records: [expect.objectContaining({ recordType: "listing", layout: "三房", areaSqm: 138.6, listingPrice: 178, daysOnMarket: 45, status: "active" })],
+        }),
+        expect.any(AbortSignal),
+      );
+    });
+    expect(await screen.findByText("批次导入成功")).toBeInTheDocument();
+  });
+
   it("shows local validation without sending a batch", async () => {
     await renderReadyImportForm();
+    fireEvent.click(screen.getByRole("button", { name: "JSON" }));
     fireEvent.change(screen.getByLabelText("来源引用"), { target: { value: "registry-1" } });
     fireEvent.change(screen.getByLabelText("采集时间"), { target: { value: "2026-07-14T14:00" } });
     fireEvent.change(screen.getByLabelText("记录数组"), { target: { value: "{}" } });
@@ -249,7 +331,7 @@ describe("DataManagementPage", () => {
 
     expect(await screen.findByText("批次导入成功")).toBeInTheDocument();
     expect(screen.getByText(importResultFixture.collectionRunId)).toBeInTheDocument();
-    expect(screen.getByText("已刷新")).toBeInTheDocument();
+    expect(screen.getAllByText("已刷新").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "查看批次" })).toHaveAttribute(
       "href",
       `/data/imports/${importResultFixture.collectionRunId}`,
@@ -289,6 +371,87 @@ describe("DataManagementPage", () => {
     expect(screen.getByLabelText("记录数组")).toHaveValue(validRecordsJSON);
     expect(screen.queryByText("批次导入成功")).not.toBeInTheDocument();
     expect(screen.queryByText(importResultFixture.collectionRunId)).not.toBeInTheDocument();
+  });
+
+  it("explains catalog relationships, collection metadata, and empty batch history", async () => {
+    await renderReadyImportForm();
+
+    expect(screen.getByText(/数据源表示数据出处，小区表示数据归属，两者没有固定绑定/)).toBeInTheDocument();
+    expect(screen.getByText("来源页面、文件或查询的稳定引用。")).toBeInTheDocument();
+    expect(screen.getByText("源数据实际采集时间，不是导入时间。")).toBeInTheDocument();
+    expect(screen.getByText("完整覆盖会更新当前库存；部分覆盖只增加观测。")).toBeInTheDocument();
+    expect(screen.getByText("尚未创建挂牌/成交采集批次")).toBeInTheDocument();
+    expect(screen.getByText(/房见小区聚合快照单独保存/)).toBeInTheDocument();
+  });
+
+  it("renders and filters paginated collection run history", async () => {
+    vi.mocked(listCollectionRuns).mockResolvedValue({
+      items: [{
+        collectionRun: importResultFixture.collectionRun,
+        source: sourceFixture,
+        neighborhoodName: neighborhoodFixture.name,
+        recordCount: 2,
+        listingCount: 1,
+        transactionCount: 1,
+        detailHref: `/data/imports/${importResultFixture.collectionRunId}`,
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    });
+    await renderReadyImportForm();
+
+    expect(screen.getByText("共 2 · 挂牌 1 · 成交 1")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "详情" })).toHaveAttribute("href", `/data/imports/${importResultFixture.collectionRunId}`);
+    fireEvent.change(screen.getByLabelText("筛选数据源"), { target: { value: sourceFixture.id } });
+    fireEvent.change(screen.getByLabelText("筛选小区"), { target: { value: neighborhoodFixture.id } });
+    fireEvent.change(screen.getByLabelText("指标状态"), { target: { value: "completed" } });
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+
+    await waitFor(() => expect(listCollectionRuns).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        dataSourceId: sourceFixture.id,
+        neighborhoodId: neighborhoodFixture.id,
+        metricStatus: "completed",
+        page: 1,
+        pageSize: 20,
+      }),
+    ));
+  });
+
+  it("creates a future effective policy version without replacing history", async () => {
+    const created = {
+      ...policyFixture,
+      id: "77777777-7777-4777-8777-777777777777",
+      version: "tianjin-2027.01.01",
+      name: "天津 2027 测算政策",
+      effectiveFrom: "2027-01-01",
+    };
+    vi.mocked(createCapacityPolicy).mockResolvedValue(created);
+    vi.mocked(listCapacityPolicies)
+      .mockResolvedValueOnce([policyFixture])
+      .mockResolvedValueOnce([created, policyFixture]);
+    await renderReadyImportForm();
+
+    fireEvent.click(screen.getByRole("button", { name: "录入新版本" }));
+    const request = {
+      city: created.city,
+      effectiveFrom: created.effectiveFrom,
+      effectiveTo: created.effectiveTo,
+      enabled: created.enabled,
+      name: created.name,
+      rules: created.rules,
+      sources: created.sources,
+      version: created.version,
+    };
+    fireEvent.change(screen.getByLabelText("政策版本 JSON"), {
+      target: { value: JSON.stringify(request) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建政策版本" }));
+
+    await waitFor(() => expect(createCapacityPolicy).toHaveBeenCalledWith(request));
+    expect(screen.getByText("tianjin-2027.01.01")).toBeInTheDocument();
+    expect(screen.getByText("tianjin-2026.01.01")).toBeInTheDocument();
   });
 });
 
@@ -359,6 +522,7 @@ async function renderReadyImportForm() {
 
 async function fillValidJSONImport() {
   await renderReadyImportForm();
+  fireEvent.click(screen.getByRole("button", { name: "JSON" }));
   fireEvent.change(screen.getByLabelText("来源引用"), { target: { value: "registry-1" } });
   fireEvent.change(screen.getByLabelText("采集时间"), { target: { value: "2026-07-14T14:00" } });
   fireEvent.change(screen.getByLabelText("记录数组"), { target: { value: validRecordsJSON } });

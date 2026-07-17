@@ -150,6 +150,7 @@ func validateAndNormalize(command ImportCollectionRunCommand, now time.Time) (No
 				TransactionPrice:   *input.TransactionPrice,
 				TransactionDate:    input.TransactionDate.UTC(),
 				OriginalListingRef: originalRef,
+				Attributes:         copyAttributes(input.Attributes),
 			})
 		}
 	}

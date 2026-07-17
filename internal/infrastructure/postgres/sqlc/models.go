@@ -9,11 +9,25 @@ import (
 )
 
 type CapacityCalculation struct {
-	ID        pgtype.UUID
-	UserID    string
-	Input     []byte
-	Result    []byte
-	CreatedAt pgtype.Timestamptz
+	ID               pgtype.UUID
+	UserID           string
+	Input            []byte
+	Result           []byte
+	CreatedAt        pgtype.Timestamptz
+	SelectionContext []byte
+}
+
+type CapacityPolicyVersion struct {
+	ID            pgtype.UUID
+	City          string
+	Version       string
+	Name          string
+	EffectiveFrom pgtype.Date
+	EffectiveTo   pgtype.Date
+	Enabled       bool
+	Rules         []byte
+	Sources       []byte
+	CreatedAt     pgtype.Timestamptz
 }
 
 type CollectionRun struct {
@@ -34,6 +48,79 @@ type CollectionRun struct {
 	UpdatedAt         pgtype.Timestamptz
 }
 
+type CommunityMarketSnapshot struct {
+	ID                           pgtype.UUID
+	DataSourceID                 pgtype.UUID
+	NeighborhoodID               pgtype.UUID
+	SourceRef                    string
+	CollectedAt                  pgtype.Timestamptz
+	ContentChecksum              string
+	RawPayload                   []byte
+	RawContentType               string
+	SourceCommunityID            string
+	CommunityName                string
+	FormerName                   string
+	CityCode                     string
+	CityName                     string
+	DistrictCode                 string
+	DistrictName                 string
+	BlockCode                    string
+	BlockName                    string
+	Latitude                     pgtype.Numeric
+	Longitude                    pgtype.Numeric
+	LatestListingDate            pgtype.Date
+	ListingAvgUnitPrice          pgtype.Numeric
+	ListingCount                 pgtype.Int4
+	ListingAreaSqm               pgtype.Numeric
+	ListingAvgTotalPriceWan      pgtype.Numeric
+	ListingAvgUnitPrice6m        pgtype.Numeric
+	NewListingCount3m            pgtype.Int4
+	NewListingAvgTotalPrice3mWan pgtype.Numeric
+	NewListingUnitPrice3m        pgtype.Numeric
+	LatestTradeDate              pgtype.Date
+	LatestTradeAvgUnitPrice      pgtype.Numeric
+	TradeCount3m                 pgtype.Int4
+	TradeArea3mSqm               pgtype.Numeric
+	TradeAvgTotalPrice3mWan      pgtype.Numeric
+	TradeUnitPrice3m             pgtype.Numeric
+	TradeAvgUnitPrice6m          pgtype.Numeric
+	TradeCountPerMonth6m         pgtype.Numeric
+	TakeLookCount                pgtype.Int4
+	TakeLookConversionRate       pgtype.Numeric
+	OnSaleAreaRange              string
+	OnSalePriceRange             string
+	OnSaleRoomTypes              []byte
+	CreatedAt                    pgtype.Timestamptz
+	ProvinceCode                 pgtype.Text
+	ProvinceName                 pgtype.Text
+	PropertyType                 pgtype.Text
+	PropertyTags                 []byte
+	BuildingCount                pgtype.Int4
+	BuildingType                 pgtype.Text
+	BuildingYear                 pgtype.Int4
+	Developer                    pgtype.Text
+	HouseholdCount               pgtype.Int4
+	ClosedManagement             pgtype.Text
+	PlotRatio                    pgtype.Numeric
+	GreenAreaSqm                 pgtype.Numeric
+	GreeningRatePercent          pgtype.Numeric
+	PropertyManagementCompany    pgtype.Text
+	PropertyFee                  pgtype.Text
+	FixedParkingSpaces           pgtype.Int4
+	ParkingRatio                 pgtype.Text
+	ParkingFee                   pgtype.Text
+	HeatingType                  pgtype.Text
+	WaterType                    pgtype.Text
+	ElectricityType              pgtype.Text
+	GasCost                      pgtype.Text
+	ManCarSeparation             pgtype.Text
+	CollectionRunID              pgtype.UUID
+	Analysis                     []byte
+	Surroundings                 []byte
+	CityContext                  []byte
+	QualityStatus                string
+}
+
 type DataSource struct {
 	ID         pgtype.UUID
 	Name       string
@@ -42,6 +129,18 @@ type DataSource struct {
 	Notes      string
 	CreatedAt  pgtype.Timestamptz
 	UpdatedAt  pgtype.Timestamptz
+}
+
+type ListingAdjustment struct {
+	ID              pgtype.UUID
+	CollectionRunID pgtype.UUID
+	NeighborhoodID  pgtype.UUID
+	RoomID          string
+	AdjustedAt      pgtype.Date
+	PriceBeforeWan  pgtype.Numeric
+	PriceAfterWan   pgtype.Numeric
+	AmountWan       pgtype.Numeric
+	CreatedAt       pgtype.Timestamptz
 }
 
 type ListingObservation struct {
@@ -130,6 +229,31 @@ type TransactionObservation struct {
 	TransactionDate    pgtype.Date
 	OriginalListingRef pgtype.Text
 	CapturedAt         pgtype.Timestamptz
+	Attributes         []byte
+}
+
+type UserPropertyAsset struct {
+	ID                       pgtype.UUID
+	UserID                   string
+	Name                     string
+	NeighborhoodID           pgtype.UUID
+	NeighborhoodName         string
+	City                     string
+	District                 string
+	Layout                   string
+	AreaSqm                  pgtype.Numeric
+	FloorBand                string
+	FloorDescription         string
+	Orientation              string
+	CurrentListingPriceWan   pgtype.Numeric
+	OriginalPurchasePriceWan pgtype.Numeric
+	PurchasedOn              pgtype.Date
+	CurrentLoanBalanceWan    pgtype.Numeric
+	SourceKind               string
+	SourceSnapshot           []byte
+	CreatedAt                pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
+	DeletedAt                pgtype.Timestamptz
 }
 
 type WatchlistItem struct {

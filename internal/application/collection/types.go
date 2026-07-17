@@ -151,6 +151,7 @@ type TransactionObservation struct {
 	TransactionDate    time.Time
 	OriginalListingRef *string
 	CapturedAt         time.Time
+	Attributes         map[string]string
 }
 
 type ValidationSummary struct {
@@ -190,6 +191,41 @@ type CollectionRunDetail struct {
 	Source       DataSource
 	Listings     []ListingObservation
 	Transactions []TransactionObservation
+}
+
+type CollectionRunSummary struct {
+	Run              CollectionRun
+	Source           DataSource
+	NeighborhoodName string
+}
+
+type CollectionRunFilter struct {
+	DataSourceID   string
+	NeighborhoodID string
+	Status         CollectionRunStatus
+	MetricStatus   MetricStatus
+	From           *time.Time
+	To             *time.Time
+	Page           int
+	PageSize       int
+}
+
+type CollectionRunsPage struct {
+	Items    []CollectionRunSummary
+	Total    int64
+	Page     int
+	PageSize int
+}
+
+type ListCollectionRunsQuery struct {
+	DataSourceID   string
+	NeighborhoodID string
+	Status         CollectionRunStatus
+	MetricStatus   MetricStatus
+	From           *time.Time
+	To             *time.Time
+	Page           int
+	PageSize       int
 }
 
 type GetCollectionRunQuery struct {
@@ -256,6 +292,7 @@ func (normalized NormalizedImport) NewBatch(runID string, importedAt time.Time, 
 		transactions[i].CollectionRunID = runID
 		transactions[i].NeighborhoodID = normalized.NeighborhoodID
 		transactions[i].CapturedAt = normalized.CollectedAt
+		transactions[i].Attributes = copyAttributes(transactions[i].Attributes)
 	}
 	return ImportBatch{Run: run, Listings: listings, Transactions: transactions}
 }

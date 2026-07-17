@@ -1,0 +1,18 @@
+{
+  "code": 200,
+  "description": "success",
+  "data": [
+    {
+      "adjustDate": "2026.06.29",
+      "listingPriceAdjustBefore": 65.0000,
+      "listingPriceAdjustAfter": 63.0000,
+      "adjustAmount": -2.0000
+    },
+    {
+      "adjustDate": "2026.06.28",
+      "listingPriceAdjustBefore": 59.5000,
+      "listingPriceAdjustAfter": 65.0000,
+      "adjustAmount": 5.5000
+    }
+  ]
+}

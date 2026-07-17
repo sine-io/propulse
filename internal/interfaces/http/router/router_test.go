@@ -14,12 +14,15 @@ import (
 
 	"github.com/rs/zerolog"
 	webembed "github.com/sine-io/propulse/apps/web/embed"
+	appasset "github.com/sine-io/propulse/internal/application/asset"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
+	appcommunitymarket "github.com/sine-io/propulse/internal/application/communitymarket"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	appreview "github.com/sine-io/propulse/internal/application/review"
 	"github.com/sine-io/propulse/internal/application/user"
+	domainasset "github.com/sine-io/propulse/internal/domain/asset"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 	domaindecision "github.com/sine-io/propulse/internal/domain/decision"
 	domainneighborhood "github.com/sine-io/propulse/internal/domain/neighborhood"
@@ -64,11 +67,17 @@ func newTestEngine(t *testing.T, deps Dependencies) http.Handler {
 	if deps.CapacityApplication == nil {
 		deps.CapacityApplication = appcapacity.NewService(newInMemoryCalculationRepository(), testCapacityAssumptions(), nil, nil)
 	}
+	if deps.AssetApplication == nil {
+		deps.AssetApplication = emptyAssetApplication{}
+	}
 	if deps.NeighborhoodApplication == nil {
 		deps.NeighborhoodApplication = appneighborhood.NewService(neighborhoodRepo)
 	}
 	if deps.CollectionApplication == nil {
 		deps.CollectionApplication = appcollection.NewService(newInMemoryCollectionRepository(neighborhoodRepo, marketState), nil, nil, "market-metrics/test.1")
+	}
+	if deps.CommunityMarketApplication == nil {
+		deps.CommunityMarketApplication = emptyCommunityMarketApplication{}
 	}
 	if deps.DecisionApplication == nil {
 		deps.DecisionApplication = appdecision.NewService(
@@ -95,11 +104,58 @@ func TestNewRejectsMissingApplicationDependencies(t *testing.T) {
 	if err == nil {
 		t.Fatal("New() error = nil, want missing dependency error")
 	}
-	for _, name := range []string{"CapacityApplication", "NeighborhoodApplication", "CollectionApplication", "DecisionApplication", "ReviewApplication"} {
+	for _, name := range []string{"CapacityApplication", "NeighborhoodApplication", "CollectionApplication", "CommunityMarketApplication", "DecisionApplication", "ReviewApplication"} {
 		if !strings.Contains(err.Error(), name) {
 			t.Fatalf("New() error = %q, want dependency %q", err, name)
 		}
 	}
+}
+
+type emptyCommunityMarketApplication struct{}
+
+type emptyAssetApplication struct{}
+
+func (emptyAssetApplication) CreateAsset(context.Context, appasset.CreateAssetCommand) (domainasset.Asset, error) {
+	return domainasset.Asset{}, appasset.ErrInvalidCommand
+}
+func (emptyAssetApplication) UpdateAsset(context.Context, appasset.UpdateAssetCommand) (domainasset.Asset, error) {
+	return domainasset.Asset{}, appasset.ErrAssetNotFound
+}
+func (emptyAssetApplication) DeleteAsset(context.Context, appasset.DeleteAssetCommand) error {
+	return appasset.ErrAssetNotFound
+}
+func (emptyAssetApplication) GetAsset(context.Context, appasset.GetAssetQuery) (domainasset.Asset, error) {
+	return domainasset.Asset{}, appasset.ErrAssetNotFound
+}
+func (emptyAssetApplication) ListAssets(context.Context, appasset.ListAssetsQuery) (appasset.Page, error) {
+	return appasset.Page{Items: []domainasset.Asset{}, Page: 1, PageSize: 20}, nil
+}
+
+func (emptyCommunityMarketApplication) ImportSnapshot(context.Context, appcommunitymarket.ImportSnapshotCommand) (appcommunitymarket.ImportSnapshotResult, error) {
+	return appcommunitymarket.ImportSnapshotResult{}, appcommunitymarket.ErrImportFailed
+}
+
+func (emptyCommunityMarketApplication) LatestSnapshot(context.Context, appcommunitymarket.LatestSnapshotQuery) (appcommunitymarket.Snapshot, error) {
+	return appcommunitymarket.Snapshot{}, appcommunitymarket.ErrSnapshotNotFound
+}
+
+func (emptyCommunityMarketApplication) ImportFangjian(context.Context, appcommunitymarket.ImportFangjianCommand) (appcommunitymarket.ImportFangjianResult, error) {
+	return appcommunitymarket.ImportFangjianResult{}, nil
+}
+func (emptyCommunityMarketApplication) ListListings(context.Context, appcommunitymarket.MarketListQuery) (appcommunitymarket.Page[appcommunitymarket.MarketListing], error) {
+	return appcommunitymarket.Page[appcommunitymarket.MarketListing]{}, nil
+}
+func (emptyCommunityMarketApplication) GetListing(context.Context, appcommunitymarket.GetListingQuery) (appcommunitymarket.MarketListingDetail, error) {
+	return appcommunitymarket.MarketListingDetail{}, appcommunitymarket.ErrListingNotFound
+}
+func (emptyCommunityMarketApplication) ListTransactions(context.Context, appcommunitymarket.MarketListQuery) (appcommunitymarket.Page[appcommunitymarket.MarketTransaction], error) {
+	return appcommunitymarket.Page[appcommunitymarket.MarketTransaction]{}, nil
+}
+func (emptyCommunityMarketApplication) ListingAdjustments(context.Context, appcommunitymarket.ListingAdjustmentsQuery) ([]appcommunitymarket.ListingAdjustment, error) {
+	return nil, nil
+}
+func (emptyCommunityMarketApplication) Compare(context.Context, appcommunitymarket.ComparisonQuery) (appcommunitymarket.Comparison, error) {
+	return appcommunitymarket.Comparison{}, nil
 }
 
 func TestInMemoryWatchlistListsItemsByInsertionOrder(t *testing.T) {
@@ -311,6 +367,7 @@ func TestFrontendRoutesServeEmbeddedHTML(t *testing.T) {
 	for _, path := range []string{
 		"/",
 		"/calculator",
+		"/assets",
 		"/data",
 		"/data/imports/33333333-3333-3333-3333-333333333333",
 		"/watchlist",
@@ -338,6 +395,41 @@ func TestFrontendRoutesServeEmbeddedHTML(t *testing.T) {
 		}
 		if !strings.Contains(rec.Body.String(), "<!DOCTYPE html>") {
 			t.Fatalf("%s did not return embedded frontend html", path)
+		}
+	}
+}
+
+func TestFrontendRoutesServeEmbeddedRSCPayloads(t *testing.T) {
+	engine := newTestEngine(t, Dependencies{
+		Log:      zerolog.New(io.Discard),
+		StaticFS: webembed.Embedded(),
+	})
+
+	for _, path := range []string{
+		"/index.txt",
+		"/calculator.txt",
+		"/assets.txt",
+		"/data.txt",
+		"/data/imports/33333333-3333-3333-3333-333333333333.txt",
+		"/watchlist.txt",
+		"/action-window.txt",
+		"/neighborhoods.txt",
+		"/methods.txt",
+		"/methods/old-home-sale-delay.txt",
+		"/templates.txt",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path+"?_rsc=test", nil)
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200", path, rec.Code)
+		}
+		if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "text/x-component") {
+			t.Fatalf("%s content-type = %q, want text/x-component", path, got)
+		}
+		if rec.Body.Len() == 0 {
+			t.Fatalf("%s returned an empty RSC payload", path)
 		}
 	}
 }
@@ -722,6 +814,11 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 		{method: http.MethodPost, path: "/api/v1/capacity/calculations", body: `{}`},
 		{method: http.MethodGet, path: "/api/v1/access"},
 		{method: http.MethodGet, path: "/api/v1/capacity/calculations/calculation_1"},
+		{method: http.MethodPost, path: "/api/v1/assets", body: `{}`},
+		{method: http.MethodGet, path: "/api/v1/assets"},
+		{method: http.MethodGet, path: "/api/v1/assets/11111111-1111-4111-8111-111111111111"},
+		{method: http.MethodPatch, path: "/api/v1/assets/11111111-1111-4111-8111-111111111111", body: `{}`},
+		{method: http.MethodDelete, path: "/api/v1/assets/11111111-1111-4111-8111-111111111111"},
 		{method: http.MethodPost, path: "/api/v1/neighborhoods", body: `{}`},
 		{method: http.MethodPost, path: "/api/v1/watchlist/items", body: `{}`},
 		{method: http.MethodGet, path: "/api/v1/watchlist"},
@@ -733,9 +830,13 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 		{method: http.MethodPost, path: "/admin/api/data-sources", body: `{}`},
 		{method: http.MethodGet, path: "/admin/api/data-sources"},
 		{method: http.MethodPost, path: "/admin/api/imports/json", body: `{}`},
+		{method: http.MethodGet, path: "/admin/api/imports"},
 		{method: http.MethodPost, path: "/admin/api/imports/csv"},
 		{method: http.MethodGet, path: "/admin/api/imports/csv/template"},
 		{method: http.MethodGet, path: "/admin/api/imports/33333333-3333-3333-3333-333333333333"},
+		{method: http.MethodGet, path: "/admin/api/capacity/policies"},
+		{method: http.MethodPost, path: "/admin/api/capacity/policies", body: `{}`},
+		{method: http.MethodPost, path: "/admin/api/community-market/imports/csv"},
 	}
 
 	for _, tt := range tests {
@@ -804,9 +905,19 @@ type stubCapacityApplication struct {
 	calls int
 }
 
-func (s *stubCapacityApplication) GetAssumptions(_ context.Context, _ appcapacity.GetAssumptionsQuery) (domaincapacity.Assumptions, error) {
+func (s *stubCapacityApplication) GetAssumptions(_ context.Context, _ appcapacity.GetAssumptionsQuery) (appcapacity.AssumptionsView, error) {
 	s.calls++
-	return testCapacityAssumptions(), nil
+	return appcapacity.AssumptionsView{Legacy: testCapacityAssumptions()}, nil
+}
+
+func (s *stubCapacityApplication) ListPolicyVersions(context.Context, appcapacity.ListPolicyVersionsQuery) ([]domaincapacity.HousingPolicyVersion, error) {
+	s.calls++
+	return []domaincapacity.HousingPolicyVersion{}, nil
+}
+
+func (s *stubCapacityApplication) CreatePolicyVersion(_ context.Context, command appcapacity.CreatePolicyVersionCommand) (domaincapacity.HousingPolicyVersion, error) {
+	s.calls++
+	return command.Policy, nil
 }
 
 func (s *stubCapacityApplication) CreateCalculation(_ context.Context, _ appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error) {
@@ -927,6 +1038,11 @@ func (s *stubCollectionApplication) ImportCollectionRun(_ context.Context, comma
 func (s *stubCollectionApplication) GetCollectionRun(context.Context, appcollection.GetCollectionRunQuery) (appcollection.CollectionRunDetail, error) {
 	s.calls++
 	return appcollection.CollectionRunDetail{}, nil
+}
+
+func (s *stubCollectionApplication) ListCollectionRuns(context.Context, appcollection.ListCollectionRunsQuery) (appcollection.CollectionRunsPage, error) {
+	s.calls++
+	return appcollection.CollectionRunsPage{Items: []appcollection.CollectionRunSummary{}, Page: 1, PageSize: 20}, nil
 }
 
 type stubDecisionApplication struct {

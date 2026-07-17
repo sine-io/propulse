@@ -54,7 +54,11 @@ export interface paths {
          */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    city?: string;
+                    homePurchaseOrder?: "first" | "second";
+                    loanTermMonths?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -122,6 +126,24 @@ export interface paths {
                     };
                 };
                 401: components["responses"]["AccessRequired"];
+                /** @description Selected asset or target listing not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Selected target listing is no longer active */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
                 /** @description Internal server error */
                 500: {
                     headers: {
@@ -194,6 +216,302 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active property assets owned by the configured user */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Active assets ordered by most recently updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AssetsPageResponse"];
+                    };
+                };
+                /** @description Invalid pagination */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Asset list could not be read */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create a property asset for the configured user */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateAssetRequest"];
+                };
+            };
+            responses: {
+                /** @description Asset created with an authoritative source snapshot */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AssetResponse"];
+                    };
+                };
+                /** @description Invalid asset facts or request shape */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Selected neighborhood or listing not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Selected listing is no longer active */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Asset could not be stored */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one active property asset owned by the configured user */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Asset found */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AssetResponse"];
+                    };
+                };
+                /** @description Invalid asset ID */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Asset not found for this user */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Asset could not be read */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Soft-delete one owned property asset */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Asset soft-deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Invalid asset ID */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Asset not found for this user */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Asset could not be deleted */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Update confirmed facts for one owned property asset */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateAssetRequest"];
+                };
+            };
+            responses: {
+                /** @description Asset updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AssetResponse"];
+                    };
+                };
+                /** @description Invalid asset facts or request shape */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Asset or selected source not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Selected replacement listing is no longer active */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Asset could not be updated */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/api/v1/neighborhoods": {
@@ -437,6 +755,467 @@ export interface paths {
                 };
                 /** @description Neighborhood not found */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/neighborhoods/{id}/community-market": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the latest source-native community aggregate market snapshot
+         * @description Public. Aggregate observations and optional source-native profile fields remain separate from listing and transaction detail metrics.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Latest community aggregate snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CommunityMarketSnapshot"];
+                    };
+                };
+                /** @description Community aggregate snapshot not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Snapshot lookup failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/neighborhoods/{id}/community-market/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the latest complete or aggregate-only community market snapshot */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Latest community market snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CommunityMarketSnapshot"];
+                    };
+                };
+                /** @description Snapshot not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Snapshot lookup failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/neighborhoods/{id}/market-listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the latest complete Fangjian listing inventory */
+        get: {
+            parameters: {
+                query?: {
+                    layout?: string;
+                    floor?: "高楼层" | "中楼层" | "低楼层";
+                    minPriceWan?: number;
+                    maxPriceWan?: number;
+                    sortBy?: "date" | "price" | "unitPrice" | "area" | "adjustments";
+                    sortOrder?: "asc" | "desc";
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated current listings */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MarketListingsPage"];
+                    };
+                };
+                /** @description Invalid filters */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Complete listing snapshot not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Listing lookup failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/neighborhoods/{id}/market-listings/{roomId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one listing from the latest complete active inventory */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    roomId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Current authoritative listing and collection metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MarketListingDetail"];
+                    };
+                };
+                /** @description Invalid room or neighborhood identifier */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Listing does not exist or is no longer in the latest active inventory */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Listing lookup failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/neighborhoods/{id}/market-transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the latest complete Fangjian transaction history */
+        get: {
+            parameters: {
+                query?: {
+                    layout?: string;
+                    floor?: "高楼层" | "中楼层" | "低楼层";
+                    minPriceWan?: number;
+                    maxPriceWan?: number;
+                    sortBy?: "date" | "price" | "unitPrice" | "area" | "adjustments";
+                    sortOrder?: "asc" | "desc";
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated transactions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MarketTransactionsPage"];
+                    };
+                };
+                /** @description Invalid filters */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Complete transaction snapshot not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Transaction lookup failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/neighborhoods/{id}/market-listings/{roomId}/adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List price adjustments for one room in the latest complete snapshot */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    roomId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Price adjustment timeline */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ListingAdjustmentsResponse"];
+                    };
+                };
+                /** @description Invalid room or neighborhood identifier */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Complete listing snapshot not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Adjustment lookup failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/community-market/comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare the latest market snapshot for two neighborhoods */
+        get: {
+            parameters: {
+                query: {
+                    neighborhoodId: string;
+                    peerNeighborhoodId: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Two-neighborhood market comparison */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CommunityMarketComparison"];
+                    };
+                };
+                /** @description Invalid or identical neighborhood identifiers */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description A comparison snapshot was not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Comparison failed */
+                500: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -904,9 +1683,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            items: components["schemas"]["DataSource"][];
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
                 401: components["responses"]["AccessRequired"];
@@ -975,6 +1752,70 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List traceable listing and transaction collection runs */
+        get: {
+            parameters: {
+                query?: {
+                    dataSourceId?: string;
+                    neighborhoodId?: string;
+                    status?: "completed";
+                    metricStatus?: "pending" | "completed" | "failed";
+                    from?: string;
+                    to?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated collection runs */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollectionRunsPage"];
+                    };
+                };
+                /** @description Invalid filter or pagination */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Import list failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1287,6 +2128,309 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/api/capacity/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List append-only housing policy versions */
+        get: {
+            parameters: {
+                query?: {
+                    city?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Policy versions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["HousingPolicyVersion"][];
+                        };
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Policy lookup failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Append a housing policy version */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateHousingPolicyVersionRequest"];
+                };
+            };
+            responses: {
+                /** @description Policy version created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HousingPolicyVersion"];
+                    };
+                };
+                /** @description Invalid policy version */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Effective interval conflicts with an enabled version */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Policy creation failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/community-market/imports/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import one traceable community aggregate CSV snapshot
+         * @description Accepts the exact v1 market-only or v2 market-and-profile CSV header and stores source-native values without synthesizing listing or transaction detail rows.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: uuid */
+                        dataSourceId: string;
+                        /** Format: uuid */
+                        neighborhoodId: string;
+                        sourceRef: string;
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Idempotent replay of an existing aggregate snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportCommunityMarketResponse"];
+                    };
+                };
+                /** @description Community aggregate snapshot imported */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportCommunityMarketResponse"];
+                    };
+                };
+                /** @description Invalid multipart request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Selected source or neighborhood not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description CSV file or multipart request exceeds its size limit */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description CSV parsing or aggregate semantic validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationErrorResponse"];
+                    };
+                };
+                /** @description Aggregate snapshot import failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/community-market/imports/fangjian": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Atomically import a complete Fangjian community market bundle */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImportFangjianRequest"];
+                };
+            };
+            responses: {
+                /** @description Idempotent replay of an existing bundle */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportFangjianResponse"];
+                    };
+                };
+                /** @description Complete bundle imported */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportFangjianResponse"];
+                    };
+                };
+                /** @description Malformed request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Selected source or neighborhood not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Bundle exceeds 16 MiB */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Bundle is incomplete or semantically invalid */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationErrorResponse"];
+                    };
+                };
+                /** @description Atomic import failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1326,6 +2470,97 @@ export interface components {
             page: number;
             pageSize: number;
         };
+        AssetPropertySelection: {
+            /** @enum {string} */
+            mode: "market_listing" | "manual";
+            roomId?: string;
+            layout?: string;
+            areaSqm?: number;
+            floorBand?: string;
+            floorDescription?: string;
+            orientation?: string;
+            /** @description 万元 */
+            currentListingPriceWan?: number;
+        };
+        CreateAssetRequest: {
+            name?: string;
+            /** Format: uuid */
+            neighborhoodId: string;
+            propertySelection: components["schemas"]["AssetPropertySelection"];
+            /** @description 万元 */
+            originalPurchasePriceWan: number;
+            /** Format: date */
+            purchasedOn: string;
+            /** @description 万元 */
+            currentLoanBalanceWan: number;
+        };
+        UpdateAssetRequest: {
+            name?: string;
+            propertySelection?: components["schemas"]["AssetPropertySelection"];
+            /** @description 万元 */
+            originalPurchasePriceWan?: number;
+            /** Format: date */
+            purchasedOn?: string;
+            /** @description 万元 */
+            currentLoanBalanceWan?: number;
+        };
+        AssetProperty: {
+            /** Format: uuid */
+            neighborhoodId: string;
+            neighborhoodName: string;
+            city: string;
+            district: string;
+            layout: string;
+            areaSqm: number;
+            floorBand: string;
+            floorDescription: string;
+            orientation: string;
+            /** @description 万元 */
+            currentListingPriceWan: number | null;
+        };
+        AssetListingSource: {
+            sourceListingId: string;
+            /** Format: uuid */
+            dataSourceId: string;
+            dataSourceName: string;
+            dataSourceType: string;
+            sourceRef: string;
+            /** Format: uuid */
+            collectionRunId: string;
+            /** Format: uuid */
+            snapshotId: string;
+            /** Format: date-time */
+            collectedAt: string;
+            /** Format: date-time */
+            listedAt: string;
+            /** @enum {string} */
+            qualityStatus: "complete";
+        };
+        AssetResponse: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            property: components["schemas"]["AssetProperty"];
+            /** @description 万元 */
+            originalPurchasePriceWan: number;
+            /** Format: date */
+            purchasedOn: string;
+            /** @description 万元 */
+            currentLoanBalanceWan: number;
+            /** @enum {string} */
+            sourceKind: "manual" | "market_listing";
+            listingSource: components["schemas"]["AssetListingSource"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AssetsPageResponse: {
+            items: components["schemas"]["AssetResponse"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
         HousingCapacityInput: {
             /** @description Available cash, in ten-thousand CNY. */
             cashOnHand: number;
@@ -1344,11 +2579,132 @@ export interface components {
             /** @description Renovation budget, in ten-thousand CNY. */
             renovationBudget: number;
             /** @description Taxes and transaction costs, in ten-thousand CNY. */
-            transactionCosts: number;
+            transactionCosts?: number;
             /** @description Transition rent and moving costs, in ten-thousand CNY. */
             transitionRentCost: number;
+            transactionScenario?: components["schemas"]["TransactionScenario"];
+            loanPlan?: components["schemas"]["LoanPlan"];
+            manualOverrides?: components["schemas"]["CalculationOverrides"];
             loanOverride?: components["schemas"]["LoanParams"];
             cityPolicyOverride?: components["schemas"]["CityPolicyOverride"];
+            oldHomeSelection?: components["schemas"]["OldHomeSelectionRequest"];
+            targetHomeSelection?: components["schemas"]["TargetHomeSelectionRequest"];
+        };
+        OldHomeSelectionRequest: {
+            /** @enum {string} */
+            mode: "none" | "asset";
+            /** Format: uuid */
+            assetId?: string;
+            /** @description 万元 */
+            expectedSalePriceWan?: number;
+            priceConfirmed: boolean;
+        };
+        TargetHomeSelectionRequest: {
+            /** Format: uuid */
+            neighborhoodId: string;
+            roomId: string;
+            /** @description 万元 */
+            expectedPurchasePriceWan: number;
+            priceConfirmed: boolean;
+        };
+        SelectionPropertySnapshot: {
+            /** Format: uuid */
+            neighborhoodId: string;
+            neighborhoodName: string;
+            city: string;
+            district: string;
+            layout: string;
+            areaSqm: number;
+            floorBand: string;
+            floorDescription: string;
+            orientation: string;
+            /** @description 万元 */
+            referenceListingPriceWan: number | null;
+        };
+        MarketReferenceSnapshot: {
+            sourceListingId: string;
+            /** Format: uuid */
+            dataSourceId: string;
+            dataSourceName: string;
+            dataSourceType: string;
+            sourceRef: string;
+            /** Format: uuid */
+            collectionRunId: string;
+            /** Format: uuid */
+            snapshotId: string;
+            /** Format: date-time */
+            collectedAt: string;
+            /** Format: date-time */
+            listedAt: string;
+            qualityStatus: string;
+            /** @enum {string} */
+            freshness: "" | "current" | "stale" | "expired" | "unknown";
+        };
+        OldHomeSelectionSnapshot: {
+            /** @enum {string} */
+            mode: "none" | "asset";
+            /** Format: uuid */
+            assetId: string | null;
+            assetName: string;
+            property: components["schemas"]["SelectionPropertySnapshot"] | null;
+            originalPurchasePriceWan: number;
+            purchasedOn: string;
+            holdingYears: number;
+            confirmedSalePriceWan: number;
+            confirmedLoanBalanceWan: number;
+            priceDifferenceWan: number | null;
+            /** Format: date-time */
+            assetUpdatedAt: string | null;
+            marketReference: components["schemas"]["MarketReferenceSnapshot"] | null;
+            /** Format: date-time */
+            confirmedAt: string;
+        };
+        TargetHomeSelectionSnapshot: {
+            property: components["schemas"]["SelectionPropertySnapshot"];
+            confirmedPurchasePriceWan: number;
+            priceDifferenceWan: number;
+            marketReference: components["schemas"]["MarketReferenceSnapshot"];
+            /** Format: date-time */
+            confirmedAt: string;
+        };
+        PropertySelectionContext: {
+            oldHome?: components["schemas"]["OldHomeSelectionSnapshot"];
+            targetHome?: components["schemas"]["TargetHomeSelectionSnapshot"];
+        };
+        TransactionScenario: {
+            city: string;
+            /** @enum {string} */
+            homePurchaseOrder: "first" | "second";
+            /** @enum {string} */
+            targetHomeType: "new" | "resale";
+            targetHomeAreaSqm: number;
+            oldHomeHoldingYears: number;
+            oldHomeOnlyFamilyHome: boolean;
+            /** @description 万元 */
+            oldHomeOriginalPrice: number;
+            /** @enum {string} */
+            taxBurdenMode: "statutory" | "buyer_all";
+        };
+        LoanPlan: {
+            /** @enum {string} */
+            type: "commercial" | "provident_fund" | "combined";
+            /** @description 万元 */
+            totalLoanAmount: number;
+            /** @description 万元 */
+            commercialLoanAmount?: number;
+            /** @description 万元 */
+            providentFundLoanAmount?: number;
+            loanTermMonths: number;
+            /** @enum {string} */
+            repaymentMethod: "equal_installment" | "equal_principal";
+        };
+        CalculationOverrides: {
+            commercialAnnualInterestRate?: number;
+            providentAnnualInterestRate?: number;
+            downPaymentRate?: number;
+            taxAmounts?: {
+                [key: string]: number;
+            };
         };
         LoanParams: {
             annualInterestRate: number;
@@ -1374,6 +2730,76 @@ export interface components {
             strainedRatio: number;
             dangerRatio: number;
             dangerMultiplier: number;
+        };
+        PolicySource: {
+            code: string;
+            title: string;
+            issuer: string;
+            /** Format: uri */
+            url: string;
+            /** Format: date */
+            effectiveDate: string;
+        };
+        DownPaymentRules: {
+            commercialFirst: number;
+            commercialSecond: number;
+            providentFirst: number;
+            providentSecond: number;
+            combinedFirst: number;
+            combinedSecond: number;
+        };
+        InterestRateRules: {
+            commercialFirst: number;
+            commercialSecond: number;
+            providentFirstUpToFiveYears: number;
+            providentFirstOverFiveYears: number;
+            providentSecondUpToFiveYears: number;
+            providentSecondOverFiveYears: number;
+        };
+        TaxRules: {
+            deedFirstUpToAreaRate: number;
+            deedFirstOverAreaRate: number;
+            deedSecondUpToAreaRate: number;
+            deedSecondOverAreaRate: number;
+            deedAreaThresholdSqm: number;
+            vatRate: number;
+            vatExemptHoldingYears: number;
+            vatSurchargeRate: number;
+            incomeTaxGainRate: number;
+            incomeTaxAssessedRate: number;
+            incomeTaxExemptHoldingYears: number;
+        };
+        HousingPolicyRules: {
+            downPayment: components["schemas"]["DownPaymentRules"];
+            interest: components["schemas"]["InterestRateRules"];
+            tax: components["schemas"]["TaxRules"];
+        };
+        CreateHousingPolicyVersionRequest: {
+            city: string;
+            version: string;
+            name: string;
+            /** Format: date */
+            effectiveFrom: string;
+            /** Format: date */
+            effectiveTo?: string | null;
+            /** @default true */
+            enabled: boolean;
+            rules: components["schemas"]["HousingPolicyRules"];
+            sources: components["schemas"]["PolicySource"][];
+        };
+        HousingPolicyVersion: components["schemas"]["CreateHousingPolicyVersionRequest"] & {
+            /** Format: uuid */
+            id: string;
+            enabled: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        LoanOption: {
+            /** @enum {string} */
+            type: "commercial" | "provident_fund" | "combined";
+            downPaymentRate: number;
+            commercialAnnualInterestRate?: number;
+            providentAnnualInterestRate?: number;
         };
         AppliedAssumptions: {
             ruleVersion: string;
@@ -1402,6 +2828,13 @@ export interface components {
             reserveMonths: number;
             pressureThresholds: components["schemas"]["PressureThresholds"];
             oldHomeShareThreshold: number;
+            policyVersion?: components["schemas"]["HousingPolicyVersion"];
+            sources: components["schemas"]["PolicySource"][];
+            loanOptions: components["schemas"]["LoanOption"][];
+            /** @enum {string} */
+            homePurchaseOrder: "first" | "second";
+            loanTermMonths: number;
+            disclaimer: string;
         };
         HousingCapacityResult: {
             netOldHomeProceeds: number;
@@ -1423,12 +2856,89 @@ export interface components {
             /** @enum {string} */
             traceabilityStatus: "complete" | "legacy_unversioned";
             appliedAssumptions: components["schemas"]["AppliedAssumptions"] | null;
+            recommendedDownPaymentRate?: number;
+            /** @description 万元 */
+            recommendedDownPayment?: number;
+            loanBreakdown?: components["schemas"]["LoanBreakdown"];
+            taxBreakdown?: components["schemas"]["TaxBreakdown"];
+            policyVersion?: components["schemas"]["PolicyVersionReference"];
+            sources?: components["schemas"]["PolicySource"][];
+            manualOverrides?: components["schemas"]["AppliedManualOverride"][];
+            disclaimer?: string;
+        };
+        LoanComponent: {
+            /** @enum {string} */
+            type: "commercial" | "provident_fund";
+            /** @description 万元 */
+            principal: number;
+            annualInterestRate: number;
+            /** @description 万元/月 */
+            monthlyPayment: number;
+            sourceCode: string;
+            manualOverride: boolean;
+        };
+        LoanBreakdown: {
+            /** @enum {string} */
+            type: "commercial" | "provident_fund" | "combined";
+            /** @description 万元 */
+            totalPrincipal: number;
+            loanTermMonths: number;
+            /** @enum {string} */
+            repaymentMethod: "equal_installment" | "equal_principal";
+            components: components["schemas"]["LoanComponent"][];
+            /** @description 万元/月 */
+            monthlyPayment: number;
+        };
+        TaxItem: {
+            code: string;
+            name: string;
+            /** @enum {string} */
+            statutorySide: "buyer" | "seller";
+            /** @enum {string} */
+            paidBy: "buyer" | "seller";
+            /** @description 万元 */
+            taxBase: number;
+            rate: number;
+            /** @description 万元 */
+            automaticAmount: number;
+            /** @description 万元 */
+            amount: number;
+            formula: string;
+            exempt: boolean;
+            sourceCode: string;
+            manualOverride: boolean;
+        };
+        TaxBreakdown: {
+            items: components["schemas"]["TaxItem"][];
+            /** @description 万元 */
+            buyerTotal: number;
+            /** @description 万元 */
+            sellerTotal: number;
+            /** @description 万元 */
+            total: number;
+        };
+        PolicyVersionReference: {
+            /** Format: uuid */
+            id: string;
+            city: string;
+            version: string;
+            name: string;
+            /** Format: date */
+            effectiveFrom: string;
+            /** Format: date */
+            effectiveTo?: string | null;
+        };
+        AppliedManualOverride: {
+            field: string;
+            automaticValue: number;
+            appliedValue: number;
         };
         CreateCalculationResponse: components["schemas"]["CalculationResponse"];
         CalculationResponse: {
             id: string;
             input: components["schemas"]["HousingCapacityInput"];
             result: components["schemas"]["HousingCapacityResult"];
+            selectionContext?: components["schemas"]["PropertySelectionContext"];
             /** Format: date-time */
             createdAt: string;
         };
@@ -1462,6 +2972,310 @@ export interface components {
         NeighborhoodAreaFilter: {
             city: string;
             area: string;
+        };
+        CommunityMarketSnapshot: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            dataSourceId: string;
+            /** Format: uuid */
+            neighborhoodId: string;
+            sourceRef: string;
+            /** Format: date-time */
+            collectedAt: string;
+            contentChecksum: string;
+            /** Format: uuid */
+            collectionRunId: string | null;
+            /** @enum {string} */
+            qualityStatus: "complete" | "aggregate_only";
+            sourceCommunityId: string;
+            communityName: string;
+            formerName: string;
+            provinceCode: string | null;
+            provinceName: string | null;
+            cityCode: string;
+            cityName: string;
+            districtCode: string;
+            districtName: string;
+            blockCode: string;
+            blockName: string;
+            propertyType: string | null;
+            propertyTags: string[] | null;
+            buildingCount: number | null;
+            buildingType: string | null;
+            buildingYear: number | null;
+            developer: string | null;
+            householdCount: number | null;
+            /** @enum {string|null} */
+            closedManagement: "是" | "否" | null;
+            plotRatio: number | null;
+            /** @description 平方米 */
+            greenAreaSqm: number | null;
+            greeningRatePercent: number | null;
+            propertyManagementCompany: string | null;
+            /** @description 来源原文，单位未推断 */
+            propertyFee: string | null;
+            fixedParkingSpaces: number | null;
+            parkingRatio: string | null;
+            /** @description 来源原文，单位未推断 */
+            parkingFee: string | null;
+            heatingType: string | null;
+            waterType: string | null;
+            electricityType: string | null;
+            /** @description 来源原文，单位未推断 */
+            gasCost: string | null;
+            /** @enum {string|null} */
+            manCarSeparation: "是" | "否" | null;
+            latitude: number;
+            longitude: number;
+            /** Format: date */
+            latestListingDate: string | null;
+            /** @description 元/平方米 */
+            listingAvgUnitPrice: number | null;
+            listingCount: number | null;
+            listingAreaSqm: number | null;
+            /** @description 万元 */
+            listingAvgTotalPriceWan: number | null;
+            /** @description 元/平方米 */
+            listingAvgUnitPrice6Months: number | null;
+            newListingCount3Months: number | null;
+            /** @description 万元 */
+            newListingAvgTotalPrice3MonthsWan: number | null;
+            /** @description 元/平方米 */
+            newListingUnitPrice3Months: number | null;
+            /** Format: date */
+            latestTradeDate: string | null;
+            /** @description 元/平方米 */
+            latestTradeAvgUnitPrice: number | null;
+            tradeCount3Months: number | null;
+            tradeArea3MonthsSqm: number | null;
+            /** @description 万元 */
+            tradeAvgTotalPrice3MonthsWan: number | null;
+            /** @description 元/平方米 */
+            tradeUnitPrice3Months: number | null;
+            /** @description 元/平方米 */
+            tradeAvgUnitPrice6Months: number | null;
+            tradeCountPerMonth6Months: number | null;
+            takeLookCount: number | null;
+            takeLookConversionRatePercent: number | null;
+            onSaleAreaRangeSqm: string;
+            onSalePriceRangeWan: string;
+            onSaleRoomTypes: string[];
+            analysis: {
+                [key: string]: unknown;
+            };
+            surroundings: {
+                [key: string]: unknown;
+            };
+            cityContext: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ImportCommunityMarketResponse: {
+            snapshot: components["schemas"]["CommunityMarketSnapshot"];
+            idempotentReplay: boolean;
+        };
+        MarketListing: {
+            roomId: string;
+            layout: string;
+            areaSqm: number;
+            listingTotalPriceWan: number;
+            listingUnitPrice: number;
+            /** Format: date-time */
+            listedAt: string;
+            daysOnMarket: number;
+            floorBand: string;
+            floorDescription: string;
+            orientation: string;
+            adjustmentCount: number;
+            followCount: number;
+            lookCount30Days: number;
+        };
+        MarketSource: {
+            /** Format: uuid */
+            dataSourceId: string;
+            dataSourceName: string;
+            dataSourceType: string;
+            sourceRef: string;
+        };
+        MarketListingDetail: components["schemas"]["MarketListing"] & {
+            /** Format: uuid */
+            neighborhoodId: string;
+            neighborhoodName: string;
+            city: string;
+            district: string;
+            /** @enum {string} */
+            status: "active";
+            /** Format: uuid */
+            snapshotId: string;
+            /** Format: uuid */
+            collectionRunId: string;
+            /** Format: date-time */
+            collectedAt: string;
+            source: components["schemas"]["MarketSource"];
+            /** @enum {string} */
+            qualityStatus: "complete";
+            /** @enum {string} */
+            freshness: "current" | "stale" | "expired" | "unknown";
+        };
+        MarketTransaction: {
+            roomId: string;
+            layout: string;
+            areaSqm: number;
+            listingTotalPriceWan: number;
+            tradeTotalPriceWan: number;
+            tradeUnitPrice: number;
+            /** Format: date-time */
+            tradeDate: string;
+            negotiationWan: number;
+            negotiationPercent: number;
+            floorBand: string;
+            floorDescription: string;
+            orientation: string;
+            adjustmentCount: number;
+        };
+        ListingAdjustment: {
+            /** Format: uuid */
+            id?: string;
+            roomId: string;
+            /** Format: date-time */
+            adjustedAt: string;
+            priceBeforeWan: number;
+            priceAfterWan: number;
+            amountWan: number;
+        };
+        MarketListingsPage: {
+            items: components["schemas"]["MarketListing"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
+        MarketTransactionsPage: {
+            items: components["schemas"]["MarketTransaction"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
+        ListingAdjustmentsResponse: {
+            items: components["schemas"]["ListingAdjustment"][];
+        };
+        ComparisonMetric: {
+            primary: number | null;
+            peer: number | null;
+            delta: number | null;
+        };
+        CommunityMarketComparison: {
+            primary: components["schemas"]["CommunityMarketSnapshot"];
+            peer: components["schemas"]["CommunityMarketSnapshot"];
+            listingUnitPrice: components["schemas"]["ComparisonMetric"];
+            supply: components["schemas"]["ComparisonMetric"];
+            recentTrades: components["schemas"]["ComparisonMetric"];
+            listingTradeGap: components["schemas"]["ComparisonMetric"];
+            averageTradeCycle: components["schemas"]["ComparisonMetric"];
+        };
+        FangjianCommunityData: {
+            sourceCommunityId: string;
+            communityName: string;
+            formerName?: string;
+            provinceCode?: string;
+            provinceName?: string;
+            cityCode: string;
+            cityName: string;
+            districtCode: string;
+            districtName: string;
+            blockCode: string;
+            blockName: string;
+            propertyType?: string;
+            propertyTags?: string[];
+            buildingCount?: number;
+            buildingType?: string;
+            buildingYear?: number;
+            developer?: string;
+            householdCount?: number;
+            closedManagement?: string;
+            plotRatio?: number;
+            greenAreaSqm?: number;
+            greeningRatePercent?: number;
+            propertyManagementCompany?: string;
+            propertyFee?: string;
+            fixedParkingSpaces?: number;
+            parkingRatio?: string;
+            parkingFee?: string;
+            heatingType?: string;
+            waterType?: string;
+            electricityType?: string;
+            gasCost?: string;
+            manCarSeparation?: string;
+            latitude: number;
+            longitude: number;
+            /** Format: date-time */
+            latestListingDate?: string;
+            listingAvgUnitPrice?: number;
+            listingCount?: number;
+            listingAreaSqm?: number;
+            listingAvgTotalPriceWan?: number;
+            listingAvgUnitPrice6Months?: number;
+            newListingCount3Months?: number;
+            newListingAvgTotalPrice3MonthsWan?: number;
+            newListingUnitPrice3Months?: number;
+            /** Format: date-time */
+            latestTradeDate?: string;
+            latestTradeAvgUnitPrice?: number;
+            tradeCount3Months?: number;
+            tradeArea3MonthsSqm?: number;
+            tradeAvgTotalPrice3MonthsWan?: number;
+            tradeUnitPrice3Months?: number;
+            tradeAvgUnitPrice6Months?: number;
+            tradeCountPerMonth6Months?: number;
+            takeLookCount?: number;
+            takeLookConversionRatePercent?: number;
+            onSaleAreaRangeSqm?: string;
+            onSalePriceRangeWan?: string;
+            onSaleRoomTypes?: string[];
+            analysis: {
+                [key: string]: unknown;
+            };
+            surroundings: {
+                [key: string]: unknown;
+            };
+            cityContext: {
+                [key: string]: unknown;
+            };
+        };
+        FangjianBundleQuality: {
+            /** @enum {string} */
+            status: "complete";
+            warnings: string[];
+        };
+        FangjianBundle: {
+            /** @enum {string} */
+            schemaVersion: "fangjian.bundle/v1";
+            /** Format: date-time */
+            collectedAt: string;
+            community: components["schemas"]["FangjianCommunityData"];
+            listings: components["schemas"]["MarketListing"][];
+            transactions: components["schemas"]["MarketTransaction"][];
+            adjustments: components["schemas"]["ListingAdjustment"][];
+            quality: components["schemas"]["FangjianBundleQuality"];
+        };
+        ImportFangjianRequest: {
+            /** Format: uuid */
+            dataSourceId: string;
+            /** Format: uuid */
+            neighborhoodId: string;
+            sourceRef: string;
+            bundle: components["schemas"]["FangjianBundle"];
+        };
+        ImportFangjianResponse: {
+            snapshot: components["schemas"]["CommunityMarketSnapshot"];
+            /** Format: uuid */
+            collectionRunId: string;
+            listingCount: number;
+            transactionCount: number;
+            adjustmentCount: number;
+            idempotentReplay: boolean;
         };
         NeighborhoodMetricResponse: {
             id: string;
@@ -1859,6 +3673,21 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        CollectionRunSummary: {
+            collectionRun: components["schemas"]["CollectionRun"];
+            source: components["schemas"]["DataSource"];
+            neighborhoodName: string;
+            recordCount: number;
+            listingCount: number;
+            transactionCount: number;
+            detailHref: string;
+        };
+        CollectionRunsPage: {
+            items: components["schemas"]["CollectionRunSummary"][];
+            total: number;
+            page: number;
+            pageSize: number;
         };
         ValidationSummary: {
             recordCount: number;

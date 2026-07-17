@@ -63,6 +63,27 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadUsesLegacyFallbackWhenPolicyEnvironmentIsAbsent(t *testing.T) {
+	for _, key := range []string{
+		"PROPULSE_CAPACITY_POLICY_CITY",
+		"PROPULSE_CAPACITY_POLICY_NAME",
+		"PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE",
+		"PROPULSE_CAPACITY_POLICY_EFFECTIVE_DATE",
+		"PROPULSE_CAPACITY_POLICY_SOURCE",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("PROPULSE_USER_ID", "propulse-user")
+
+	cfg, err := Load("api")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.CapacityAssumptions.RuleVersion != "legacy-fallback/2026.01.01" || cfg.CapacityAssumptions.CityPolicy.City != "天津" {
+		t.Fatalf("fallback assumptions = %#v", cfg.CapacityAssumptions)
+	}
+}
+
 func TestLoadReadsAccessToken(t *testing.T) {
 	setValidCapacityPolicyEnv(t)
 	t.Setenv("PROPULSE_USER_ID", "propulse-user")

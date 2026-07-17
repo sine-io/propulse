@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +22,7 @@ const maxImportBytes = 2 << 20
 type CollectionApplication interface {
 	ImportCollectionRun(context.Context, appcollection.ImportCollectionRunCommand) (appcollection.ImportCollectionRunResult, error)
 	GetCollectionRun(context.Context, appcollection.GetCollectionRunQuery) (appcollection.CollectionRunDetail, error)
+	ListCollectionRuns(context.Context, appcollection.ListCollectionRunsQuery) (appcollection.CollectionRunsPage, error)
 }
 
 type AdminImports struct{ app CollectionApplication }
@@ -90,6 +93,23 @@ type collectionRunDetailResponse struct {
 	Listings         []listingObservationResponse     `json:"listings"`
 	Transactions     []transactionObservationResponse `json:"transactions"`
 	RawPayloadBase64 string                           `json:"rawPayloadBase64"`
+}
+
+type collectionRunSummaryResponse struct {
+	CollectionRun    collectionRunResponse `json:"collectionRun"`
+	Source           dataSourceResponse    `json:"source"`
+	NeighborhoodName string                `json:"neighborhoodName"`
+	RecordCount      int                   `json:"recordCount"`
+	ListingCount     int                   `json:"listingCount"`
+	TransactionCount int                   `json:"transactionCount"`
+	DetailHref       string                `json:"detailHref"`
+}
+
+type collectionRunsPageResponse struct {
+	Items    []collectionRunSummaryResponse `json:"items"`
+	Total    int64                          `json:"total"`
+	Page     int                            `json:"page"`
+	PageSize int                            `json:"pageSize"`
 }
 
 type listingObservationResponse struct {
@@ -187,6 +207,43 @@ func (h AdminImports) GetDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, newCollectionRunDetailResponse(detail))
 }
 
+func (h AdminImports) List(c *gin.Context) {
+	page, err := parsePositiveInt(c.Query("page"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "query parameters are invalid")
+		return
+	}
+	pageSize, err := parsePositiveInt(c.Query("pageSize"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "query parameters are invalid")
+		return
+	}
+	from, err := parseOptionalDateTime(c.Query("from"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "query parameters are invalid")
+		return
+	}
+	to, err := parseOptionalDateTime(c.Query("to"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "query parameters are invalid")
+		return
+	}
+	result, err := h.app.ListCollectionRuns(c.Request.Context(), appcollection.ListCollectionRunsQuery{
+		DataSourceID: c.Query("dataSourceId"), NeighborhoodID: c.Query("neighborhoodId"),
+		Status: appcollection.CollectionRunStatus(c.Query("status")), MetricStatus: appcollection.MetricStatus(c.Query("metricStatus")),
+		From: from, To: to, Page: page, PageSize: pageSize,
+	})
+	if err != nil {
+		if errors.Is(err, appcollection.ErrInvalidRequest) {
+			writeError(c, http.StatusBadRequest, "invalid_request", "query parameters are invalid")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "import_failed", "import list failed")
+		return
+	}
+	c.JSON(http.StatusOK, newCollectionRunsPageResponse(result))
+}
+
 func jsonObservationInputs(records []jsonImportRecord) ([]appcollection.ObservationInput, []appcollection.ValidationIssue) {
 	inputs := make([]appcollection.ObservationInput, 0, len(records))
 	issues := make([]appcollection.ValidationIssue, 0)
@@ -279,4 +336,40 @@ func newCollectionRunDetailResponse(detail appcollection.CollectionRunDetail) co
 		CollectionRun: newCollectionRunResponse(detail.Run), Source: newDataSourceResponse(detail.Source),
 		Listings: listings, Transactions: transactions, RawPayloadBase64: base64.StdEncoding.EncodeToString(detail.Run.RawPayload),
 	}
+}
+
+func newCollectionRunsPageResponse(page appcollection.CollectionRunsPage) collectionRunsPageResponse {
+	items := make([]collectionRunSummaryResponse, 0, len(page.Items))
+	for _, item := range page.Items {
+		summary := item.Run.ValidationSummary
+		items = append(items, collectionRunSummaryResponse{
+			CollectionRun: newCollectionRunResponse(item.Run), Source: newDataSourceResponse(item.Source),
+			NeighborhoodName: item.NeighborhoodName, RecordCount: summary.RecordCount,
+			ListingCount: summary.ListingCount, TransactionCount: summary.TransactionCount,
+			DetailHref: "/data/imports/" + item.Run.ID,
+		})
+	}
+	return collectionRunsPageResponse{Items: items, Total: page.Total, Page: page.Page, PageSize: page.PageSize}
+}
+
+func parsePositiveInt(value string) (int, error) {
+	if strings.TrimSpace(value) == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 {
+		return 0, appcollection.ErrInvalidRequest
+	}
+	return parsed, nil
+}
+
+func parseOptionalDateTime(value string) (*time.Time, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
 }

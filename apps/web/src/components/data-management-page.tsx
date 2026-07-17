@@ -9,11 +9,15 @@ import {
   ExternalLink,
   FileJson,
   FileSpreadsheet,
+  History,
+  Landmark,
   LoaderCircle,
   LockKeyhole,
   Plus,
   RefreshCw,
   Search,
+  Table2,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -21,25 +25,38 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { getAccessToken, subscribeToAccessToken } from "@/lib/access-token";
 import {
   ApiError,
+  createCapacityPolicy,
   createDataSource,
   createNeighborhood,
   getCSVImportTemplate,
   importCSVCollectionRun,
   importJSONCollectionRun,
+  listCapacityPolicies,
+  listCollectionRuns,
   listDataSources,
   searchNeighborhoods,
+  type CollectionRunsPage,
+  type CreateHousingPolicyVersionRequest,
   type CreateDataSourceRequest,
   type DataSource,
+  type HousingPolicyVersion,
   type ImportCollectionRunResponse,
   type ImportJSONRecord,
   type ImportMetadata,
   type Neighborhood,
   type ValidationIssue,
 } from "@/lib/api-client";
+import {
+  buildManualRecords,
+  createManualRow,
+  type ManualRow,
+  type ManualRowType,
+} from "@/lib/manual-import";
+import { CenteredLoadingState } from "./centered-loading-state";
 
 type LoadState = "locked" | "loading" | "ready" | "failed";
 type ImportState = "idle" | "submitting" | "success" | "validation_failed" | "failed";
-type ImportMode = "json" | "csv";
+type ImportMode = "manual" | "json" | "csv";
 
 const emptySourceDraft: CreateDataSourceRequest = {
   name: "",
@@ -63,6 +80,8 @@ export function DataManagementPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [neighborhoods, setNeighborhoods] = useState<Neighborhood[]>([]);
+  const [policies, setPolicies] = useState<HousingPolicyVersion[]>([]);
+  const [collectionRuns, setCollectionRuns] = useState<CollectionRunsPage>({ items: [], page: 1, pageSize: 20, total: 0 });
   const [selectedDataSourceID, setSelectedDataSourceID] = useState("");
   const [selectedNeighborhoodID, setSelectedNeighborhoodID] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -80,7 +99,8 @@ export function DataManagementPage() {
   const [sourceRef, setSourceRef] = useState("");
   const [collectedAt, setCollectedAt] = useState("");
   const [coverage, setCoverage] = useState<"full" | "partial">("full");
-  const [mode, setMode] = useState<ImportMode>("json");
+  const [mode, setMode] = useState<ImportMode>("manual");
+  const [manualRows, setManualRows] = useState<ManualRow[]>(() => [createManualRow("listing")]);
   const [jsonText, setJSONText] = useState("");
   const [csvFile, setCSVFile] = useState<File>();
   const [importState, setImportState] = useState<ImportState>("idle");
@@ -89,6 +109,17 @@ export function DataManagementPage() {
   const [rejectedRecordCount, setRejectedRecordCount] = useState(0);
   const [importError, setImportError] = useState("");
   const [templateError, setTemplateError] = useState("");
+  const [historyDataSourceID, setHistoryDataSourceID] = useState("");
+  const [historyNeighborhoodID, setHistoryNeighborhoodID] = useState("");
+  const [historyMetricStatus, setHistoryMetricStatus] = useState("");
+  const [historyFrom, setHistoryFrom] = useState("");
+  const [historyTo, setHistoryTo] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [showPolicyForm, setShowPolicyForm] = useState(false);
+  const [policyJSON, setPolicyJSON] = useState("");
+  const [policySubmitting, setPolicySubmitting] = useState(false);
+  const [policyError, setPolicyError] = useState("");
   const importController = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
@@ -118,10 +149,14 @@ export function DataManagementPage() {
     Promise.all([
       listDataSources(controller.signal),
       searchNeighborhoods("", controller.signal),
+      listCapacityPolicies("天津", controller.signal),
+      listCollectionRuns({ page: 1, pageSize: 20 }, controller.signal),
     ])
-      .then(([sources, neighborhoodPage]) => {
+      .then(([sources, neighborhoodPage, policyVersions, runPage]) => {
         setDataSources(sources);
         setNeighborhoods(neighborhoodPage.items);
+        setPolicies(policyVersions);
+        setCollectionRuns(runPage);
         setSelectedDataSourceID((current) =>
           current && sources.some((source) => source.id === current)
             ? current
@@ -156,6 +191,21 @@ export function DataManagementPage() {
     setValidationIssues([]);
     setRejectedRecordCount(0);
     setImportError("");
+  };
+
+  const addManualRow = (recordType: ManualRowType) => {
+    setManualRows((rows) => [...rows, createManualRow(recordType)]);
+    invalidateImport();
+  };
+
+  const updateManualRow = (localId: string, patch: Partial<ManualRow>) => {
+    setManualRows((rows) => rows.map((row) => (row.localId === localId ? { ...row, ...patch } : row)));
+    invalidateImport();
+  };
+
+  const removeManualRow = (localId: string) => {
+    setManualRows((rows) => (rows.length <= 1 ? rows : rows.filter((row) => row.localId !== localId)));
+    invalidateImport();
   };
 
   const selectDataSource = (id: string) => {
@@ -287,7 +337,14 @@ export function DataManagementPage() {
     });
     let records: ImportJSONRecord[] = [];
     const localIssues = [...metadataResult.issues];
-    if (mode === "json") {
+    if (mode === "manual") {
+      const built = buildManualRecords(manualRows);
+      if (built.records.length === 0 && built.issues.length === 0) {
+        localIssues.push(localIssue("records", "请至少录入一条房源。"));
+      }
+      localIssues.push(...built.issues);
+      records = built.records;
+    } else if (mode === "json") {
       if (!jsonText.trim()) {
         localIssues.push(localIssue("records", "请粘贴记录数组或选择 JSON 文件。"));
       } else {
@@ -317,14 +374,14 @@ export function DataManagementPage() {
     setImportState("submitting");
     try {
       const result =
-        mode === "json"
-          ? await importJSONCollectionRun(
-              { ...metadataResult.metadata, records },
-              controller.signal,
-            )
-          : await importCSVCollectionRun(
+        mode === "csv"
+          ? await importCSVCollectionRun(
               metadataResult.metadata,
               csvFile as File,
+              controller.signal,
+            )
+          : await importJSONCollectionRun(
+              { ...metadataResult.metadata, records },
               controller.signal,
             );
       if (importController.current !== controller) {
@@ -332,6 +389,7 @@ export function DataManagementPage() {
       }
       setImportResult(result);
       setImportState("success");
+      void refreshCollectionRuns(1);
     } catch (error) {
       if (isAbortError(error) || importController.current !== controller) {
         return;
@@ -355,8 +413,78 @@ export function DataManagementPage() {
     }
   };
 
+  const refreshCollectionRuns = async (page = collectionRuns.page) => {
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const next = await listCollectionRuns({
+        dataSourceId: historyDataSourceID || undefined,
+        neighborhoodId: historyNeighborhoodID || undefined,
+        metricStatus: historyMetricStatus
+          ? historyMetricStatus as "pending" | "completed" | "failed"
+          : undefined,
+        from: historyFrom ? new Date(`${historyFrom}T00:00:00+08:00`).toISOString() : undefined,
+        to: historyTo ? new Date(`${historyTo}T23:59:59+08:00`).toISOString() : undefined,
+        page,
+        pageSize: collectionRuns.pageSize,
+      });
+      setCollectionRuns(next);
+    } catch (error) {
+      setHistoryError(apiFailureMessage(error, "批次历史读取失败。"));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const openPolicyForm = () => {
+    const latest = policies[0];
+    const draft: CreateHousingPolicyVersionRequest = latest
+      ? {
+          city: latest.city,
+          effectiveFrom: latest.effectiveTo ?? "",
+          effectiveTo: null,
+          enabled: true,
+          name: "",
+          rules: latest.rules,
+          sources: latest.sources,
+          version: "",
+        }
+      : emptyPolicyDraft();
+    setPolicyJSON(JSON.stringify(draft, null, 2));
+    setPolicyError("");
+    setShowPolicyForm(true);
+  };
+
+  const submitPolicy = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPolicyError("");
+    let draft: CreateHousingPolicyVersionRequest;
+    try {
+      draft = JSON.parse(policyJSON) as CreateHousingPolicyVersionRequest;
+    } catch {
+      setPolicyError("政策版本 JSON 无法解析。");
+      return;
+    }
+    setPolicySubmitting(true);
+    try {
+      const created = await createCapacityPolicy(draft);
+      setPolicies((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      try {
+        setPolicies(await listCapacityPolicies("天津"));
+      } catch {
+        // The version was created successfully; keep the optimistic list if refresh fails.
+      }
+      setShowPolicyForm(false);
+      setPolicyJSON("");
+    } catch (error) {
+      setPolicyError(apiFailureMessage(error, "政策版本创建失败。"));
+    } finally {
+      setPolicySubmitting(false);
+    }
+  };
+
   if (!accessChecked || loadState === "loading") {
-    return <PageState icon={LoaderCircle} title="正在读取数据目录" spinning />;
+    return <CenteredLoadingState className="min-h-[55vh]" title="正在读取数据目录" />;
   }
   if (!unlocked || loadState === "locked") {
     return <PageState icon={LockKeyhole} title="数据管理已锁定" detail="请先解锁个人空间。" />;
@@ -391,6 +519,18 @@ export function DataManagementPage() {
           已连接受保护数据目录
         </div>
       </div>
+
+      <section aria-labelledby="workflow-title" className="mb-7 border-b border-slate-200 pb-7">
+        <div className="flex items-start gap-3">
+          <Database aria-hidden="true" className="mt-0.5 h-5 w-5 flex-none text-blue-700" />
+          <div>
+            <h2 id="workflow-title" className="text-base font-semibold text-slate-900">数据管理流程</h2>
+            <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-600">
+              数据源表示数据出处，小区表示数据归属，两者没有固定绑定。每个采集批次把一个数据源和一个小区关联起来，再生成可审计的挂牌或成交观测。
+            </p>
+          </div>
+        </div>
+      </section>
 
       {catalogEmpty ? (
         <div className="mb-5 border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="catalog-empty-state">
@@ -496,6 +636,7 @@ export function DataManagementPage() {
         <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <h2 className="text-base font-semibold text-slate-900">新建采集批次</h2>
           <div className="inline-flex w-fit rounded-md border border-slate-300 bg-slate-100 p-1" role="group" aria-label="导入格式">
+            <ModeButton active={mode === "manual"} onClick={() => { setMode("manual"); invalidateImport(); }} icon={Table2}>表单</ModeButton>
             <ModeButton active={mode === "json"} onClick={() => { setMode("json"); invalidateImport(); }} icon={FileJson}>JSON</ModeButton>
             <ModeButton active={mode === "csv"} onClick={() => { setMode("csv"); invalidateImport(); }} icon={FileSpreadsheet}>CSV</ModeButton>
           </div>
@@ -504,11 +645,13 @@ export function DataManagementPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <label className={labelClass}>
             来源引用
-            <input value={sourceRef} onChange={(event) => { setSourceRef(event.target.value); invalidateImport(); }} className={`${inputClass} mt-1.5`} />
+            <input aria-label="来源引用" value={sourceRef} onChange={(event) => { setSourceRef(event.target.value); invalidateImport(); }} className={`${inputClass} mt-1.5`} />
+            <span className="mt-1 block text-xs font-normal text-slate-500">来源页面、文件或查询的稳定引用。</span>
           </label>
           <label className={labelClass}>
             采集时间
-            <input type="datetime-local" value={collectedAt} onChange={(event) => { setCollectedAt(event.target.value); invalidateImport(); }} className={`${inputClass} mt-1.5`} />
+            <input aria-label="采集时间" type="datetime-local" value={collectedAt} onChange={(event) => { setCollectedAt(event.target.value); invalidateImport(); }} className={`${inputClass} mt-1.5`} />
+            <span className="mt-1 block text-xs font-normal text-slate-500">源数据实际采集时间，不是导入时间。</span>
           </label>
           <label className={labelClass}>
             覆盖范围
@@ -516,6 +659,7 @@ export function DataManagementPage() {
               <option value="full">完整覆盖</option>
               <option value="partial">部分覆盖</option>
             </select>
+            <span className="mt-1 block text-xs font-normal text-slate-500">完整覆盖会更新当前库存；部分覆盖只增加观测。</span>
           </label>
           <div className={labelClass}>
             当前格式
@@ -527,7 +671,14 @@ export function DataManagementPage() {
         </div>
 
         <div className="mt-6 border border-slate-200 bg-white p-4 sm:p-5">
-          {mode === "json" ? (
+          {mode === "manual" ? (
+            <ManualEntry
+              rows={manualRows}
+              onAdd={addManualRow}
+              onUpdate={updateManualRow}
+              onRemove={removeManualRow}
+            />
+          ) : mode === "json" ? (
             <div>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <label htmlFor="json-records" className={labelClass}>记录数组</label>
@@ -568,7 +719,7 @@ export function DataManagementPage() {
         <div className="mt-4 flex justify-end">
           <button type="submit" disabled={importState === "submitting"} className={primaryButtonClass}>
             {importState === "submitting" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Upload aria-hidden="true" className="h-4 w-4" />}
-            {importState === "submitting" ? "正在导入" : "创建批次"}
+            {importState === "submitting" ? "正在导入" : mode === "manual" ? "导入录入房源" : "创建批次"}
           </button>
         </div>
       </form>
@@ -581,7 +732,352 @@ export function DataManagementPage() {
         error={importError}
         onRetry={() => void submitImport()}
       />
+
+      <section aria-labelledby="history-title" className="mt-10 border-t border-slate-200 pt-7">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+          <div>
+            <div className="flex items-center gap-2">
+              <History aria-hidden="true" className="h-5 w-5 text-blue-700" />
+              <h2 id="history-title" className="text-base font-semibold text-slate-900">采集批次历史</h2>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">房见小区聚合快照单独保存，不计入下表的挂牌/成交采集批次。</p>
+          </div>
+          <span className="text-sm text-slate-500">共 {collectionRuns.total} 个批次</span>
+        </div>
+
+        <form
+          className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6"
+          onSubmit={(event) => { event.preventDefault(); void refreshCollectionRuns(1); }}
+        >
+          <HistorySelect label="筛选数据源" value={historyDataSourceID} onChange={setHistoryDataSourceID}>
+            <option value="">全部数据源</option>
+            {dataSources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
+          </HistorySelect>
+          <HistorySelect label="筛选小区" value={historyNeighborhoodID} onChange={setHistoryNeighborhoodID}>
+            <option value="">全部小区</option>
+            {neighborhoods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </HistorySelect>
+          <HistorySelect label="指标状态" value={historyMetricStatus} onChange={setHistoryMetricStatus}>
+            <option value="">全部状态</option>
+            <option value="pending">等待刷新</option>
+            <option value="completed">已刷新</option>
+            <option value="failed">刷新失败</option>
+          </HistorySelect>
+          <HistoryDate label="开始日期" value={historyFrom} onChange={setHistoryFrom} />
+          <HistoryDate label="结束日期" value={historyTo} onChange={setHistoryTo} />
+          <button type="submit" disabled={historyLoading} className={`${secondaryButtonClass} self-end`}>
+            {historyLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Search aria-hidden="true" className="h-4 w-4" />}
+            筛选
+          </button>
+        </form>
+
+        {historyError ? <p role="alert" className="mt-4 text-sm text-rose-700">{historyError}</p> : null}
+        <CollectionRunTable page={collectionRuns} />
+        {collectionRuns.total > collectionRuns.pageSize ? (
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button type="button" disabled={historyLoading || collectionRuns.page <= 1} onClick={() => void refreshCollectionRuns(collectionRuns.page - 1)} className={secondaryButtonClass}>上一页</button>
+            <span className="text-sm text-slate-500">第 {collectionRuns.page} 页</span>
+            <button type="button" disabled={historyLoading || collectionRuns.page * collectionRuns.pageSize >= collectionRuns.total} onClick={() => void refreshCollectionRuns(collectionRuns.page + 1)} className={secondaryButtonClass}>下一页</button>
+          </div>
+        ) : null}
+      </section>
+
+      <section aria-labelledby="policy-title" className="mt-10 border-t border-slate-200 pt-7">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <div className="flex items-center gap-2">
+              <Landmark aria-hidden="true" className="h-5 w-5 text-blue-700" />
+              <h2 id="policy-title" className="text-base font-semibold text-slate-900">测算政策</h2>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">版本只追加、不覆盖；未来生效版本可提前启用。</p>
+          </div>
+          <button type="button" onClick={openPolicyForm} className={primaryButtonClass}>
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            录入新版本
+          </button>
+        </div>
+
+        {showPolicyForm ? (
+          <form onSubmit={submitPolicy} className="mt-5 border-l-2 border-blue-300 pl-4">
+            <label htmlFor="policy-json" className={labelClass}>政策版本 JSON</label>
+            <textarea
+              id="policy-json"
+              value={policyJSON}
+              onChange={(event) => setPolicyJSON(event.target.value)}
+              spellCheck={false}
+              className="mt-2 h-80 w-full resize-y border border-slate-300 bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+            {policyError ? <p role="alert" className="mt-2 text-sm text-rose-700">{policyError}</p> : null}
+            <div className="mt-3 flex gap-2">
+              <button type="submit" disabled={policySubmitting} className={primaryButtonClass}>
+                {policySubmitting ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}
+                创建政策版本
+              </button>
+              <button type="button" onClick={() => setShowPolicyForm(false)} className={secondaryButtonClass}>取消</button>
+            </div>
+          </form>
+        ) : null}
+
+        <PolicyVersionTable policies={policies} />
+      </section>
     </main>
+  );
+}
+
+function CollectionRunTable({ page }: { page: CollectionRunsPage }) {
+  if (page.items.length === 0) {
+    return (
+      <div className="mt-5 border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500">
+        尚未创建挂牌/成交采集批次
+      </div>
+    );
+  }
+  return (
+    <div className="mt-5 overflow-x-auto border border-slate-200">
+      <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+        <thead className="bg-slate-50 text-xs text-slate-500">
+          <tr>
+            <th className="px-3 py-2.5 font-medium">批次</th>
+            <th className="px-3 py-2.5 font-medium">来源与归属</th>
+            <th className="px-3 py-2.5 font-medium">采集时间</th>
+            <th className="px-3 py-2.5 font-medium">覆盖</th>
+            <th className="px-3 py-2.5 font-medium">记录</th>
+            <th className="px-3 py-2.5 font-medium">指标</th>
+            <th className="px-3 py-2.5 font-medium"><span className="sr-only">操作</span></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+          {page.items.map((item) => (
+            <tr key={item.collectionRun.id}>
+              <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-slate-600">{item.collectionRun.id.slice(0, 8)}</td>
+              <td className="px-3 py-3">
+                <p className="font-medium text-slate-900">{item.source.name}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{item.neighborhoodName}</p>
+              </td>
+              <td className="whitespace-nowrap px-3 py-3 text-xs">{formatDateTime(item.collectionRun.collectedAt)}</td>
+              <td className="whitespace-nowrap px-3 py-3">{item.collectionRun.coverage === "full" ? "完整覆盖" : "部分覆盖"}</td>
+              <td className="whitespace-nowrap px-3 py-3 text-xs">共 {item.recordCount} · 挂牌 {item.listingCount} · 成交 {item.transactionCount}</td>
+              <td className="whitespace-nowrap px-3 py-3">{collectionMetricStatusLabel(item.collectionRun.metricStatus)}</td>
+              <td className="whitespace-nowrap px-3 py-3 text-right">
+                <Link href={item.detailHref} className="font-medium text-blue-700 hover:text-blue-900">详情</Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PolicyVersionTable({ policies }: { policies: HousingPolicyVersion[] }) {
+  if (policies.length === 0) {
+    return <p className="mt-5 border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">尚未录入测算政策版本。</p>;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    <div className="mt-5 overflow-x-auto border border-slate-200">
+      <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+        <thead className="bg-slate-50 text-xs text-slate-500">
+          <tr>
+            <th className="px-3 py-2.5 font-medium">版本</th>
+            <th className="px-3 py-2.5 font-medium">生效区间</th>
+            <th className="px-3 py-2.5 font-medium">状态</th>
+            <th className="px-3 py-2.5 font-medium">官方来源</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+          {policies.map((policy) => (
+            <tr key={policy.id}>
+              <td className="px-3 py-3">
+                <p className="font-medium text-slate-900">{policy.name}</p>
+                <p className="mt-0.5 font-mono text-xs text-slate-500">{policy.version}</p>
+              </td>
+              <td className="whitespace-nowrap px-3 py-3 text-xs">{policy.effectiveFrom} 至 {policy.effectiveTo ?? "持续有效"}</td>
+              <td className="whitespace-nowrap px-3 py-3">{!policy.enabled ? "未启用" : policy.effectiveFrom > today ? "未来生效" : policy.effectiveTo && policy.effectiveTo <= today ? "已结束" : "当前有效"}</td>
+              <td className="px-3 py-3">
+                <ul className="space-y-1">
+                  {policy.sources.map((source) => (
+                    <li key={`${policy.id}-${source.code}`}>
+                      <a href={source.url} target="_blank" rel="noreferrer" className="text-blue-700 hover:text-blue-900">{source.issuer} · {source.title}</a>
+                    </li>
+                  ))}
+                </ul>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function HistorySelect({
+  children,
+  label,
+  onChange,
+  value,
+}: {
+  children: React.ReactNode;
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <label className={labelClass}>
+      {label}
+      <select value={value} onChange={(event) => onChange(event.target.value)} className={`${inputClass} mt-1`}>{children}</select>
+    </label>
+  );
+}
+
+function HistoryDate({ label, onChange, value }: { label: string; onChange: (value: string) => void; value: string }) {
+  return (
+    <label className={labelClass}>
+      {label}
+      <input type="date" value={value} onChange={(event) => onChange(event.target.value)} className={`${inputClass} mt-1`} />
+    </label>
+  );
+}
+
+function ManualEntry({
+  rows,
+  onAdd,
+  onUpdate,
+  onRemove,
+}: {
+  rows: ManualRow[];
+  onAdd: (recordType: ManualRowType) => void;
+  onUpdate: (localId: string, patch: Partial<ManualRow>) => void;
+  onRemove: (localId: string) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <label className={labelClass}>逐条录入房源</label>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => onAdd("listing")} className={iconTextButtonClass}>
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            加一条挂牌
+          </button>
+          <button type="button" onClick={() => onAdd("transaction")} className={iconTextButtonClass}>
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            加一条成交
+          </button>
+        </div>
+      </div>
+      <p className="mb-3 text-xs text-slate-500">价格单位为万；挂牌填挂牌天数与状态，成交填成交日期。房源编号留空会自动生成。</p>
+      <ul className="grid gap-3">
+        {rows.map((row, index) => (
+          <ManualRowCard
+            key={row.localId}
+            row={row}
+            index={index + 1}
+            canRemove={rows.length > 1}
+            onUpdate={onUpdate}
+            onRemove={onRemove}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ManualRowCard({
+  row,
+  index,
+  canRemove,
+  onUpdate,
+  onRemove,
+}: {
+  row: ManualRow;
+  index: number;
+  canRemove: boolean;
+  onUpdate: (localId: string, patch: Partial<ManualRow>) => void;
+  onRemove: (localId: string) => void;
+}) {
+  const isListing = row.recordType === "listing";
+  const set = (patch: Partial<ManualRow>) => onUpdate(row.localId, patch);
+  return (
+    <li className="grid gap-3 border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="flex items-end justify-between gap-2 sm:col-span-2 lg:col-span-4">
+        <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 text-xs" role="group" aria-label={`第 ${index} 条类型`}>
+          <TypeToggle active={isListing} onClick={() => set({ recordType: "listing", status: row.status || "active", daysOnMarket: row.daysOnMarket || "0" })}>挂牌</TypeToggle>
+          <TypeToggle active={!isListing} onClick={() => set({ recordType: "transaction" })}>成交</TypeToggle>
+        </div>
+        {canRemove ? (
+          <button type="button" onClick={() => onRemove(row.localId)} aria-label={`删除第 ${index} 条`} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-rose-700 hover:bg-rose-50">
+            <Trash2 aria-hidden="true" className="h-4 w-4" />
+            删除
+          </button>
+        ) : null}
+      </div>
+      <ManualField label="户型" value={row.layout} onChange={(value) => set({ layout: value })} placeholder="三房" />
+      <ManualField label="面积 (㎡)" value={row.areaSqm} onChange={(value) => set({ areaSqm: value })} placeholder="138.6" inputMode="decimal" />
+      <ManualField label={isListing ? "挂牌总价 (万)" : "成交总价 (万)"} value={row.price} onChange={(value) => set({ price: value })} placeholder="178" inputMode="decimal" />
+      {isListing ? (
+        <>
+          <ManualField label="挂牌天数" value={row.daysOnMarket} onChange={(value) => set({ daysOnMarket: value })} placeholder="45" inputMode="numeric" />
+          <label className={labelClass}>
+            状态
+            <select value={row.status} onChange={(event) => set({ status: event.target.value as ManualRow["status"] })} className={`${inputClass} mt-1`}>
+              <option value="active">在售</option>
+              <option value="pending">已锁定</option>
+              <option value="withdrawn">已下架</option>
+              <option value="sold">已成交</option>
+            </select>
+          </label>
+        </>
+      ) : (
+        <>
+          <ManualField label="成交日期" value={row.transactionDate} onChange={(value) => set({ transactionDate: value })} type="date" />
+          <ManualField label="原挂牌编号 (选填)" value={row.originalListingRef} onChange={(value) => set({ originalListingRef: value })} placeholder="留空可不填" />
+        </>
+      )}
+      <ManualField label="房源编号 (选填)" value={row.sourceRecordId} onChange={(value) => set({ sourceRecordId: value })} placeholder="留空自动生成" />
+    </li>
+  );
+}
+
+function ManualField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  inputMode,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+  inputMode?: "decimal" | "numeric";
+}) {
+  return (
+    <label className={labelClass}>
+      {label}
+      <input
+        type={type}
+        inputMode={inputMode}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className={`${inputClass} mt-1`}
+      />
+    </label>
+  );
+}
+
+function TypeToggle({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`h-7 rounded px-3 font-medium ${active ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"}`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -791,6 +1287,61 @@ function metricStatusLabel(status: ImportCollectionRunResponse["metricRefreshSta
     default:
       return "等待刷新";
   }
+}
+
+function collectionMetricStatusLabel(status: "pending" | "completed" | "failed"): string {
+  return status === "completed" ? "已刷新" : status === "failed" ? "刷新失败" : "等待刷新";
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Shanghai",
+  }).format(new Date(value));
+}
+
+function emptyPolicyDraft(): CreateHousingPolicyVersionRequest {
+  return {
+    city: "天津",
+    effectiveFrom: "",
+    effectiveTo: null,
+    enabled: true,
+    name: "",
+    rules: {
+      downPayment: {
+        combinedFirst: 0,
+        combinedSecond: 0,
+        commercialFirst: 0,
+        commercialSecond: 0,
+        providentFirst: 0,
+        providentSecond: 0,
+      },
+      interest: {
+        commercialFirst: 0,
+        commercialSecond: 0,
+        providentFirstOverFiveYears: 0,
+        providentFirstUpToFiveYears: 0,
+        providentSecondOverFiveYears: 0,
+        providentSecondUpToFiveYears: 0,
+      },
+      tax: {
+        deedAreaThresholdSqm: 140,
+        deedFirstOverAreaRate: 0,
+        deedFirstUpToAreaRate: 0,
+        deedSecondOverAreaRate: 0,
+        deedSecondUpToAreaRate: 0,
+        incomeTaxAssessedRate: 0,
+        incomeTaxExemptHoldingYears: 5,
+        incomeTaxGainRate: 0,
+        vatExemptHoldingYears: 2,
+        vatRate: 0,
+        vatSurchargeRate: 0,
+      },
+    },
+    sources: [{ code: "", effectiveDate: "", issuer: "", title: "", url: "" }],
+    version: "",
+  };
 }
 
 function apiFailureMessage(error: unknown, fallback: string): string {

@@ -41,11 +41,23 @@ func TestAccessProtectionContract(t *testing.T) {
 		{path: "/api/v1/capacity/assumptions", method: "get"},
 		{path: "/api/v1/capacity/calculations", method: "post", protected: true},
 		{path: "/api/v1/capacity/calculations/{id}", method: "get", protected: true},
+		{path: "/api/v1/assets", method: "post", protected: true},
+		{path: "/api/v1/assets", method: "get", protected: true},
+		{path: "/api/v1/assets/{id}", method: "get", protected: true},
+		{path: "/api/v1/assets/{id}", method: "patch", protected: true},
+		{path: "/api/v1/assets/{id}", method: "delete", protected: true},
 		{path: "/api/v1/neighborhoods", method: "get"},
 		{path: "/api/v1/neighborhoods", method: "post", protected: true},
 		{path: "/api/v1/neighborhoods/{id}", method: "get"},
 		{path: "/api/v1/neighborhoods/{id}/metrics", method: "get"},
 		{path: "/api/v1/neighborhoods/{id}/metrics/history", method: "get"},
+		{path: "/api/v1/neighborhoods/{id}/community-market", method: "get"},
+		{path: "/api/v1/neighborhoods/{id}/community-market/latest", method: "get"},
+		{path: "/api/v1/neighborhoods/{id}/market-listings", method: "get"},
+		{path: "/api/v1/neighborhoods/{id}/market-listings/{roomId}", method: "get"},
+		{path: "/api/v1/neighborhoods/{id}/market-transactions", method: "get"},
+		{path: "/api/v1/neighborhoods/{id}/market-listings/{roomId}/adjustments", method: "get"},
+		{path: "/api/v1/community-market/comparison", method: "get"},
 		{path: "/api/v1/watchlist/items", method: "post", protected: true},
 		{path: "/api/v1/watchlist", method: "get", protected: true},
 		{path: "/api/v1/review-notes", method: "post", protected: true},
@@ -55,10 +67,15 @@ func TestAccessProtectionContract(t *testing.T) {
 		{path: "/api/v1/decision/action-window", method: "get", protected: true},
 		{path: "/admin/api/data-sources", method: "post", protected: true},
 		{path: "/admin/api/data-sources", method: "get", protected: true},
+		{path: "/admin/api/imports", method: "get", protected: true},
 		{path: "/admin/api/imports/json", method: "post", protected: true},
 		{path: "/admin/api/imports/csv", method: "post", protected: true},
 		{path: "/admin/api/imports/csv/template", method: "get", protected: true},
 		{path: "/admin/api/imports/{id}", method: "get", protected: true},
+		{path: "/admin/api/capacity/policies", method: "get", protected: true},
+		{path: "/admin/api/capacity/policies", method: "post", protected: true},
+		{path: "/admin/api/community-market/imports/csv", method: "post", protected: true},
+		{path: "/admin/api/community-market/imports/fangjian", method: "post", protected: true},
 	}
 
 	paths := requiredMap(t, spec, "paths")
@@ -97,6 +114,83 @@ func TestAccessProtectionContract(t *testing.T) {
 	importOperation := requiredMap(t, requiredMap(t, paths, "/admin/api/imports/json"), "post")
 	if importResponses := requiredMap(t, importOperation, "responses"); hasKey(importResponses, "403") {
 		t.Fatal("admin import operation must not retain the obsolete 403 response")
+	}
+}
+
+func TestFangjianCommunityMarketContract(t *testing.T) {
+	spec := loadOpenAPI(t)
+	paths := requiredMap(t, spec, "paths")
+	schemas := requiredMap(t, requiredMap(t, spec, "components"), "schemas")
+
+	for path, responseSchema := range map[string]string{
+		"/api/v1/neighborhoods/{id}/community-market/latest":              "#/components/schemas/CommunityMarketSnapshot",
+		"/api/v1/neighborhoods/{id}/market-listings":                      "#/components/schemas/MarketListingsPage",
+		"/api/v1/neighborhoods/{id}/market-listings/{roomId}":             "#/components/schemas/MarketListingDetail",
+		"/api/v1/neighborhoods/{id}/market-transactions":                  "#/components/schemas/MarketTransactionsPage",
+		"/api/v1/neighborhoods/{id}/market-listings/{roomId}/adjustments": "#/components/schemas/ListingAdjustmentsResponse",
+		"/api/v1/community-market/comparison":                             "#/components/schemas/CommunityMarketComparison",
+	} {
+		operation := requiredMap(t, requiredMap(t, paths, path), "get")
+		if got := requiredString(t, responseJSONSchema(t, operation, "200"), "$ref"); got != responseSchema {
+			t.Fatalf("%s response schema = %q, want %q", path, got, responseSchema)
+		}
+	}
+
+	importOperation := requiredMap(t, requiredMap(t, paths, "/admin/api/community-market/imports/fangjian"), "post")
+	if got := requiredString(t, responseJSONSchema(t, importOperation, "201"), "$ref"); got != "#/components/schemas/ImportFangjianResponse" {
+		t.Fatalf("Fangjian import response schema = %q", got)
+	}
+	for _, status := range []string{"200", "201", "400", "401", "404", "413", "422", "500"} {
+		if _, ok := requiredMap(t, importOperation, "responses")[status]; !ok {
+			t.Fatalf("Fangjian import is missing %s response", status)
+		}
+	}
+	assertRequiredFields(t, requiredMap(t, schemas, "FangjianBundle"), []string{"schemaVersion", "collectedAt", "community", "listings", "transactions", "adjustments", "quality"})
+	assertRequiredFields(t, requiredMap(t, schemas, "CommunityMarketSnapshot"), []string{"collectionRunId", "qualityStatus", "analysis", "surroundings", "cityContext"})
+	assertRequiredFields(t, requiredMap(t, schemas, "MarketListing"), []string{"roomId", "listedAt", "daysOnMarket", "adjustmentCount"})
+	assertRequiredFields(t, requiredMap(t, schemas, "MarketTransaction"), []string{"listingTotalPriceWan", "tradeTotalPriceWan", "negotiationWan", "orientation"})
+}
+
+func TestPropertyAssetAndCalculationSelectionContracts(t *testing.T) {
+	spec := loadOpenAPI(t)
+	components := requiredMap(t, spec, "components")
+	schemas := requiredMap(t, components, "schemas")
+	paths := requiredMap(t, spec, "paths")
+
+	createAsset := requiredMap(t, requiredMap(t, paths, "/api/v1/assets"), "post")
+	requestBody := requiredMap(t, createAsset, "requestBody")
+	content := requiredMap(t, requestBody, "content")
+	mediaType := requiredMap(t, content, "application/json")
+	if got := requiredString(t, requiredMap(t, mediaType, "schema"), "$ref"); got != "#/components/schemas/CreateAssetRequest" {
+		t.Fatalf("asset create request schema = %q", got)
+	}
+	if got := requiredString(t, responseJSONSchema(t, createAsset, "201"), "$ref"); got != "#/components/schemas/AssetResponse" {
+		t.Fatalf("asset create response schema = %q", got)
+	}
+	request := requiredMap(t, schemas, "CreateAssetRequest")
+	assertRequiredFields(t, request, []string{"neighborhoodId", "propertySelection", "originalPurchasePriceWan", "purchasedOn", "currentLoanBalanceWan"})
+	if additional, ok := request["additionalProperties"].(bool); !ok || additional {
+		t.Fatalf("CreateAssetRequest additionalProperties = %#v, want false", request["additionalProperties"])
+	}
+	if _, exists := requiredMap(t, request, "properties")["userId"]; exists {
+		t.Fatal("CreateAssetRequest must not expose userId")
+	}
+	asset := requiredMap(t, schemas, "AssetResponse")
+	assertRequiredFields(t, asset, []string{"id", "property", "sourceKind", "listingSource", "createdAt", "updatedAt"})
+	if _, exists := requiredMap(t, asset, "properties")["userId"]; exists {
+		t.Fatal("AssetResponse must not expose userId")
+	}
+
+	capacityInput := requiredMap(t, schemas, "HousingCapacityInput")
+	inputProperties := requiredMap(t, capacityInput, "properties")
+	for _, field := range []string{"oldHomeSelection", "targetHomeSelection"} {
+		if inputProperties[field] == nil {
+			t.Fatalf("HousingCapacityInput is missing %s", field)
+		}
+	}
+	calculation := requiredMap(t, schemas, "CalculationResponse")
+	if requiredMap(t, requiredMap(t, calculation, "properties"), "selectionContext")["$ref"] != "#/components/schemas/PropertySelectionContext" {
+		t.Fatal("CalculationResponse selectionContext must reference the frozen context schema")
 	}
 }
 
@@ -415,6 +509,40 @@ func TestNeighborhoodCatalogAndWatchlistTargetContract(t *testing.T) {
 	assertRequiredFields(t, requiredMap(t, schemas, "WatchlistItem"), []string{"city", "targetLayout"})
 }
 
+func TestCommunityMarketProfileContract(t *testing.T) {
+	spec := loadOpenAPI(t)
+	paths := requiredMap(t, spec, "paths")
+	schemas := requiredMap(t, requiredMap(t, spec, "components"), "schemas")
+	profileFields := []string{
+		"provinceCode", "provinceName", "propertyType", "propertyTags", "buildingCount", "buildingType",
+		"buildingYear", "developer", "householdCount", "closedManagement", "plotRatio", "greenAreaSqm",
+		"greeningRatePercent", "propertyManagementCompany", "propertyFee", "fixedParkingSpaces", "parkingRatio",
+		"parkingFee", "heatingType", "waterType", "electricityType", "gasCost", "manCarSeparation",
+	}
+	snapshot := requiredMap(t, schemas, "CommunityMarketSnapshot")
+	assertRequiredFields(t, snapshot, profileFields)
+	properties := requiredMap(t, snapshot, "properties")
+	for _, field := range profileFields {
+		property := requiredMap(t, properties, field)
+		if nullable, ok := property["nullable"].(bool); !ok || !nullable {
+			t.Fatalf("CommunityMarketSnapshot.%s nullable = %#v, want true", field, property["nullable"])
+		}
+	}
+
+	latest := requiredMap(t, requiredMap(t, paths, "/api/v1/neighborhoods/{id}/community-market"), "get")
+	for _, status := range []string{"200", "404", "500"} {
+		if _, ok := requiredMap(t, latest, "responses")[status]; !ok {
+			t.Fatalf("community market query is missing %s response", status)
+		}
+	}
+	importCSV := requiredMap(t, requiredMap(t, paths, "/admin/api/community-market/imports/csv"), "post")
+	for _, status := range []string{"200", "201", "400", "401", "404", "413", "422", "500"} {
+		if _, ok := requiredMap(t, importCSV, "responses")[status]; !ok {
+			t.Fatalf("community market import is missing %s response", status)
+		}
+	}
+}
+
 func assertRequiredOperationParameter(t *testing.T, operation map[string]interface{}, name string) {
 	t.Helper()
 	parameter := operationParameter(t, operation, name, "query")
@@ -450,9 +578,18 @@ func TestCapacityCalculationContract(t *testing.T) {
 	input := requiredMap(t, schemas, "HousingCapacityInput")
 	assertRequiredFields(t, input, []string{
 		"cashOnHand", "oldHomeValue", "oldLoanBalance", "monthlyIncome", "currentMonthlyMortgage",
-		"acceptableMonthlyMortgage", "targetTotalPrice", "renovationBudget", "transactionCosts", "transitionRentCost",
+		"acceptableMonthlyMortgage", "targetTotalPrice", "renovationBudget", "transitionRentCost",
 	})
 	inputProperties := requiredMap(t, input, "properties")
+	for field, ref := range map[string]string{
+		"transactionScenario": "#/components/schemas/TransactionScenario",
+		"loanPlan":            "#/components/schemas/LoanPlan",
+		"manualOverrides":     "#/components/schemas/CalculationOverrides",
+	} {
+		if got := requiredString(t, requiredMap(t, inputProperties, field), "$ref"); got != ref {
+			t.Fatalf("%s $ref = %q, want %q", field, got, ref)
+		}
+	}
 	if got := requiredString(t, requiredMap(t, inputProperties, "cityPolicyOverride"), "$ref"); got != "#/components/schemas/CityPolicyOverride" {
 		t.Fatalf("cityPolicyOverride $ref = %q", got)
 	}
@@ -465,6 +602,11 @@ func TestCapacityCalculationContract(t *testing.T) {
 	result := requiredMap(t, schemas, "HousingCapacityResult")
 	assertRequiredFields(t, result, []string{"traceabilityStatus", "appliedAssumptions", "ruleVersion", "effectiveDate"})
 	resultProperties := requiredMap(t, result, "properties")
+	for _, field := range []string{"loanBreakdown", "taxBreakdown", "policyVersion", "sources", "manualOverrides", "disclaimer"} {
+		if _, ok := resultProperties[field]; !ok {
+			t.Fatalf("HousingCapacityResult is missing %s", field)
+		}
+	}
 	applied := requiredMap(t, resultProperties, "appliedAssumptions")
 	if nullable, ok := applied["nullable"].(bool); !ok || !nullable {
 		t.Fatalf("appliedAssumptions nullable = %#v, want true", applied["nullable"])

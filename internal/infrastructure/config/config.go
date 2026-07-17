@@ -95,6 +95,24 @@ func Load(mode string) (Config, error) {
 }
 
 func loadCapacityAssumptions(asOf time.Time) (domaincapacity.Assumptions, error) {
+	policyKeys := []string{
+		"PROPULSE_CAPACITY_POLICY_CITY",
+		"PROPULSE_CAPACITY_POLICY_NAME",
+		"PROPULSE_CAPACITY_POLICY_DOWN_PAYMENT_RATE",
+		"PROPULSE_CAPACITY_POLICY_EFFECTIVE_DATE",
+		"PROPULSE_CAPACITY_POLICY_SOURCE",
+	}
+	hasCompatibilityConfig := false
+	for _, key := range policyKeys {
+		if strings.TrimSpace(os.Getenv(key)) != "" {
+			hasCompatibilityConfig = true
+			break
+		}
+	}
+	if !hasCompatibilityConfig {
+		return defaultCapacityFallbackAssumptions(asOf)
+	}
+
 	city, err := requiredEnv("PROPULSE_CAPACITY_POLICY_CITY")
 	if err != nil {
 		return domaincapacity.Assumptions{}, err
@@ -146,6 +164,36 @@ func loadCapacityAssumptions(asOf time.Time) (domaincapacity.Assumptions, error)
 			StrainedRatio:    0.45,
 			DangerRatio:      0.55,
 			DangerMultiplier: 1.15,
+		},
+		OldHomeShareThreshold: 0.5,
+	}
+	if err := assumptions.ValidateAt(asOf); err != nil {
+		return domaincapacity.Assumptions{}, fmt.Errorf("%w: %w", ErrInvalidCapacityPolicy, err)
+	}
+	return assumptions, nil
+}
+
+func defaultCapacityFallbackAssumptions(asOf time.Time) (domaincapacity.Assumptions, error) {
+	assumptions := domaincapacity.Assumptions{
+		RuleVersion:   "legacy-fallback/2026.01.01",
+		EffectiveDate: "2026-01-01",
+		RuleSource:    "database policy compatibility fallback",
+		Loan: domaincapacity.LoanParams{
+			AnnualInterestRate: 0.0305,
+			LoanTermMonths:     360,
+			RepaymentMethod:    domaincapacity.RepaymentEqualInstallment,
+		},
+		LoanSource: "天津商业性个人住房贷款参考利率兼容回退",
+		LoanOrigin: domaincapacity.OriginConfiguredDefault,
+		CityPolicy: domaincapacity.CityPolicy{
+			City: "天津", PolicyName: "天津住房贷款最低首付兼容回退", DownPaymentRate: 0.15,
+			EffectiveDate: "2026-01-01",
+			Source:        "https://zfcxjs.tj.gov.cn/xxgk_70/zcjdx/202410/t20241016_6754643.html",
+			Origin:        domaincapacity.OriginConfiguredDefault,
+		},
+		ReserveMonths: 6,
+		PressureThresholds: domaincapacity.PressureThresholds{
+			SafeRatio: 0.35, StrainedRatio: 0.45, DangerRatio: 0.55, DangerMultiplier: 1.15,
 		},
 		OldHomeShareThreshold: 0.5,
 	}

@@ -10,8 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisclient "github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
+	appasset "github.com/sine-io/propulse/internal/application/asset"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
+	appcommunitymarket "github.com/sine-io/propulse/internal/application/communitymarket"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appmetric "github.com/sine-io/propulse/internal/application/metric"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
@@ -32,14 +34,16 @@ type runtime struct {
 	redis       *redisclient.Client
 	queueClient io.Closer
 
-	capacity     CapacityApplication
-	neighborhood NeighborhoodApplication
-	collection   CollectionApplication
-	decision     DecisionApplication
-	review       ReviewApplication
-	metric       MetricApplication
-	enqueuer     MetricTaskEnqueuer
-	readiness    router.ReadinessChecker
+	capacity        CapacityApplication
+	asset           AssetApplication
+	neighborhood    NeighborhoodApplication
+	collection      CollectionApplication
+	communityMarket CommunityMarketApplication
+	decision        DecisionApplication
+	review          ReviewApplication
+	metric          MetricApplication
+	enqueuer        MetricTaskEnqueuer
+	readiness       router.ReadinessChecker
 
 	closeOnce sync.Once
 	closeErr  error
@@ -97,15 +101,22 @@ func openRuntime(ctx context.Context, cfg config.Config, _ zerolog.Logger) (*run
 	rt.queueClient = queueClient
 
 	capacityRepo := postgresgorm.NewCapacityRepository(gormDB)
+	capacityPolicyRepo := postgresgorm.NewCapacityPolicyRepository(gormDB)
 	metricRepo := sqlmetric.NewRepository(pgxPool, cfg.MetricAlgorithmVersion)
 	neighborhoodRepo := postgresgorm.NewNeighborhoodRepositoryWithMetricReader(gormDB, metricRepo)
 	collectionRepo := postgresgorm.NewCollectionRepository(gormDB)
+	communityMarketRepo := postgresgorm.NewCommunityMarketRepository(gormDB)
+	assetRepo := postgresgorm.NewAssetRepository(gormDB)
 	reviewRepo := postgresgorm.NewReviewRepository(gormDB)
 
-	rt.capacity = appcapacity.NewService(capacityRepo, cfg.CapacityAssumptions, time.Now, nil)
 	rt.metric = appmetric.NewService(metricRepo, cfg.MetricAlgorithmVersion)
 	rt.neighborhood = appneighborhood.NewServiceWithMetricConfig(neighborhoodRepo, cfg.MetricAlgorithmVersion, time.Now)
 	rt.collection = appcollection.NewServiceWithMetricRefresh(collectionRepo, time.Now, nil, rt.metric, rt.enqueuer, cfg.MetricAlgorithmVersion)
+	rt.communityMarket = appcommunitymarket.NewService(communityMarketRepo, time.Now, nil)
+	rt.asset = appasset.NewService(assetRepo, rt.neighborhood, rt.communityMarket, time.Now, nil)
+	rt.capacity = appcapacity.NewServiceWithPoliciesAndSelections(
+		capacityRepo, capacityPolicyRepo, rt.asset, rt.communityMarket, cfg.CapacityAssumptions, time.Now, nil,
+	)
 	rt.decision = appdecision.NewService(
 		rt.capacity,
 		rt.neighborhood,

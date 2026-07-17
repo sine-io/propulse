@@ -4,11 +4,21 @@ import { clearAccessToken, getAccessToken } from "./access-token";
 export type HousingCapacityInput = components["schemas"]["HousingCapacityInput"];
 export type LoanParams = components["schemas"]["LoanParams"];
 export type CityPolicyOverride = components["schemas"]["CityPolicyOverride"];
+export type TransactionScenario = components["schemas"]["TransactionScenario"];
+export type LoanPlan = components["schemas"]["LoanPlan"];
+export type CalculationOverrides = components["schemas"]["CalculationOverrides"];
+export type HousingPolicyVersion = components["schemas"]["HousingPolicyVersion"];
+export type CreateHousingPolicyVersionRequest = components["schemas"]["CreateHousingPolicyVersionRequest"];
 export type AppliedAssumptions = components["schemas"]["AppliedAssumptions"];
 export type HousingCapacityResult = components["schemas"]["HousingCapacityResult"];
 export type CapacityAssumptionsResponse =
   components["schemas"]["CapacityAssumptionsResponse"];
 export type CalculationResponse = components["schemas"]["CalculationResponse"];
+export type PropertySelectionContext = components["schemas"]["PropertySelectionContext"];
+export type Asset = components["schemas"]["AssetResponse"];
+export type AssetsPage = components["schemas"]["AssetsPageResponse"];
+export type CreateAssetInput = components["schemas"]["CreateAssetRequest"];
+export type UpdateAssetInput = components["schemas"]["UpdateAssetRequest"];
 export type CapacityCalculationResponse = CalculationResponse;
 export type WatchlistResponse = components["schemas"]["WatchlistResponse"];
 export type WatchlistItem = components["schemas"]["WatchlistItem"];
@@ -23,6 +33,14 @@ export type Neighborhood = components["schemas"]["NeighborhoodResponse"];
 export type NeighborhoodSearchResponse = components["schemas"]["NeighborhoodSearchResponse"];
 export type NeighborhoodMetricResponse = components["schemas"]["NeighborhoodMetricResponse"];
 export type MetricHistoryResponse = components["schemas"]["MetricHistoryResponse"];
+export type CommunityMarketSnapshot = components["schemas"]["CommunityMarketSnapshot"];
+export type MarketListing = components["schemas"]["MarketListing"];
+export type MarketListingDetail = components["schemas"]["MarketListingDetail"];
+export type MarketTransaction = components["schemas"]["MarketTransaction"];
+export type ListingAdjustment = components["schemas"]["ListingAdjustment"];
+export type MarketListingsPage = components["schemas"]["MarketListingsPage"];
+export type MarketTransactionsPage = components["schemas"]["MarketTransactionsPage"];
+export type CommunityMarketComparison = components["schemas"]["CommunityMarketComparison"];
 export type MetricHistoryPoint = components["schemas"]["MetricHistoryPoint"];
 export type MetricComparison = components["schemas"]["MetricComparison"];
 export type MetricChangeValue = components["schemas"]["MetricChangeValue"];
@@ -32,6 +50,8 @@ export type ImportJSONRequest = components["schemas"]["ImportJSONRequest"];
 export type ImportJSONRecord = components["schemas"]["ImportJSONRecord"];
 export type ImportCollectionRunResponse = components["schemas"]["ImportCollectionRunResponse"];
 export type CollectionRunDetail = components["schemas"]["CollectionRunDetail"];
+export type CollectionRunSummary = components["schemas"]["CollectionRunSummary"];
+export type CollectionRunsPage = components["schemas"]["CollectionRunsPage"];
 export type ValidationIssue = components["schemas"]["ValidationIssue"];
 export type ImportMetadata = Omit<ImportJSONRequest, "records">;
 export type ReviewNoteKind = components["schemas"]["ReviewNoteKind"];
@@ -47,6 +67,34 @@ export interface NeighborhoodSearchQuery {
   pageSize?: number;
   q?: string;
   targetLayout?: string;
+}
+
+export interface CapacityAssumptionsQuery {
+  city?: string;
+  homePurchaseOrder?: "first" | "second";
+  loanTermMonths?: number;
+}
+
+export interface CollectionRunListQuery {
+  dataSourceId?: string;
+  neighborhoodId?: string;
+  status?: "completed";
+  metricStatus?: "pending" | "completed" | "failed";
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface MarketListQuery {
+  layout?: string;
+  floor?: "高楼层" | "中楼层" | "低楼层";
+  minPriceWan?: number;
+  maxPriceWan?: number;
+  sortBy?: "date" | "price" | "unitPrice" | "area" | "adjustments";
+  sortOrder?: "asc" | "desc";
+  page?: number;
+  pageSize?: number;
 }
 
 export class ApiError extends Error {
@@ -75,13 +123,91 @@ export async function createCapacityCalculation(
   });
 }
 
-export async function getCapacityAssumptions(
+export async function listAssets(
+  page = 1,
+  pageSize = 100,
   signal?: AbortSignal,
-): Promise<CapacityAssumptionsResponse> {
-  return request<CapacityAssumptionsResponse>(
-    "/api/v1/capacity/assumptions",
+): Promise<AssetsPage> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  return request<AssetsPage>(
+    `/api/v1/assets?${params.toString()}`,
     signal ? { signal } : undefined,
   );
+}
+
+export async function getAsset(id: string, signal?: AbortSignal): Promise<Asset> {
+  return request<Asset>(
+    `/api/v1/assets/${encodeURIComponent(id)}`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function createAsset(input: CreateAssetInput, signal?: AbortSignal): Promise<Asset> {
+  return request<Asset>("/api/v1/assets", {
+    body: JSON.stringify(input),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    signal,
+  });
+}
+
+export async function updateAsset(id: string, input: UpdateAssetInput, signal?: AbortSignal): Promise<Asset> {
+  return request<Asset>(`/api/v1/assets/${encodeURIComponent(id)}`, {
+    body: JSON.stringify(input),
+    headers: { "content-type": "application/json" },
+    method: "PATCH",
+    signal,
+  });
+}
+
+export async function deleteAsset(id: string, signal?: AbortSignal): Promise<void> {
+  await authorizedResponse(
+    `/api/v1/assets/${encodeURIComponent(id)}`,
+    { method: "DELETE", signal },
+  );
+}
+
+export async function getCapacityAssumptions(
+  queryOrSignal: CapacityAssumptionsQuery | AbortSignal = {},
+  signal?: AbortSignal,
+): Promise<CapacityAssumptionsResponse> {
+  const query = queryOrSignal instanceof AbortSignal ? {} : queryOrSignal;
+  const requestSignal = queryOrSignal instanceof AbortSignal ? queryOrSignal : signal;
+  const params = new URLSearchParams();
+  if (query.city?.trim()) params.set("city", query.city.trim());
+  if (query.homePurchaseOrder) params.set("homePurchaseOrder", query.homePurchaseOrder);
+  if (query.loanTermMonths) params.set("loanTermMonths", String(query.loanTermMonths));
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return request<CapacityAssumptionsResponse>(
+    `/api/v1/capacity/assumptions${suffix}`,
+    requestSignal ? { signal: requestSignal } : undefined,
+  );
+}
+
+export async function listCapacityPolicies(
+  city = "",
+  signal?: AbortSignal,
+): Promise<HousingPolicyVersion[]> {
+  const params = new URLSearchParams();
+  if (city.trim()) params.set("city", city.trim());
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  const response = await request<{ items: HousingPolicyVersion[] }>(
+    `/admin/api/capacity/policies${suffix}`,
+    signal ? { signal } : undefined,
+  );
+  return response.items;
+}
+
+export async function createCapacityPolicy(
+  input: CreateHousingPolicyVersionRequest,
+  signal?: AbortSignal,
+): Promise<HousingPolicyVersion> {
+  return request<HousingPolicyVersion>("/admin/api/capacity/policies", {
+    body: JSON.stringify(input),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    signal,
+  });
 }
 
 export async function getWatchlist(
@@ -247,6 +373,87 @@ export async function getNeighborhoodMetrics(
   );
 }
 
+export async function getCommunityMarketSnapshot(
+  neighborhoodId: string,
+  signal?: AbortSignal,
+): Promise<CommunityMarketSnapshot> {
+  return request<CommunityMarketSnapshot>(
+    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/community-market`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function getLatestCommunityMarketSnapshot(
+  neighborhoodId: string,
+  signal?: AbortSignal,
+): Promise<CommunityMarketSnapshot> {
+  return request<CommunityMarketSnapshot>(
+    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/community-market/latest`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function getMarketListings(
+  neighborhoodId: string,
+  query: MarketListQuery = {},
+  signal?: AbortSignal,
+): Promise<MarketListingsPage> {
+  return request<MarketListingsPage>(marketListURL(neighborhoodId, "market-listings", query), signal ? { signal } : undefined);
+}
+
+export async function getMarketListingDetail(
+  neighborhoodId: string,
+  roomId: string,
+  signal?: AbortSignal,
+): Promise<MarketListingDetail> {
+  return request<MarketListingDetail>(
+    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/market-listings/${encodeURIComponent(roomId)}`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function getMarketTransactions(
+  neighborhoodId: string,
+  query: MarketListQuery = {},
+  signal?: AbortSignal,
+): Promise<MarketTransactionsPage> {
+  return request<MarketTransactionsPage>(marketListURL(neighborhoodId, "market-transactions", query), signal ? { signal } : undefined);
+}
+
+export async function getListingAdjustments(
+  neighborhoodId: string,
+  roomId: string,
+  signal?: AbortSignal,
+): Promise<{ items: ListingAdjustment[] }> {
+  return request<{ items: ListingAdjustment[] }>(
+    `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/market-listings/${encodeURIComponent(roomId)}/adjustments`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function compareCommunityMarkets(
+  neighborhoodId: string,
+  peerNeighborhoodId: string,
+  signal?: AbortSignal,
+): Promise<CommunityMarketComparison> {
+  const params = new URLSearchParams({ neighborhoodId, peerNeighborhoodId });
+  return request<CommunityMarketComparison>(`/api/v1/community-market/comparison?${params.toString()}`, signal ? { signal } : undefined);
+}
+
+function marketListURL(neighborhoodId: string, resource: "market-listings" | "market-transactions", query: MarketListQuery): string {
+  const params = new URLSearchParams();
+  if (query.layout?.trim()) params.set("layout", query.layout.trim());
+  if (query.floor) params.set("floor", query.floor);
+  if (query.minPriceWan != null) params.set("minPriceWan", String(query.minPriceWan));
+  if (query.maxPriceWan != null) params.set("maxPriceWan", String(query.maxPriceWan));
+  if (query.sortBy) params.set("sortBy", query.sortBy);
+  if (query.sortOrder) params.set("sortOrder", query.sortOrder);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("pageSize", String(query.pageSize));
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return `/api/v1/neighborhoods/${encodeURIComponent(neighborhoodId)}/${resource}${suffix}`;
+}
+
 export async function createNeighborhood(
   input: CreateNeighborhoodRequest,
   signal?: AbortSignal,
@@ -296,6 +503,30 @@ export async function getCollectionRunDetail(
 ): Promise<CollectionRunDetail> {
   return request<CollectionRunDetail>(
     `/admin/api/imports/${encodeURIComponent(id)}`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function listCollectionRuns(
+  query: CollectionRunListQuery = {},
+  signal?: AbortSignal,
+): Promise<CollectionRunsPage> {
+  const params = new URLSearchParams({
+    page: String(query.page ?? 1),
+    pageSize: String(query.pageSize ?? 20),
+  });
+  for (const [key, value] of [
+    ["dataSourceId", query.dataSourceId],
+    ["neighborhoodId", query.neighborhoodId],
+    ["status", query.status],
+    ["metricStatus", query.metricStatus],
+    ["from", query.from],
+    ["to", query.to],
+  ] as const) {
+    if (value) params.set(key, value);
+  }
+  return request<CollectionRunsPage>(
+    `/admin/api/imports?${params.toString()}`,
     signal ? { signal } : undefined,
   );
 }

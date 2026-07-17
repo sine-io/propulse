@@ -21,6 +21,25 @@ paths:
     get:
       summary: Get default calculation assumptions
       description: Public. Returns the complete currently effective rule set used to pre-fill reproducible calculations.
+      parameters:
+        - name: city
+          in: query
+          schema:
+            type: string
+            default: 天津
+        - name: homePurchaseOrder
+          in: query
+          schema:
+            type: string
+            enum: [first, second]
+            default: first
+        - name: loanTermMonths
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 360
+            default: 360
       responses:
         '200':
           description: Default assumptions
@@ -52,6 +71,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Selected asset or target listing not found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '409':
+          description: Selected target listing is no longer active
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
         '401':
           $ref: '#/components/responses/AccessRequired'
         '500':
@@ -92,6 +121,158 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/assets:
+    post:
+      summary: Create a property asset for the configured user
+      security:
+        - AccessBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateAssetRequest'}
+      responses:
+        '201':
+          description: Asset created with an authoritative source snapshot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetResponse'}
+        '400':
+          description: Invalid asset facts or request shape
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401': {$ref: '#/components/responses/AccessRequired'}
+        '404':
+          description: Selected neighborhood or listing not found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '409':
+          description: Selected listing is no longer active
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Asset could not be stored
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+    get:
+      summary: List active property assets owned by the configured user
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: Active assets ordered by most recently updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetsPageResponse'}
+        '400':
+          description: Invalid pagination
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401': {$ref: '#/components/responses/AccessRequired'}
+        '500':
+          description: Asset list could not be read
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /api/v1/assets/{id}:
+    get:
+      summary: Get one active property asset owned by the configured user
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Asset found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetResponse'}
+        '400':
+          description: Invalid asset ID
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401': {$ref: '#/components/responses/AccessRequired'}
+        '404':
+          description: Asset not found for this user
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Asset could not be read
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+    patch:
+      summary: Update confirmed facts for one owned property asset
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateAssetRequest'}
+      responses:
+        '200':
+          description: Asset updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetResponse'}
+        '400':
+          description: Invalid asset facts or request shape
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401': {$ref: '#/components/responses/AccessRequired'}
+        '404':
+          description: Asset or selected source not found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '409':
+          description: Selected replacement listing is no longer active
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Asset could not be updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+    delete:
+      summary: Soft-delete one owned property asset
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Asset soft-deleted}
+        '400':
+          description: Invalid asset ID
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401': {$ref: '#/components/responses/AccessRequired'}
+        '404':
+          description: Asset not found for this user
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Asset could not be deleted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
   /api/v1/neighborhoods:
     get:
       summary: Search neighborhoods
@@ -278,6 +459,206 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/neighborhoods/{id}/community-market:
+    get:
+      summary: Get the latest source-native community aggregate market snapshot
+      description: Public. Aggregate observations and optional source-native profile fields remain separate from listing and transaction detail metrics.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Latest community aggregate snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityMarketSnapshot'
+        '404':
+          description: Community aggregate snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Snapshot lookup failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/neighborhoods/{id}/community-market/latest:
+    get:
+      summary: Get the latest complete or aggregate-only community market snapshot
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Latest community market snapshot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunityMarketSnapshot'}
+        '404':
+          description: Snapshot not found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Snapshot lookup failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /api/v1/neighborhoods/{id}/market-listings:
+    get:
+      summary: List the latest complete Fangjian listing inventory
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: layout, in: query, schema: {type: string}}
+        - {name: floor, in: query, schema: {type: string, enum: [高楼层, 中楼层, 低楼层]}}
+        - {name: minPriceWan, in: query, schema: {type: number, minimum: 0}}
+        - {name: maxPriceWan, in: query, schema: {type: number, minimum: 0}}
+        - {name: sortBy, in: query, schema: {type: string, enum: [date, price, unitPrice, area, adjustments], default: date}}
+        - {name: sortOrder, in: query, schema: {type: string, enum: [asc, desc], default: desc}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: Paginated current listings
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MarketListingsPage'}
+        '400':
+          description: Invalid filters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '404':
+          description: Complete listing snapshot not found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Listing lookup failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /api/v1/neighborhoods/{id}/market-listings/{roomId}:
+    get:
+      summary: Get one listing from the latest complete active inventory
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: roomId, in: path, required: true, schema: {type: string, maxLength: 128}}
+      responses:
+        '200':
+          description: Current authoritative listing and collection metadata
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MarketListingDetail'}
+        '400':
+          description: Invalid room or neighborhood identifier
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '404':
+          description: Listing does not exist or is no longer in the latest active inventory
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Listing lookup failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /api/v1/neighborhoods/{id}/market-transactions:
+    get:
+      summary: List the latest complete Fangjian transaction history
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: layout, in: query, schema: {type: string}}
+        - {name: floor, in: query, schema: {type: string, enum: [高楼层, 中楼层, 低楼层]}}
+        - {name: minPriceWan, in: query, schema: {type: number, minimum: 0}}
+        - {name: maxPriceWan, in: query, schema: {type: number, minimum: 0}}
+        - {name: sortBy, in: query, schema: {type: string, enum: [date, price, unitPrice, area, adjustments], default: date}}
+        - {name: sortOrder, in: query, schema: {type: string, enum: [asc, desc], default: desc}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: Paginated transactions
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MarketTransactionsPage'}
+        '400':
+          description: Invalid filters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '404':
+          description: Complete transaction snapshot not found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Transaction lookup failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /api/v1/neighborhoods/{id}/market-listings/{roomId}/adjustments:
+    get:
+      summary: List price adjustments for one room in the latest complete snapshot
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: roomId, in: path, required: true, schema: {type: string, maxLength: 128}}
+      responses:
+        '200':
+          description: Price adjustment timeline
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ListingAdjustmentsResponse'}
+        '400':
+          description: Invalid room or neighborhood identifier
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '404':
+          description: Complete listing snapshot not found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Adjustment lookup failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /api/v1/community-market/comparison:
+    get:
+      summary: Compare the latest market snapshot for two neighborhoods
+      parameters:
+        - {name: neighborhoodId, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: peerNeighborhoodId, in: query, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Two-neighborhood market comparison
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunityMarketComparison'}
+        '400':
+          description: Invalid or identical neighborhood identifiers
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '404':
+          description: A comparison snapshot was not found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '500':
+          description: Comparison failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
   /api/v1/watchlist/items:
     post:
       summary: Add a neighborhood to the user's watchlist
@@ -629,7 +1010,7 @@ paths:
                 type: object
                 required: [items]
                 properties:
-                  items:
+                items:
                     type: array
                     items:
                       $ref: '#/components/schemas/DataSource'
@@ -637,6 +1018,45 @@ paths:
           $ref: '#/components/responses/AccessRequired'
         '500':
           description: Data source operation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/api/imports:
+    get:
+      summary: List traceable listing and transaction collection runs
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - {name: dataSourceId, in: query, schema: {type: string, format: uuid}}
+        - {name: neighborhoodId, in: query, schema: {type: string, format: uuid}}
+        - {name: status, in: query, schema: {type: string, enum: [completed]}}
+        - {name: metricStatus, in: query, schema: {type: string, enum: [pending, completed, failed]}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: pageSize
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: Paginated collection runs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionRunsPage'
+        '400':
+          description: Invalid filter or pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '500':
+          description: Import list failed
           content:
             application/json:
               schema:
@@ -830,6 +1250,192 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /admin/api/capacity/policies:
+    get:
+      summary: List append-only housing policy versions
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - name: city
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: Policy versions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HousingPolicyVersion'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '500':
+          description: Policy lookup failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Append a housing policy version
+      security:
+        - AccessBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateHousingPolicyVersionRequest'
+      responses:
+        '201':
+          description: Policy version created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HousingPolicyVersion'
+        '400':
+          description: Invalid policy version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '409':
+          description: Effective interval conflicts with an enabled version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Policy creation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/api/community-market/imports/csv:
+    post:
+      summary: Import one traceable community aggregate CSV snapshot
+      description: Accepts the exact v1 market-only or v2 market-and-profile CSV header and stores source-native values without synthesizing listing or transaction detail rows.
+      security:
+        - AccessBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [dataSourceId, neighborhoodId, sourceRef, file]
+              properties:
+                dataSourceId:
+                  type: string
+                  format: uuid
+                neighborhoodId:
+                  type: string
+                  format: uuid
+                sourceRef:
+                  type: string
+                  maxLength: 256
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Idempotent replay of an existing aggregate snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCommunityMarketResponse'
+        '201':
+          description: Community aggregate snapshot imported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCommunityMarketResponse'
+        '400':
+          description: Invalid multipart request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '404':
+          description: Selected source or neighborhood not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: CSV file or multipart request exceeds its size limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: CSV parsing or aggregate semantic validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Aggregate snapshot import failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/api/community-market/imports/fangjian:
+    post:
+      summary: Atomically import a complete Fangjian community market bundle
+      security:
+        - AccessBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ImportFangjianRequest'}
+      responses:
+        '200':
+          description: Idempotent replay of an existing bundle
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportFangjianResponse'}
+        '201':
+          description: Complete bundle imported
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportFangjianResponse'}
+        '400':
+          description: Malformed request
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '404':
+          description: Selected source or neighborhood not found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '413':
+          description: Bundle exceeds 16 MiB
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '422':
+          description: Bundle is incomplete or semantically invalid
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ValidationErrorResponse'}
+        '500':
+          description: Atomic import failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
 components:
   securitySchemes:
     AccessBearerAuth:
@@ -932,8 +1538,100 @@ components:
           type: integer
           minimum: 1
           maximum: 100
+    AssetPropertySelection:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: {type: string, enum: [market_listing, manual]}
+        roomId: {type: string, minLength: 1, maxLength: 128}
+        layout: {type: string, minLength: 1, maxLength: 64}
+        areaSqm: {type: number, exclusiveMinimum: true, minimum: 0, maximum: 10000}
+        floorBand: {type: string, maxLength: 64}
+        floorDescription: {type: string, maxLength: 128}
+        orientation: {type: string, maxLength: 128}
+        currentListingPriceWan: {type: number, exclusiveMinimum: true, minimum: 0, description: 万元}
+    CreateAssetRequest:
+      type: object
+      additionalProperties: false
+      required: [neighborhoodId, propertySelection, originalPurchasePriceWan, purchasedOn, currentLoanBalanceWan]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 128}
+        neighborhoodId: {type: string, format: uuid}
+        propertySelection: {$ref: '#/components/schemas/AssetPropertySelection'}
+        originalPurchasePriceWan: {type: number, exclusiveMinimum: true, minimum: 0, description: 万元}
+        purchasedOn: {type: string, format: date}
+        currentLoanBalanceWan: {type: number, minimum: 0, description: 万元}
+    UpdateAssetRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {type: string, minLength: 1, maxLength: 128}
+        propertySelection: {$ref: '#/components/schemas/AssetPropertySelection'}
+        originalPurchasePriceWan: {type: number, exclusiveMinimum: true, minimum: 0, description: 万元}
+        purchasedOn: {type: string, format: date}
+        currentLoanBalanceWan: {type: number, minimum: 0, description: 万元}
+    AssetProperty:
+      type: object
+      additionalProperties: false
+      required: [neighborhoodId, neighborhoodName, city, district, layout, areaSqm, floorBand, floorDescription, orientation, currentListingPriceWan]
+      properties:
+        neighborhoodId: {type: string, format: uuid}
+        neighborhoodName: {type: string}
+        city: {type: string}
+        district: {type: string}
+        layout: {type: string}
+        areaSqm: {type: number}
+        floorBand: {type: string}
+        floorDescription: {type: string}
+        orientation: {type: string}
+        currentListingPriceWan: {type: number, nullable: true, description: 万元}
+    AssetListingSource:
+      type: object
+      additionalProperties: false
+      required: [sourceListingId, dataSourceId, dataSourceName, dataSourceType, sourceRef, collectionRunId, snapshotId, collectedAt, listedAt, qualityStatus]
+      properties:
+        sourceListingId: {type: string}
+        dataSourceId: {type: string, format: uuid}
+        dataSourceName: {type: string}
+        dataSourceType: {type: string}
+        sourceRef: {type: string}
+        collectionRunId: {type: string, format: uuid}
+        snapshotId: {type: string, format: uuid}
+        collectedAt: {type: string, format: date-time}
+        listedAt: {type: string, format: date-time}
+        qualityStatus: {type: string, enum: [complete]}
+    AssetResponse:
+      type: object
+      additionalProperties: false
+      required: [id, name, property, originalPurchasePriceWan, purchasedOn, currentLoanBalanceWan, sourceKind, listingSource, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        property: {$ref: '#/components/schemas/AssetProperty'}
+        originalPurchasePriceWan: {type: number, description: 万元}
+        purchasedOn: {type: string, format: date}
+        currentLoanBalanceWan: {type: number, description: 万元}
+        sourceKind: {type: string, enum: [manual, market_listing]}
+        listingSource:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AssetListingSource'
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    AssetsPageResponse:
+      type: object
+      additionalProperties: false
+      required: [items, total, page, pageSize]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/AssetResponse'}}
+        total: {type: integer, minimum: 0}
+        page: {type: integer, minimum: 1}
+        pageSize: {type: integer, minimum: 1, maximum: 100}
     HousingCapacityInput:
       type: object
+      additionalProperties: false
       required:
         - cashOnHand
         - oldHomeValue
@@ -943,7 +1641,6 @@ components:
         - acceptableMonthlyMortgage
         - targetTotalPrice
         - renovationBudget
-        - transactionCosts
         - transitionRentCost
       properties:
         cashOnHand:
@@ -988,10 +1685,135 @@ components:
           type: number
           minimum: 0
           description: Transition rent and moving costs, in ten-thousand CNY.
+        transactionScenario:
+          $ref: '#/components/schemas/TransactionScenario'
+        loanPlan:
+          $ref: '#/components/schemas/LoanPlan'
+        manualOverrides:
+          $ref: '#/components/schemas/CalculationOverrides'
         loanOverride:
           $ref: '#/components/schemas/LoanParams'
         cityPolicyOverride:
           $ref: '#/components/schemas/CityPolicyOverride'
+        oldHomeSelection:
+          $ref: '#/components/schemas/OldHomeSelectionRequest'
+        targetHomeSelection:
+          $ref: '#/components/schemas/TargetHomeSelectionRequest'
+    OldHomeSelectionRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, priceConfirmed]
+      properties:
+        mode: {type: string, enum: [none, asset]}
+        assetId: {type: string, format: uuid}
+        expectedSalePriceWan: {type: number, exclusiveMinimum: true, minimum: 0, description: 万元}
+        priceConfirmed: {type: boolean}
+    TargetHomeSelectionRequest:
+      type: object
+      additionalProperties: false
+      required: [neighborhoodId, roomId, expectedPurchasePriceWan, priceConfirmed]
+      properties:
+        neighborhoodId: {type: string, format: uuid}
+        roomId: {type: string, minLength: 1, maxLength: 128}
+        expectedPurchasePriceWan: {type: number, exclusiveMinimum: true, minimum: 0, description: 万元}
+        priceConfirmed: {type: boolean}
+    SelectionPropertySnapshot:
+      type: object
+      required: [neighborhoodId, neighborhoodName, city, district, layout, areaSqm, floorBand, floorDescription, orientation, referenceListingPriceWan]
+      properties:
+        neighborhoodId: {type: string, format: uuid}
+        neighborhoodName: {type: string}
+        city: {type: string}
+        district: {type: string}
+        layout: {type: string}
+        areaSqm: {type: number}
+        floorBand: {type: string}
+        floorDescription: {type: string}
+        orientation: {type: string}
+        referenceListingPriceWan: {type: number, nullable: true, description: 万元}
+    MarketReferenceSnapshot:
+      type: object
+      required: [sourceListingId, dataSourceId, dataSourceName, dataSourceType, sourceRef, collectionRunId, snapshotId, collectedAt, listedAt, qualityStatus, freshness]
+      properties:
+        sourceListingId: {type: string}
+        dataSourceId: {type: string, format: uuid}
+        dataSourceName: {type: string}
+        dataSourceType: {type: string}
+        sourceRef: {type: string}
+        collectionRunId: {type: string, format: uuid}
+        snapshotId: {type: string, format: uuid}
+        collectedAt: {type: string, format: date-time}
+        listedAt: {type: string, format: date-time}
+        qualityStatus: {type: string}
+        freshness: {type: string, enum: ['', current, stale, expired, unknown]}
+    OldHomeSelectionSnapshot:
+      type: object
+      required: [mode, assetId, assetName, property, originalPurchasePriceWan, purchasedOn, holdingYears, confirmedSalePriceWan, confirmedLoanBalanceWan, priceDifferenceWan, assetUpdatedAt, marketReference, confirmedAt]
+      properties:
+        mode: {type: string, enum: [none, asset]}
+        assetId: {type: string, format: uuid, nullable: true}
+        assetName: {type: string}
+        property:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SelectionPropertySnapshot'
+        originalPurchasePriceWan: {type: number}
+        purchasedOn: {type: string}
+        holdingYears: {type: integer, minimum: 0}
+        confirmedSalePriceWan: {type: number}
+        confirmedLoanBalanceWan: {type: number}
+        priceDifferenceWan: {type: number, nullable: true}
+        assetUpdatedAt: {type: string, format: date-time, nullable: true}
+        marketReference:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/MarketReferenceSnapshot'
+        confirmedAt: {type: string, format: date-time}
+    TargetHomeSelectionSnapshot:
+      type: object
+      required: [property, confirmedPurchasePriceWan, priceDifferenceWan, marketReference, confirmedAt]
+      properties:
+        property: {$ref: '#/components/schemas/SelectionPropertySnapshot'}
+        confirmedPurchasePriceWan: {type: number}
+        priceDifferenceWan: {type: number}
+        marketReference: {$ref: '#/components/schemas/MarketReferenceSnapshot'}
+        confirmedAt: {type: string, format: date-time}
+    PropertySelectionContext:
+      type: object
+      properties:
+        oldHome: {$ref: '#/components/schemas/OldHomeSelectionSnapshot'}
+        targetHome: {$ref: '#/components/schemas/TargetHomeSelectionSnapshot'}
+    TransactionScenario:
+      type: object
+      required: [city, homePurchaseOrder, targetHomeType, targetHomeAreaSqm, oldHomeHoldingYears, oldHomeOnlyFamilyHome, oldHomeOriginalPrice, taxBurdenMode]
+      properties:
+        city: {type: string, minLength: 1}
+        homePurchaseOrder: {type: string, enum: [first, second]}
+        targetHomeType: {type: string, enum: [new, resale]}
+        targetHomeAreaSqm: {type: number, exclusiveMinimum: true, minimum: 0}
+        oldHomeHoldingYears: {type: integer, minimum: 0, maximum: 100}
+        oldHomeOnlyFamilyHome: {type: boolean}
+        oldHomeOriginalPrice: {type: number, minimum: 0, description: 万元}
+        taxBurdenMode: {type: string, enum: [statutory, buyer_all]}
+    LoanPlan:
+      type: object
+      required: [type, totalLoanAmount, loanTermMonths, repaymentMethod]
+      properties:
+        type: {type: string, enum: [commercial, provident_fund, combined]}
+        totalLoanAmount: {type: number, exclusiveMinimum: true, minimum: 0, description: 万元}
+        commercialLoanAmount: {type: number, minimum: 0, description: 万元}
+        providentFundLoanAmount: {type: number, minimum: 0, description: 万元}
+        loanTermMonths: {type: integer, minimum: 1, maximum: 360}
+        repaymentMethod: {type: string, enum: [equal_installment, equal_principal]}
+    CalculationOverrides:
+      type: object
+      properties:
+        commercialAnnualInterestRate: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        providentAnnualInterestRate: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        downPaymentRate: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        taxAmounts:
+          type: object
+          additionalProperties: {type: number, minimum: 0}
     LoanParams:
       type: object
       required: [annualInterestRate, loanTermMonths, repaymentMethod]
@@ -1052,6 +1874,89 @@ components:
           type: number
         dangerMultiplier:
           type: number
+    PolicySource:
+      type: object
+      required: [code, title, issuer, url, effectiveDate]
+      properties:
+        code: {type: string, minLength: 1}
+        title: {type: string, minLength: 1}
+        issuer: {type: string, minLength: 1}
+        url: {type: string, format: uri}
+        effectiveDate: {type: string, format: date}
+    DownPaymentRules:
+      type: object
+      required: [commercialFirst, commercialSecond, providentFirst, providentSecond, combinedFirst, combinedSecond]
+      properties:
+        commercialFirst: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        commercialSecond: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        providentFirst: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        providentSecond: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        combinedFirst: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        combinedSecond: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+    InterestRateRules:
+      type: object
+      required: [commercialFirst, commercialSecond, providentFirstUpToFiveYears, providentFirstOverFiveYears, providentSecondUpToFiveYears, providentSecondOverFiveYears]
+      properties:
+        commercialFirst: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        commercialSecond: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        providentFirstUpToFiveYears: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        providentFirstOverFiveYears: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        providentSecondUpToFiveYears: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+        providentSecondOverFiveYears: {type: number, exclusiveMinimum: true, minimum: 0, exclusiveMaximum: true, maximum: 1}
+    TaxRules:
+      type: object
+      required: [deedFirstUpToAreaRate, deedFirstOverAreaRate, deedSecondUpToAreaRate, deedSecondOverAreaRate, deedAreaThresholdSqm, vatRate, vatExemptHoldingYears, vatSurchargeRate, incomeTaxGainRate, incomeTaxAssessedRate, incomeTaxExemptHoldingYears]
+      properties:
+        deedFirstUpToAreaRate: {type: number, minimum: 0, maximum: 1}
+        deedFirstOverAreaRate: {type: number, minimum: 0, maximum: 1}
+        deedSecondUpToAreaRate: {type: number, minimum: 0, maximum: 1}
+        deedSecondOverAreaRate: {type: number, minimum: 0, maximum: 1}
+        deedAreaThresholdSqm: {type: number, exclusiveMinimum: true, minimum: 0}
+        vatRate: {type: number, minimum: 0, maximum: 1}
+        vatExemptHoldingYears: {type: integer, minimum: 0}
+        vatSurchargeRate: {type: number, minimum: 0, maximum: 1}
+        incomeTaxGainRate: {type: number, minimum: 0, maximum: 1}
+        incomeTaxAssessedRate: {type: number, minimum: 0, maximum: 1}
+        incomeTaxExemptHoldingYears: {type: integer, minimum: 0}
+    HousingPolicyRules:
+      type: object
+      required: [downPayment, interest, tax]
+      properties:
+        downPayment: {$ref: '#/components/schemas/DownPaymentRules'}
+        interest: {$ref: '#/components/schemas/InterestRateRules'}
+        tax: {$ref: '#/components/schemas/TaxRules'}
+    CreateHousingPolicyVersionRequest:
+      type: object
+      required: [city, version, name, effectiveFrom, rules, sources]
+      properties:
+        city: {type: string, minLength: 1}
+        version: {type: string, minLength: 1}
+        name: {type: string, minLength: 1}
+        effectiveFrom: {type: string, format: date}
+        effectiveTo: {type: string, format: date, nullable: true}
+        enabled: {type: boolean, default: true}
+        rules: {$ref: '#/components/schemas/HousingPolicyRules'}
+        sources:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/PolicySource'}
+    HousingPolicyVersion:
+      allOf:
+        - $ref: '#/components/schemas/CreateHousingPolicyVersionRequest'
+        - type: object
+          required: [id, enabled, createdAt]
+          properties:
+            id: {type: string, format: uuid}
+            enabled: {type: boolean}
+            createdAt: {type: string, format: date-time}
+    LoanOption:
+      type: object
+      required: [type, downPaymentRate]
+      properties:
+        type: {type: string, enum: [commercial, provident_fund, combined]}
+        downPaymentRate: {type: number}
+        commercialAnnualInterestRate: {type: number}
+        providentAnnualInterestRate: {type: number}
     AppliedAssumptions:
       type: object
       required:
@@ -1104,6 +2009,11 @@ components:
         - reserveMonths
         - pressureThresholds
         - oldHomeShareThreshold
+        - sources
+        - loanOptions
+        - homePurchaseOrder
+        - loanTermMonths
+        - disclaimer
       properties:
         ruleVersion:
           type: string
@@ -1129,6 +2039,17 @@ components:
           $ref: '#/components/schemas/PressureThresholds'
         oldHomeShareThreshold:
           type: number
+        policyVersion:
+          $ref: '#/components/schemas/HousingPolicyVersion'
+        sources:
+          type: array
+          items: {$ref: '#/components/schemas/PolicySource'}
+        loanOptions:
+          type: array
+          items: {$ref: '#/components/schemas/LoanOption'}
+        homePurchaseOrder: {type: string, enum: [first, second]}
+        loanTermMonths: {type: integer}
+        disclaimer: {type: string}
     HousingCapacityResult:
       type: object
       required:
@@ -1188,6 +2109,86 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/AppliedAssumptions'
+        recommendedDownPaymentRate: {type: number}
+        recommendedDownPayment: {type: number, description: 万元}
+        loanBreakdown:
+          $ref: '#/components/schemas/LoanBreakdown'
+        taxBreakdown:
+          $ref: '#/components/schemas/TaxBreakdown'
+        policyVersion:
+          $ref: '#/components/schemas/PolicyVersionReference'
+        sources:
+          type: array
+          items: {$ref: '#/components/schemas/PolicySource'}
+        manualOverrides:
+          type: array
+          items: {$ref: '#/components/schemas/AppliedManualOverride'}
+        disclaimer: {type: string}
+    LoanComponent:
+      type: object
+      required: [type, principal, annualInterestRate, monthlyPayment, sourceCode, manualOverride]
+      properties:
+        type: {type: string, enum: [commercial, provident_fund]}
+        principal: {type: number, description: 万元}
+        annualInterestRate: {type: number}
+        monthlyPayment: {type: number, description: 万元/月}
+        sourceCode: {type: string}
+        manualOverride: {type: boolean}
+    LoanBreakdown:
+      type: object
+      required: [type, totalPrincipal, loanTermMonths, repaymentMethod, components, monthlyPayment]
+      properties:
+        type: {type: string, enum: [commercial, provident_fund, combined]}
+        totalPrincipal: {type: number, description: 万元}
+        loanTermMonths: {type: integer}
+        repaymentMethod: {type: string, enum: [equal_installment, equal_principal]}
+        components:
+          type: array
+          items: {$ref: '#/components/schemas/LoanComponent'}
+        monthlyPayment: {type: number, description: 万元/月}
+    TaxItem:
+      type: object
+      required: [code, name, statutorySide, paidBy, taxBase, rate, automaticAmount, amount, formula, exempt, sourceCode, manualOverride]
+      properties:
+        code: {type: string}
+        name: {type: string}
+        statutorySide: {type: string, enum: [buyer, seller]}
+        paidBy: {type: string, enum: [buyer, seller]}
+        taxBase: {type: number, description: 万元}
+        rate: {type: number}
+        automaticAmount: {type: number, description: 万元}
+        amount: {type: number, description: 万元}
+        formula: {type: string}
+        exempt: {type: boolean}
+        sourceCode: {type: string}
+        manualOverride: {type: boolean}
+    TaxBreakdown:
+      type: object
+      required: [items, buyerTotal, sellerTotal, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TaxItem'}
+        buyerTotal: {type: number, description: 万元}
+        sellerTotal: {type: number, description: 万元}
+        total: {type: number, description: 万元}
+    PolicyVersionReference:
+      type: object
+      required: [id, city, version, name, effectiveFrom]
+      properties:
+        id: {type: string, format: uuid}
+        city: {type: string}
+        version: {type: string}
+        name: {type: string}
+        effectiveFrom: {type: string, format: date}
+        effectiveTo: {type: string, format: date, nullable: true}
+    AppliedManualOverride:
+      type: object
+      required: [field, automaticValue, appliedValue]
+      properties:
+        field: {type: string}
+        automaticValue: {type: number}
+        appliedValue: {type: number}
     CreateCalculationResponse:
       allOf:
         - $ref: '#/components/schemas/CalculationResponse'
@@ -1201,6 +2202,8 @@ components:
           $ref: '#/components/schemas/HousingCapacityInput'
         result:
           $ref: '#/components/schemas/HousingCapacityResult'
+        selectionContext:
+          $ref: '#/components/schemas/PropertySelectionContext'
         createdAt:
           type: string
           format: date-time
@@ -1285,6 +2288,378 @@ components:
           type: string
         area:
           type: string
+    CommunityMarketSnapshot:
+      type: object
+      required:
+        - id
+        - dataSourceId
+        - neighborhoodId
+        - sourceRef
+        - collectedAt
+        - contentChecksum
+        - collectionRunId
+        - qualityStatus
+        - sourceCommunityId
+        - communityName
+        - formerName
+        - provinceCode
+        - provinceName
+        - cityCode
+        - cityName
+        - districtCode
+        - districtName
+        - blockCode
+        - blockName
+        - propertyType
+        - propertyTags
+        - buildingCount
+        - buildingType
+        - buildingYear
+        - developer
+        - householdCount
+        - closedManagement
+        - plotRatio
+        - greenAreaSqm
+        - greeningRatePercent
+        - propertyManagementCompany
+        - propertyFee
+        - fixedParkingSpaces
+        - parkingRatio
+        - parkingFee
+        - heatingType
+        - waterType
+        - electricityType
+        - gasCost
+        - manCarSeparation
+        - latitude
+        - longitude
+        - latestListingDate
+        - listingAvgUnitPrice
+        - listingCount
+        - listingAreaSqm
+        - listingAvgTotalPriceWan
+        - listingAvgUnitPrice6Months
+        - newListingCount3Months
+        - newListingAvgTotalPrice3MonthsWan
+        - newListingUnitPrice3Months
+        - latestTradeDate
+        - latestTradeAvgUnitPrice
+        - tradeCount3Months
+        - tradeArea3MonthsSqm
+        - tradeAvgTotalPrice3MonthsWan
+        - tradeUnitPrice3Months
+        - tradeAvgUnitPrice6Months
+        - tradeCountPerMonth6Months
+        - takeLookCount
+        - takeLookConversionRatePercent
+        - onSaleAreaRangeSqm
+        - onSalePriceRangeWan
+        - onSaleRoomTypes
+        - analysis
+        - surroundings
+        - cityContext
+        - createdAt
+      properties:
+        id: {type: string, format: uuid}
+        dataSourceId: {type: string, format: uuid}
+        neighborhoodId: {type: string, format: uuid}
+        sourceRef: {type: string}
+        collectedAt: {type: string, format: date-time}
+        contentChecksum: {type: string}
+        collectionRunId: {type: string, format: uuid, nullable: true}
+        qualityStatus: {type: string, enum: [complete, aggregate_only]}
+        sourceCommunityId: {type: string}
+        communityName: {type: string}
+        formerName: {type: string}
+        provinceCode: {type: string, nullable: true}
+        provinceName: {type: string, nullable: true}
+        cityCode: {type: string}
+        cityName: {type: string}
+        districtCode: {type: string}
+        districtName: {type: string}
+        blockCode: {type: string}
+        blockName: {type: string}
+        propertyType: {type: string, nullable: true}
+        propertyTags:
+          type: array
+          nullable: true
+          items: {type: string}
+        buildingCount: {type: integer, nullable: true, minimum: 0}
+        buildingType: {type: string, nullable: true}
+        buildingYear: {type: integer, nullable: true, minimum: 1800}
+        developer: {type: string, nullable: true}
+        householdCount: {type: integer, nullable: true, minimum: 0}
+        closedManagement:
+          type: string
+          nullable: true
+          enum: [是, 否]
+        plotRatio: {type: number, nullable: true, minimum: 0, maximum: 100}
+        greenAreaSqm: {type: number, nullable: true, minimum: 0, description: 平方米}
+        greeningRatePercent: {type: number, nullable: true, minimum: 0, maximum: 100}
+        propertyManagementCompany: {type: string, nullable: true}
+        propertyFee: {type: string, nullable: true, description: 来源原文，单位未推断}
+        fixedParkingSpaces: {type: integer, nullable: true, minimum: 0}
+        parkingRatio: {type: string, nullable: true}
+        parkingFee: {type: string, nullable: true, description: 来源原文，单位未推断}
+        heatingType: {type: string, nullable: true}
+        waterType: {type: string, nullable: true}
+        electricityType: {type: string, nullable: true}
+        gasCost: {type: string, nullable: true, description: 来源原文，单位未推断}
+        manCarSeparation:
+          type: string
+          nullable: true
+          enum: [是, 否]
+        latitude: {type: number}
+        longitude: {type: number}
+        latestListingDate: {type: string, format: date, nullable: true}
+        listingAvgUnitPrice: {type: number, nullable: true, description: 元/平方米}
+        listingCount: {type: integer, nullable: true, minimum: 0}
+        listingAreaSqm: {type: number, nullable: true}
+        listingAvgTotalPriceWan: {type: number, nullable: true, description: 万元}
+        listingAvgUnitPrice6Months: {type: number, nullable: true, description: 元/平方米}
+        newListingCount3Months: {type: integer, nullable: true, minimum: 0}
+        newListingAvgTotalPrice3MonthsWan: {type: number, nullable: true, description: 万元}
+        newListingUnitPrice3Months: {type: number, nullable: true, description: 元/平方米}
+        latestTradeDate: {type: string, format: date, nullable: true}
+        latestTradeAvgUnitPrice: {type: number, nullable: true, description: 元/平方米}
+        tradeCount3Months: {type: integer, nullable: true, minimum: 0}
+        tradeArea3MonthsSqm: {type: number, nullable: true}
+        tradeAvgTotalPrice3MonthsWan: {type: number, nullable: true, description: 万元}
+        tradeUnitPrice3Months: {type: number, nullable: true, description: 元/平方米}
+        tradeAvgUnitPrice6Months: {type: number, nullable: true, description: 元/平方米}
+        tradeCountPerMonth6Months: {type: number, nullable: true}
+        takeLookCount: {type: integer, nullable: true, minimum: 0}
+        takeLookConversionRatePercent: {type: number, nullable: true}
+        onSaleAreaRangeSqm: {type: string}
+        onSalePriceRangeWan: {type: string}
+        onSaleRoomTypes:
+          type: array
+          items: {type: string}
+        analysis: {type: object, additionalProperties: true}
+        surroundings: {type: object, additionalProperties: true}
+        cityContext: {type: object, additionalProperties: true}
+        createdAt: {type: string, format: date-time}
+    ImportCommunityMarketResponse:
+      type: object
+      required: [snapshot, idempotentReplay]
+      properties:
+        snapshot:
+          $ref: '#/components/schemas/CommunityMarketSnapshot'
+        idempotentReplay:
+          type: boolean
+    MarketListing:
+      type: object
+      required: [roomId, layout, areaSqm, listingTotalPriceWan, listingUnitPrice, listedAt, daysOnMarket, floorBand, floorDescription, orientation, adjustmentCount, followCount, lookCount30Days]
+      properties:
+        roomId: {type: string}
+        layout: {type: string}
+        areaSqm: {type: number, minimum: 0}
+        listingTotalPriceWan: {type: number, minimum: 0}
+        listingUnitPrice: {type: number, minimum: 0}
+        listedAt: {type: string, format: date-time}
+        daysOnMarket: {type: integer, minimum: 0}
+        floorBand: {type: string}
+        floorDescription: {type: string}
+        orientation: {type: string}
+        adjustmentCount: {type: integer, minimum: 0}
+        followCount: {type: integer, minimum: 0}
+        lookCount30Days: {type: integer, minimum: 0}
+    MarketSource:
+      type: object
+      additionalProperties: false
+      required: [dataSourceId, dataSourceName, dataSourceType, sourceRef]
+      properties:
+        dataSourceId: {type: string, format: uuid}
+        dataSourceName: {type: string}
+        dataSourceType: {type: string}
+        sourceRef: {type: string}
+    MarketListingDetail:
+      allOf:
+        - $ref: '#/components/schemas/MarketListing'
+        - type: object
+          required: [neighborhoodId, neighborhoodName, city, district, status, snapshotId, collectionRunId, collectedAt, source, qualityStatus, freshness]
+          properties:
+            neighborhoodId: {type: string, format: uuid}
+            neighborhoodName: {type: string}
+            city: {type: string}
+            district: {type: string}
+            status: {type: string, enum: [active]}
+            snapshotId: {type: string, format: uuid}
+            collectionRunId: {type: string, format: uuid}
+            collectedAt: {type: string, format: date-time}
+            source: {$ref: '#/components/schemas/MarketSource'}
+            qualityStatus: {type: string, enum: [complete]}
+            freshness: {type: string, enum: [current, stale, expired, unknown]}
+    MarketTransaction:
+      type: object
+      additionalProperties: false
+      required: [roomId, layout, areaSqm, listingTotalPriceWan, tradeTotalPriceWan, tradeUnitPrice, tradeDate, negotiationWan, negotiationPercent, floorBand, floorDescription, orientation, adjustmentCount]
+      properties:
+        roomId: {type: string}
+        layout: {type: string}
+        areaSqm: {type: number, minimum: 0}
+        listingTotalPriceWan: {type: number, minimum: 0}
+        tradeTotalPriceWan: {type: number, minimum: 0}
+        tradeUnitPrice: {type: number, minimum: 0}
+        tradeDate: {type: string, format: date-time}
+        negotiationWan: {type: number}
+        negotiationPercent: {type: number}
+        floorBand: {type: string}
+        floorDescription: {type: string}
+        orientation: {type: string}
+        adjustmentCount: {type: integer, minimum: 0}
+    ListingAdjustment:
+      type: object
+      additionalProperties: false
+      required: [roomId, adjustedAt, priceBeforeWan, priceAfterWan, amountWan]
+      properties:
+        id: {type: string, format: uuid}
+        roomId: {type: string}
+        adjustedAt: {type: string, format: date-time}
+        priceBeforeWan: {type: number, minimum: 0}
+        priceAfterWan: {type: number, minimum: 0}
+        amountWan: {type: number}
+    MarketListingsPage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/MarketListing'}}
+        total: {type: integer, minimum: 0}
+        page: {type: integer, minimum: 1}
+        pageSize: {type: integer, minimum: 1, maximum: 100}
+    MarketTransactionsPage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/MarketTransaction'}}
+        total: {type: integer, minimum: 0}
+        page: {type: integer, minimum: 1}
+        pageSize: {type: integer, minimum: 1, maximum: 100}
+    ListingAdjustmentsResponse:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ListingAdjustment'}}
+    ComparisonMetric:
+      type: object
+      required: [primary, peer, delta]
+      properties:
+        primary: {type: number, nullable: true}
+        peer: {type: number, nullable: true}
+        delta: {type: number, nullable: true}
+    CommunityMarketComparison:
+      type: object
+      required: [primary, peer, listingUnitPrice, supply, recentTrades, listingTradeGap, averageTradeCycle]
+      properties:
+        primary: {$ref: '#/components/schemas/CommunityMarketSnapshot'}
+        peer: {$ref: '#/components/schemas/CommunityMarketSnapshot'}
+        listingUnitPrice: {$ref: '#/components/schemas/ComparisonMetric'}
+        supply: {$ref: '#/components/schemas/ComparisonMetric'}
+        recentTrades: {$ref: '#/components/schemas/ComparisonMetric'}
+        listingTradeGap: {$ref: '#/components/schemas/ComparisonMetric'}
+        averageTradeCycle: {$ref: '#/components/schemas/ComparisonMetric'}
+    FangjianCommunityData:
+      type: object
+      additionalProperties: false
+      required: [sourceCommunityId, communityName, cityCode, cityName, districtCode, districtName, blockCode, blockName, latitude, longitude, analysis, surroundings, cityContext]
+      properties:
+        sourceCommunityId: {type: string}
+        communityName: {type: string}
+        formerName: {type: string}
+        provinceCode: {type: string}
+        provinceName: {type: string}
+        cityCode: {type: string}
+        cityName: {type: string}
+        districtCode: {type: string}
+        districtName: {type: string}
+        blockCode: {type: string}
+        blockName: {type: string}
+        propertyType: {type: string}
+        propertyTags: {type: array, items: {type: string}}
+        buildingCount: {type: integer, minimum: 0}
+        buildingType: {type: string}
+        buildingYear: {type: integer}
+        developer: {type: string}
+        householdCount: {type: integer, minimum: 0}
+        closedManagement: {type: string}
+        plotRatio: {type: number, minimum: 0}
+        greenAreaSqm: {type: number, minimum: 0}
+        greeningRatePercent: {type: number, minimum: 0}
+        propertyManagementCompany: {type: string}
+        propertyFee: {type: string}
+        fixedParkingSpaces: {type: integer, minimum: 0}
+        parkingRatio: {type: string}
+        parkingFee: {type: string}
+        heatingType: {type: string}
+        waterType: {type: string}
+        electricityType: {type: string}
+        gasCost: {type: string}
+        manCarSeparation: {type: string}
+        latitude: {type: number}
+        longitude: {type: number}
+        latestListingDate: {type: string, format: date-time}
+        listingAvgUnitPrice: {type: number}
+        listingCount: {type: integer, minimum: 0}
+        listingAreaSqm: {type: number}
+        listingAvgTotalPriceWan: {type: number}
+        listingAvgUnitPrice6Months: {type: number}
+        newListingCount3Months: {type: integer, minimum: 0}
+        newListingAvgTotalPrice3MonthsWan: {type: number}
+        newListingUnitPrice3Months: {type: number}
+        latestTradeDate: {type: string, format: date-time}
+        latestTradeAvgUnitPrice: {type: number}
+        tradeCount3Months: {type: integer, minimum: 0}
+        tradeArea3MonthsSqm: {type: number}
+        tradeAvgTotalPrice3MonthsWan: {type: number}
+        tradeUnitPrice3Months: {type: number}
+        tradeAvgUnitPrice6Months: {type: number}
+        tradeCountPerMonth6Months: {type: number}
+        takeLookCount: {type: integer, minimum: 0}
+        takeLookConversionRatePercent: {type: number}
+        onSaleAreaRangeSqm: {type: string}
+        onSalePriceRangeWan: {type: string}
+        onSaleRoomTypes: {type: array, items: {type: string}}
+        analysis: {type: object, additionalProperties: true}
+        surroundings: {type: object, additionalProperties: true}
+        cityContext: {type: object, additionalProperties: true}
+    FangjianBundleQuality:
+      type: object
+      additionalProperties: false
+      required: [status, warnings]
+      properties:
+        status: {type: string, enum: [complete]}
+        warnings: {type: array, maxItems: 0, items: {type: string}}
+    FangjianBundle:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, collectedAt, community, listings, transactions, adjustments, quality]
+      properties:
+        schemaVersion: {type: string, enum: [fangjian.bundle/v1]}
+        collectedAt: {type: string, format: date-time}
+        community: {$ref: '#/components/schemas/FangjianCommunityData'}
+        listings: {type: array, items: {$ref: '#/components/schemas/MarketListing'}}
+        transactions: {type: array, items: {$ref: '#/components/schemas/MarketTransaction'}}
+        adjustments: {type: array, items: {$ref: '#/components/schemas/ListingAdjustment'}}
+        quality: {$ref: '#/components/schemas/FangjianBundleQuality'}
+    ImportFangjianRequest:
+      type: object
+      additionalProperties: false
+      required: [dataSourceId, neighborhoodId, sourceRef, bundle]
+      properties:
+        dataSourceId: {type: string, format: uuid}
+        neighborhoodId: {type: string, format: uuid}
+        sourceRef: {type: string, minLength: 1, maxLength: 256}
+        bundle: {$ref: '#/components/schemas/FangjianBundle'}
+    ImportFangjianResponse:
+      type: object
+      required: [snapshot, collectionRunId, listingCount, transactionCount, adjustmentCount, idempotentReplay]
+      properties:
+        snapshot: {$ref: '#/components/schemas/CommunityMarketSnapshot'}
+        collectionRunId: {type: string, format: uuid}
+        listingCount: {type: integer, minimum: 0}
+        transactionCount: {type: integer, minimum: 0}
+        adjustmentCount: {type: integer, minimum: 0}
+        idempotentReplay: {type: boolean}
     NeighborhoodMetricResponse:
       type: object
       required:
@@ -2215,6 +3590,27 @@ components:
         updatedAt:
           type: string
           format: date-time
+    CollectionRunSummary:
+      type: object
+      required: [collectionRun, source, neighborhoodName, recordCount, listingCount, transactionCount, detailHref]
+      properties:
+        collectionRun: {$ref: '#/components/schemas/CollectionRun'}
+        source: {$ref: '#/components/schemas/DataSource'}
+        neighborhoodName: {type: string}
+        recordCount: {type: integer, minimum: 0}
+        listingCount: {type: integer, minimum: 0}
+        transactionCount: {type: integer, minimum: 0}
+        detailHref: {type: string}
+    CollectionRunsPage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CollectionRunSummary'}
+        total: {type: integer, minimum: 0}
+        page: {type: integer, minimum: 1}
+        pageSize: {type: integer, minimum: 1, maximum: 100}
     ValidationSummary:
       type: object
       required: [recordCount, listingCount, transactionCount, issues]

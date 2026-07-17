@@ -10,6 +10,10 @@ import {
   getCSVImportTemplate,
   getActionWindow,
   getMetricHistory,
+  getMarketListings,
+  getMarketTransactions,
+  getListingAdjustments,
+  compareCommunityMarkets,
   getNeighborhood,
   getNeighborhoodMetrics,
   getWatchlist,
@@ -190,6 +194,25 @@ describe("api-client", () => {
       "/api/v1/neighborhoods/neighborhood%2F1/metrics?targetLayout=%E4%B8%A4%E6%88%BF",
       { signal },
     );
+  });
+
+  it("encodes market filters, room IDs, and comparison IDs", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 2, pageSize: 10 }))
+      .mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, pageSize: 20 }))
+      .mockResolvedValueOnce(jsonResponse({ items: [] }))
+      .mockResolvedValueOnce(jsonResponse({ primary: {}, peer: {} }));
+    const signal = new AbortController().signal;
+
+    await getMarketListings("neighborhood/1", { layout: "二室", floor: "高楼层", minPriceWan: 50, maxPriceWan: 100, sortBy: "price", sortOrder: "asc", page: 2, pageSize: 10 }, signal);
+    await getMarketTransactions("neighborhood/1", {}, signal);
+    await getListingAdjustments("neighborhood/1", "room/1", signal);
+    await compareCommunityMarkets("neighborhood/1", "peer/2", signal);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/v1/neighborhoods/neighborhood%2F1/market-listings?layout=%E4%BA%8C%E5%AE%A4&floor=%E9%AB%98%E6%A5%BC%E5%B1%82&minPriceWan=50&maxPriceWan=100&sortBy=price&sortOrder=asc&page=2&pageSize=10", { signal });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/v1/neighborhoods/neighborhood%2F1/market-transactions", { signal });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/v1/neighborhoods/neighborhood%2F1/market-listings/room%2F1/adjustments", { signal });
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/v1/community-market/comparison?neighborhoodId=neighborhood%2F1&peerNeighborhoodId=peer%2F2", { signal });
   });
 
   it("searches with catalog filters and creates the exact watchlist target", async () => {

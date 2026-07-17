@@ -183,6 +183,71 @@ func (r *CollectionRepository) GetCollectionRun(ctx context.Context, id string) 
 	}, nil
 }
 
+func (r *CollectionRepository) ListCollectionRuns(ctx context.Context, filter appcollection.CollectionRunFilter) (appcollection.CollectionRunsPage, error) {
+	query := r.db.WithContext(ctx).Model(&CollectionRunModel{})
+	if filter.DataSourceID != "" {
+		query = query.Where("data_source_id = ?", filter.DataSourceID)
+	}
+	if filter.NeighborhoodID != "" {
+		query = query.Where("neighborhood_id = ?", filter.NeighborhoodID)
+	}
+	if filter.Status != "" {
+		query = query.Where("status = ?", string(filter.Status))
+	}
+	if filter.MetricStatus != "" {
+		query = query.Where("metric_status = ?", string(filter.MetricStatus))
+	}
+	if filter.From != nil {
+		query = query.Where("collected_at >= ?", *filter.From)
+	}
+	if filter.To != nil {
+		query = query.Where("collected_at <= ?", *filter.To)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return appcollection.CollectionRunsPage{}, err
+	}
+	var models []CollectionRunModel
+	if err := query.Order("collected_at DESC, created_at DESC, id DESC").
+		Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Find(&models).Error; err != nil {
+		return appcollection.CollectionRunsPage{}, err
+	}
+
+	sourceIDs := make([]string, 0, len(models))
+	neighborhoodIDs := make([]string, 0, len(models))
+	for _, model := range models {
+		sourceIDs = append(sourceIDs, model.DataSourceID)
+		neighborhoodIDs = append(neighborhoodIDs, model.NeighborhoodID)
+	}
+	var sourceModels []DataSourceModel
+	if len(sourceIDs) > 0 {
+		if err := r.db.WithContext(ctx).Where("id IN ?", sourceIDs).Find(&sourceModels).Error; err != nil {
+			return appcollection.CollectionRunsPage{}, err
+		}
+	}
+	var neighborhoodModels []NeighborhoodModel
+	if len(neighborhoodIDs) > 0 {
+		if err := r.db.WithContext(ctx).Where("id IN ?", neighborhoodIDs).Find(&neighborhoodModels).Error; err != nil {
+			return appcollection.CollectionRunsPage{}, err
+		}
+	}
+	sources := make(map[string]appcollection.DataSource, len(sourceModels))
+	for _, model := range sourceModels {
+		sources[model.ID] = dataSourceFromModel(model)
+	}
+	neighborhoodNames := make(map[string]string, len(neighborhoodModels))
+	for _, model := range neighborhoodModels {
+		neighborhoodNames[model.ID] = model.Name
+	}
+	items := make([]appcollection.CollectionRunSummary, 0, len(models))
+	for _, model := range models {
+		items = append(items, appcollection.CollectionRunSummary{
+			Run: collectionRunFromModel(model), Source: sources[model.DataSourceID], NeighborhoodName: neighborhoodNames[model.NeighborhoodID],
+		})
+	}
+	return appcollection.CollectionRunsPage{Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
+}
+
 func (r *CollectionRepository) ListMetricRefreshCandidates(ctx context.Context, filter appcollection.MetricRefreshCandidateFilter) ([]appcollection.MetricRefreshCandidate, error) {
 	var runs []CollectionRunModel
 	if err := r.db.WithContext(ctx).
@@ -352,6 +417,7 @@ func listingObservationModels(run appcollection.CollectionRun, observations []ap
 func transactionObservationModels(run appcollection.CollectionRun, observations []appcollection.TransactionObservation) []TransactionObservationModel {
 	models := make([]TransactionObservationModel, 0, len(observations))
 	for _, observation := range observations {
+		attributes, _ := marshalAttributes(observation.Attributes)
 		models = append(models, TransactionObservationModel{
 			ID:                 observation.ID,
 			CollectionRunID:    run.ID,
@@ -364,6 +430,7 @@ func transactionObservationModels(run appcollection.CollectionRun, observations 
 			TransactionDate:    observation.TransactionDate,
 			OriginalListingRef: observation.OriginalListingRef,
 			CapturedAt:         observation.CapturedAt,
+			Attributes:         attributes,
 		})
 	}
 	return models
@@ -395,6 +462,8 @@ func listingObservationsFromModels(models []ListingObservationModel) []appcollec
 func transactionObservationsFromModels(models []TransactionObservationModel) []appcollection.TransactionObservation {
 	observations := make([]appcollection.TransactionObservation, 0, len(models))
 	for _, model := range models {
+		attributes := map[string]string{}
+		_ = attributesFromJSON(model.Attributes, &attributes)
 		observations = append(observations, appcollection.TransactionObservation{
 			ID:                 model.ID,
 			CollectionRunID:    model.CollectionRunID,
@@ -407,6 +476,7 @@ func transactionObservationsFromModels(models []TransactionObservationModel) []a
 			TransactionDate:    model.TransactionDate,
 			OriginalListingRef: model.OriginalListingRef,
 			CapturedAt:         model.CapturedAt,
+			Attributes:         attributes,
 		})
 	}
 	return observations

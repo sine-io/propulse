@@ -1,0 +1,22 @@
+{
+  "code": 200,
+  "description": "success",
+  "data": [
+    {
+      "roomId": "trade-101138410213",
+      "roomType": "2室1厅",
+      "roomTypeFilter": "二室",
+      "tradeArea": 81.43,
+      "listingPrice": 53.0000,
+      "tradePrice": 45.0000,
+      "tradeAvgPrice": 5526.22,
+      "tradeDate": "2026.06.14",
+      "premium": 8.0000,
+      "premiumSpace": 15.09,
+      "currentFloor": "高楼层",
+      "onFloor": "高楼层/18层",
+      "orientation": "南",
+      "adjustNum": 9
+    }
+  ]
+}

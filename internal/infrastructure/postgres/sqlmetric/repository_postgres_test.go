@@ -56,6 +56,29 @@ func TestRepositoryAggregateCollectionRunDerivesPriceCutsFromPriorObservations(t
 	}
 }
 
+func TestRepositoryAggregateCollectionRunCountsSourceAdjustmentHistory(t *testing.T) {
+	ctx, db, repo := openSQLMetricPostgresTest(t)
+	neighborhoodID, sourceID := createMetricFixtures(t, ctx, db)
+	run := insertMetricRun(t, ctx, db, sourceID, neighborhoodID, time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC), "full")
+	insertMetricListing(t, ctx, db, run, neighborhoodID, "adjusted-listing", "三房", 590, "active", run.collectedAt)
+	if _, err := db.Exec(ctx, `
+		INSERT INTO listing_adjustments (
+			id, collection_run_id, neighborhood_id, room_id, adjusted_at,
+			price_before_wan, price_after_wan, amount_wan
+		) VALUES ($1, $2, $3, $4, $5, 620, 590, -30)
+	`, uuid.NewString(), run.id, neighborhoodID, "adjusted-listing", run.collectedAt); err != nil {
+		t.Fatalf("insert listing adjustment error = %v", err)
+	}
+
+	got, err := repo.AggregateMarketObservations(ctx, appmetric.AggregateMarketParams{NeighborhoodID: neighborhoodID, TriggerRunID: run.id})
+	if err != nil {
+		t.Fatalf("AggregateMarketObservations() error = %v", err)
+	}
+	if got.PriceCutHomes != 1 {
+		t.Fatalf("PriceCutHomes = %d, want 1 from source adjustment", got.PriceCutHomes)
+	}
+}
+
 func TestRepositoryAggregateCollectionRunDoesNotCompareIDsAcrossSources(t *testing.T) {
 	ctx, db, repo := openSQLMetricPostgresTest(t)
 	neighborhoodID, sourceA := createMetricFixtures(t, ctx, db)

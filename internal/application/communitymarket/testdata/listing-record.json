@@ -1,0 +1,21 @@
+{
+  "code": 200,
+  "description": "success",
+  "data": [
+    {
+      "roomId": "101138410213",
+      "roomType": "2室1厅",
+      "roomTypeFilter": "二室",
+      "listingArea": 78.67,
+      "listingTotalPrice": 63.0000,
+      "listingUnitPrice": 8009.00,
+      "autualListingDate": "2026.06.28",
+      "currentFloor": "高楼层",
+      "onFloor": "高楼层(共18层)",
+      "orientation": "南 北",
+      "adjustNum": 2,
+      "followAll": null,
+      "takeLookThirty": null
+    }
+  ]
+}

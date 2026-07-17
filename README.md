@@ -62,7 +62,7 @@
 
 复制 `.env.example` 中需要的配置到本地环境，并至少替换 `PROPULSE_ACCESS_TOKEN`。`PROPULSE_USER_ID` 为必填项，未设置时服务会启动失败（fail-fast），不会静默回退到默认账号。
 
-`serve`、`api`、`worker`、`scheduler` 还要求同时设置以下城市政策变量；缺失、首付比例不在 `(0,1)`、日期不是 ISO 日期或生效日期晚于当前日期时，进程会直接拒绝启动：
+新测算从数据库中的版本化政策读取首付、利率和税费，迁移会写入天津的初始有效版本。以下变量仅用于迁移前旧计算路径的兼容回退，通常无需设置；若设置其中任意一项，则必须完整设置五项，且首付比例须在 `(0,1)`、日期须为不晚于当前日期的 ISO 日期：
 
 ```text
 PROPULSE_CAPACITY_POLICY_CITY
@@ -72,7 +72,7 @@ PROPULSE_CAPACITY_POLICY_EFFECTIVE_DATE
 PROPULSE_CAPACITY_POLICY_SOURCE
 ```
 
-`migrate up` 和 `migrate down` 只依赖数据库配置，不要求用户身份、访问令牌或测算政策。
+`migrate up` 和 `migrate down` 只依赖数据库配置，不要求用户身份、访问令牌或兼容政策变量。后续政策版本通过管理员数据管理页追加，不覆盖历史规则。
 
 安装前端依赖并运行完整前端校验：
 
@@ -179,6 +179,18 @@ curl http://127.0.0.1:8317/admin/api/imports/json \
 `full` 批次可更新当前挂牌库存；`partial` 批次只补充观测，不会冒充完整库存。指标响应会同时返回来源 ID、触发批次、覆盖范围、新鲜度、样本数和质量告警。
 
 从数据库迁移版本 v2 升级到 v3 时，容量测算、小区和关注列表会保留；无法关联可信采集批次的旧快照与旧指标会被清理，需要通过上述接口重新导入。`scheduler` 只会扫描超过 5 分钟仍为 `pending` 或 `failed` 的采集批次，并携带准确的 `collectionRunId` 发起修复，不会按关注列表生成无来源指标。
+
+房见双小区完整采集、100 条拆分规则、脱敏归档和原子导入说明见
+[docs/fangjian-api.md](docs/fangjian-api.md)。凭证只从进程环境读取；采集鸣泉花园与亲和美园：
+
+```bash
+FANGJIAN_AUTHORIZATION='...' \
+FANGJIAN_AK='...' \
+FANGJIAN_VERSION='...' \
+make collect-fangjian
+```
+
+采集结果写入被 Git 忽略的 `data/fangjian/<UTC时间>/<小区>/`。管理员通过 `POST /admin/api/community-market/imports/fangjian` 显式绑定已有数据源与小区 UUID；完整行情、挂牌、成交和调价在同一事务中写入，相同来源引用与内容可幂等重放。旧聚合 CSV 接口继续兼容，但其快照不会冒充完整明细。
 
 也可以运行本地集成冒烟脚本，完成 Compose 构建、健康与就绪检查、认证关注列表 API 和 E2E smoke test：
 

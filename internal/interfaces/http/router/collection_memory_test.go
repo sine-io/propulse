@@ -162,6 +162,43 @@ func (r *inMemoryCollectionRepository) GetCollectionRun(_ context.Context, id st
 	return copyCollectionRunDetail(detail), nil
 }
 
+func (r *inMemoryCollectionRepository) ListCollectionRuns(_ context.Context, filter appcollection.CollectionRunFilter) (appcollection.CollectionRunsPage, error) {
+	r.marketState.mu.RLock()
+	defer r.marketState.mu.RUnlock()
+	runs := make([]appcollection.CollectionRun, 0, len(r.marketState.collectionRuns))
+	for _, run := range r.marketState.collectionRuns {
+		if filter.DataSourceID != "" && run.DataSourceID != filter.DataSourceID ||
+			filter.NeighborhoodID != "" && run.NeighborhoodID != filter.NeighborhoodID ||
+			filter.Status != "" && run.Status != filter.Status ||
+			filter.MetricStatus != "" && run.MetricStatus != filter.MetricStatus ||
+			filter.From != nil && run.CollectedAt.Before(*filter.From) ||
+			filter.To != nil && run.CollectedAt.After(*filter.To) {
+			continue
+		}
+		runs = append(runs, run)
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		if !runs[i].CollectedAt.Equal(runs[j].CollectedAt) {
+			return runs[i].CollectedAt.After(runs[j].CollectedAt)
+		}
+		return runs[i].ID > runs[j].ID
+	})
+	total := len(runs)
+	start := (filter.Page - 1) * filter.PageSize
+	if start > len(runs) {
+		start = len(runs)
+	}
+	end := start + filter.PageSize
+	if end > len(runs) {
+		end = len(runs)
+	}
+	items := make([]appcollection.CollectionRunSummary, 0, end-start)
+	for _, run := range runs[start:end] {
+		items = append(items, appcollection.CollectionRunSummary{Run: copyCollectionRun(run), Source: copyDataSource(r.marketState.sources[run.DataSourceID])})
+	}
+	return appcollection.CollectionRunsPage{Items: items, Total: int64(total), Page: filter.Page, PageSize: filter.PageSize}, nil
+}
+
 func (r *inMemoryCollectionRepository) ListMetricRefreshCandidates(_ context.Context, filter appcollection.MetricRefreshCandidateFilter) ([]appcollection.MetricRefreshCandidate, error) {
 	r.marketState.mu.RLock()
 	defer r.marketState.mu.RUnlock()

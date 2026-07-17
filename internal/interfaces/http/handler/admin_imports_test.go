@@ -108,6 +108,61 @@ func TestAdminImportsGetDetailReturnsBase64Traceability(t *testing.T) {
 	}
 }
 
+func TestAdminImportsListMapsFiltersPaginationAndSummaries(t *testing.T) {
+	from := "2026-07-01T00:00:00Z"
+	to := "2026-07-17T23:59:59Z"
+	now := time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
+	run := appcollection.CollectionRun{
+		ID: "33333333-3333-3333-8333-333333333333", DataSourceID: "11111111-1111-1111-1111-111111111111",
+		NeighborhoodID: "22222222-2222-2222-2222-222222222222", SourceRef: "weekly-1",
+		CollectedAt: now, Coverage: "full", Format: appcollection.ImportFormatJSON,
+		Status: appcollection.CollectionRunStatusCompleted, MetricStatus: appcollection.MetricStatusCompleted,
+		ValidationSummary: appcollection.ValidationSummary{RecordCount: 3, ListingCount: 2, TransactionCount: 1},
+		CreatedAt:         now, UpdatedAt: now,
+	}
+	app := &stubTrustedCollectionApplication{listPage: appcollection.CollectionRunsPage{
+		Items: []appcollection.CollectionRunSummary{{
+			Run: run, Source: appcollection.DataSource{ID: run.DataSourceID, Name: "公开来源"},
+			NeighborhoodName: "鸣泉花园",
+		}},
+		Total: 21, Page: 2, PageSize: 10,
+	}}
+	engine := gin.New()
+	engine.GET("/imports", NewAdminImports(app).List)
+	path := "/imports?dataSourceId=" + run.DataSourceID + "&neighborhoodId=" + run.NeighborhoodID +
+		"&status=completed&metricStatus=completed&from=" + from + "&to=" + to + "&page=2&pageSize=10"
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if app.listQuery.DataSourceID != run.DataSourceID || app.listQuery.NeighborhoodID != run.NeighborhoodID ||
+		app.listQuery.Status != appcollection.CollectionRunStatusCompleted || app.listQuery.MetricStatus != appcollection.MetricStatusCompleted ||
+		app.listQuery.Page != 2 || app.listQuery.PageSize != 10 || app.listQuery.From == nil || app.listQuery.To == nil {
+		t.Fatalf("list query = %#v", app.listQuery)
+	}
+	var response collectionRunsPageResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Total != 21 || len(response.Items) != 1 || response.Items[0].NeighborhoodName != "鸣泉花园" ||
+		response.Items[0].DetailHref != "/data/imports/"+run.ID {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestAdminImportsListRejectsInvalidPaginationBeforeApplication(t *testing.T) {
+	app := &stubTrustedCollectionApplication{}
+	engine := gin.New()
+	engine.GET("/imports", NewAdminImports(app).List)
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/imports?page=0&pageSize=20", nil))
+	if recorder.Code != http.StatusBadRequest || app.listCalls != 0 {
+		t.Fatalf("status/calls = %d/%d", recorder.Code, app.listCalls)
+	}
+}
+
 func validTrustedImportBody() string {
 	return `{"dataSourceId":"11111111-1111-1111-1111-111111111111","neighborhoodId":"22222222-2222-2222-2222-222222222222","sourceRef":"weekly-1","collectedAt":"2026-07-13T10:00:00Z","coverage":"full","records":[{"recordType":"listing","sourceRecordId":"listing-1","layout":"三房","areaSqm":89.5,"listingPrice":520,"daysOnMarket":12,"status":"active"}]}`
 }
@@ -124,8 +179,11 @@ type stubTrustedCollectionApplication struct {
 	command     appcollection.ImportCollectionRunCommand
 	result      appcollection.ImportCollectionRunResult
 	detail      appcollection.CollectionRunDetail
+	listPage    appcollection.CollectionRunsPage
+	listQuery   appcollection.ListCollectionRunsQuery
 	err         error
 	importCalls int
+	listCalls   int
 }
 
 func (s *stubTrustedCollectionApplication) ImportCollectionRun(_ context.Context, command appcollection.ImportCollectionRunCommand) (appcollection.ImportCollectionRunResult, error) {
@@ -139,4 +197,13 @@ func (s *stubTrustedCollectionApplication) GetCollectionRun(context.Context, app
 		return appcollection.CollectionRunDetail{}, s.err
 	}
 	return s.detail, nil
+}
+
+func (s *stubTrustedCollectionApplication) ListCollectionRuns(_ context.Context, query appcollection.ListCollectionRunsQuery) (appcollection.CollectionRunsPage, error) {
+	s.listCalls++
+	s.listQuery = query
+	if s.listPage.Items == nil {
+		s.listPage = appcollection.CollectionRunsPage{Items: []appcollection.CollectionRunSummary{}, Page: 1, PageSize: 20}
+	}
+	return s.listPage, s.err
 }

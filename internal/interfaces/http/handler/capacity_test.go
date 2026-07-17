@@ -164,6 +164,82 @@ func TestCreateCapacityCalculationMapsCityPolicyOverride(t *testing.T) {
 	}
 }
 
+func TestCreateCapacityCalculationMapsPolicyScenarioLoanAndOverrides(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	service := &stubCapacityApplication{createRecord: appcapacity.CalculationRecord{ID: "calc_policy"}}
+	engine := gin.New()
+	engine.POST("/api/v1/capacity/calculations", NewCapacity(service, user.SingleUserID).CreateCalculation)
+
+	body := `{"cashOnHand":150,"oldHomeValue":320,"oldLoanBalance":80,"monthlyIncome":3.5,"currentMonthlyMortgage":0,"acceptableMonthlyMortgage":1.5,"targetTotalPrice":500,"renovationBudget":40,"transitionRentCost":5,"transactionScenario":{"city":"天津","homePurchaseOrder":"second","targetHomeType":"resale","targetHomeAreaSqm":141,"oldHomeHoldingYears":2,"oldHomeOnlyFamilyHome":false,"oldHomeOriginalPrice":200,"taxBurdenMode":"buyer_all"},"loanPlan":{"type":"combined","totalLoanAmount":350,"commercialLoanAmount":200,"providentFundLoanAmount":150,"loanTermMonths":300,"repaymentMethod":"equal_principal"},"manualOverrides":{"commercialAnnualInterestRate":0.049,"downPaymentRate":0.3,"taxAmounts":{"deed_tax":6}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/capacity/calculations", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+	input := service.createCommand.Input
+	if input.TransactionScenario == nil || input.TransactionScenario.City != "天津" ||
+		input.TransactionScenario.HomePurchaseOrder != domaincapacity.HomeSecond || input.TransactionScenario.TaxBurdenMode != domaincapacity.TaxBurdenBuyerAll {
+		t.Fatalf("TransactionScenario = %#v", input.TransactionScenario)
+	}
+	if input.LoanPlan == nil || input.LoanPlan.Type != domaincapacity.LoanCombined || input.LoanPlan.CommercialLoanAmount != 200 ||
+		input.LoanPlan.ProvidentFundLoanAmount != 150 || input.LoanPlan.RepaymentMethod != domaincapacity.RepaymentEqualPrincipal {
+		t.Fatalf("LoanPlan = %#v", input.LoanPlan)
+	}
+	if input.ManualOverrides == nil || input.ManualOverrides.CommercialAnnualInterestRate == nil ||
+		*input.ManualOverrides.CommercialAnnualInterestRate != 0.049 || input.ManualOverrides.TaxAmounts["deed_tax"] != 6 {
+		t.Fatalf("ManualOverrides = %#v", input.ManualOverrides)
+	}
+	if input.TransactionCosts != 0 {
+		t.Fatalf("TransactionCosts = %v, want optional zero", input.TransactionCosts)
+	}
+}
+
+func TestCreateCapacityCalculationMapsPropertySelectionsAndReturnsFrozenContext(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	confirmedAt := time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
+	service := &stubCapacityApplication{createRecord: appcapacity.CalculationRecord{
+		ID: "calc-selection",
+		SelectionContext: &appcapacity.SelectionContext{
+			OldHome: &appcapacity.OldHomeSelectionSnapshot{Mode: appcapacity.OldHomeNone, ConfirmedAt: confirmedAt},
+		},
+	}}
+	engine := gin.New()
+	engine.POST("/api/v1/capacity/calculations", NewCapacity(service, user.SingleUserID).CreateCalculation)
+	body := `{"cashOnHand":150,"oldHomeValue":0,"oldLoanBalance":0,"monthlyIncome":3.5,"currentMonthlyMortgage":0,"acceptableMonthlyMortgage":1.5,"targetTotalPrice":480,"renovationBudget":30,"transitionRentCost":5,"transactionScenario":{"city":"天津","homePurchaseOrder":"first","targetHomeType":"resale","targetHomeAreaSqm":118,"oldHomeHoldingYears":0,"oldHomeOnlyFamilyHome":false,"oldHomeOriginalPrice":0,"taxBurdenMode":"statutory"},"loanPlan":{"type":"commercial","totalLoanAmount":400,"loanTermMonths":360,"repaymentMethod":"equal_installment"},"oldHomeSelection":{"mode":"none","priceConfirmed":true},"targetHomeSelection":{"neighborhoodId":"22222222-2222-4222-8222-222222222222","roomId":"room-1","expectedPurchasePriceWan":480,"priceConfirmed":true}}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/capacity/calculations", bytes.NewBufferString(body))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status/body = %d/%s", recorder.Code, recorder.Body.String())
+	}
+	if service.createCommand.OldHomeSelection == nil || service.createCommand.OldHomeSelection.Mode != appcapacity.OldHomeNone ||
+		service.createCommand.TargetHomeSelection == nil || service.createCommand.TargetHomeSelection.RoomID != "room-1" {
+		t.Fatalf("selection command = %#v", service.createCommand)
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"selectionContext":{"oldHome":{"mode":"none"`)) {
+		t.Fatalf("response body = %s", recorder.Body.String())
+	}
+}
+
+func TestCreateCapacityCalculationRejectsUnknownFields(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	service := &stubCapacityApplication{}
+	engine := gin.New()
+	engine.POST("/api/v1/capacity/calculations", NewCapacity(service, user.SingleUserID).CreateCalculation)
+	body := `{"cashOnHand":150,"oldHomeValue":0,"oldLoanBalance":0,"monthlyIncome":3.5,"currentMonthlyMortgage":0,"acceptableMonthlyMortgage":1.5,"targetTotalPrice":480,"renovationBudget":30,"transactionCosts":10,"transitionRentCost":5,"ownerName":"not-accepted"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/capacity/calculations", bytes.NewBufferString(body))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest || service.createCommand.Input.TargetTotalPrice != 0 {
+		t.Fatalf("status/command/body = %d/%#v/%s", recorder.Code, service.createCommand, recorder.Body.String())
+	}
+}
+
 func TestCreateCapacityCalculationRequiresEveryFamilyFieldButAcceptsExplicitZero(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	tests := map[string]struct {
@@ -238,6 +314,50 @@ func TestGetAssumptionsReturnsInjectedCompleteRuleSet(t *testing.T) {
 	if body.CityPolicy.City != "测试市" || body.CityPolicy.Source != "测试政策来源" ||
 		body.PressureThresholds.DangerRatio != 0.55 {
 		t.Fatalf("complete assumptions = %#v", body)
+	}
+}
+
+func TestGetAssumptionsMapsPolicyQueryAndOptions(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	commercialRate := 0.031
+	policy := handlerTestPolicy()
+	view := appcapacity.AssumptionsView{
+		Legacy: handlerTestAssumptions(), Policy: &policy, HomePurchaseOrder: domaincapacity.HomeSecond,
+		LoanTermMonths: 60, Disclaimer: domaincapacity.BudgetEstimateDisclaimer,
+		LoanOptions: []appcapacity.LoanOption{{
+			Type: domaincapacity.LoanCommercial, DownPaymentRate: 0.25,
+			CommercialAnnualInterestRate: &commercialRate,
+		}},
+	}
+	service := &stubCapacityApplication{assumptionsView: &view}
+	engine := gin.New()
+	engine.GET("/api/v1/capacity/assumptions", NewCapacity(service, user.SingleUserID).GetAssumptions)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/capacity/assumptions?city=%E5%A4%A9%E6%B4%A5&homePurchaseOrder=second&loanTermMonths=60", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if service.assumptionsQuery.City != "天津" || service.assumptionsQuery.HomePurchaseOrder != domaincapacity.HomeSecond || service.assumptionsQuery.LoanTermMonths != 60 {
+		t.Fatalf("query = %#v", service.assumptionsQuery)
+	}
+	var body struct {
+		PolicyVersion struct {
+			Version string `json:"version"`
+		} `json:"policyVersion"`
+		LoanOptions []struct {
+			Type            string  `json:"type"`
+			DownPaymentRate float64 `json:"downPaymentRate"`
+		} `json:"loanOptions"`
+		Disclaimer string `json:"disclaimer"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.PolicyVersion.Version != policy.Version || len(body.LoanOptions) != 1 || body.LoanOptions[0].DownPaymentRate != 0.25 || body.Disclaimer == "" {
+		t.Fatalf("response = %#v", body)
 	}
 }
 
@@ -403,18 +523,40 @@ func TestGetCapacityCalculationReturnsLegacyTraceabilityWithoutAssumptions(t *te
 }
 
 type stubCapacityApplication struct {
-	createRecord   appcapacity.CalculationRecord
-	createErr      error
-	createCalled   bool
-	createCommand  appcapacity.CreateCalculationCommand
-	getRecord      appcapacity.CalculationRecord
-	getErr         error
-	assumptions    domaincapacity.Assumptions
-	assumptionsErr error
+	createRecord     appcapacity.CalculationRecord
+	createErr        error
+	createCalled     bool
+	createCommand    appcapacity.CreateCalculationCommand
+	getRecord        appcapacity.CalculationRecord
+	getErr           error
+	assumptions      domaincapacity.Assumptions
+	assumptionsView  *appcapacity.AssumptionsView
+	assumptionsQuery appcapacity.GetAssumptionsQuery
+	assumptionsErr   error
 }
 
-func (s *stubCapacityApplication) GetAssumptions(_ context.Context, _ appcapacity.GetAssumptionsQuery) (domaincapacity.Assumptions, error) {
-	return s.assumptions, s.assumptionsErr
+func (s *stubCapacityApplication) GetAssumptions(_ context.Context, query appcapacity.GetAssumptionsQuery) (appcapacity.AssumptionsView, error) {
+	s.assumptionsQuery = query
+	if s.assumptionsView != nil {
+		return *s.assumptionsView, s.assumptionsErr
+	}
+	return appcapacity.AssumptionsView{Legacy: s.assumptions}, s.assumptionsErr
+}
+
+func handlerTestPolicy() domaincapacity.HousingPolicyVersion {
+	return domaincapacity.HousingPolicyVersion{
+		ID: "66666666-6666-4666-8666-666666666666", City: "天津", Version: "tianjin-test",
+		Name: "天津测试政策", EffectiveFrom: "2026-01-01", Enabled: true,
+		Rules: domaincapacity.HousingPolicyRules{
+			DownPayment: domaincapacity.DownPaymentRules{CommercialFirst: 0.15, CommercialSecond: 0.25},
+			Interest:    domaincapacity.InterestRateRules{CommercialFirst: 0.031, CommercialSecond: 0.041},
+		},
+		Sources: []domaincapacity.PolicySource{{
+			Code: "commercial_rate", Title: "商业贷款参考利率", Issuer: "测试机构",
+			URL: "https://example.com/policy", EffectiveDate: "2026-01-01",
+		}},
+		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
 }
 
 func (s *stubCapacityApplication) CreateCalculation(_ context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error) {

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "fangjian.bundle/v1",
+  "collectedAt": "2026-07-17T09:30:00Z",
+  "community": {
+    "sourceCommunityId": "0a5b87b0d81dadbb50fb85df01489a13",
+    "communityName": "亲和美园",
+    "cityCode": "120100",
+    "cityName": "天津市",
+    "districtCode": "120111",
+    "districtName": "西青区",
+    "blockCode": "BK2022112435657",
+    "blockName": "大寺",
+    "latitude": 39.00686699034,
+    "longitude": 117.265793001744,
+    "listingAvgUnitPrice": 8009,
+    "listingCount": 1,
+    "tradeCount3Months": 1,
+    "tradeUnitPrice3Months": 5526.22,
+    "analysis": {
+      "listingPrice": {},
+      "tradeTrends": {"tradeTrends": [{"tradeDate": "2026-06", "avgTradePriceCommunity": 5526.22}]},
+      "priceDiff": {},
+      "roomType": {"roomTypes": [{"tradeDate": "2026-06", "roomTypeFilter": "二室", "tradeNum": 1, "avgTradePrice": 5526.22}]},
+      "tradeCycle": {"tradeCycle6": [{"tradeDate": "2026-06", "avgDealCycle": 91}]},
+      "supplyTrend": {"supplyTrend": [{"listingDate": "2026-06", "num": 1, "takeLook": 1, "supplyDemandRatio": 1}]},
+      "tradeSummary": {},
+      "zf": {},
+      "adjustCondition": {},
+      "adjustConditionSummary": {},
+      "adjustDetailSummary": {},
+      "hotIndex": {"hotIndex": [{"listingDate": "2026-06", "hot": 10}]},
+      "hotIndexCompare": {},
+      "confidenceIndex": {"confidenceIndex": [{"tradeDate": "2026-06", "confidenceIndex": 50}]}
+    },
+    "surroundings": {
+      "competitiveSummary": {},
+      "competitiveProducts": {},
+      "poi": []
+    },
+    "cityContext": {
+      "summary": {},
+      "map": {}
+    }
+  },
+  "listings": [
+    {
+      "roomId": "101138410213",
+      "layout": "2室1厅",
+      "areaSqm": 78.67,
+      "listingTotalPriceWan": 63,
+      "listingUnitPrice": 8009,
+      "listedAt": "2026-06-28T00:00:00Z",
+      "daysOnMarket": 0,
+      "floorBand": "高楼层",
+      "floorDescription": "高楼层(共18层)",
+      "orientation": "南 北",
+      "adjustmentCount": 2,
+      "followCount": 0,
+      "lookCount30Days": 0
+    }
+  ],
+  "transactions": [
+    {
+      "roomId": "trade-101138410213",
+      "layout": "2室1厅",
+      "areaSqm": 81.43,
+      "listingTotalPriceWan": 53,
+      "tradeTotalPriceWan": 45,
+      "tradeUnitPrice": 5526.22,
+      "tradeDate": "2026-06-14T00:00:00Z",
+      "negotiationWan": 8,
+      "negotiationPercent": 15.09,
+      "floorBand": "高楼层",
+      "floorDescription": "高楼层/18层",
+      "orientation": "南",
+      "adjustmentCount": 9
+    }
+  ],
+  "adjustments": [
+    {
+      "roomId": "101138410213",
+      "adjustedAt": "2026-06-29T00:00:00Z",
+      "priceBeforeWan": 65,
+      "priceAfterWan": 63,
+      "amountWan": -2
+    }
+  ],
+  "quality": {
+    "status": "complete",
+    "warnings": []
+  }
+}

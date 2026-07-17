@@ -9,13 +9,16 @@ import (
 
 	"github.com/rs/zerolog"
 	webembed "github.com/sine-io/propulse/apps/web/embed"
+	appasset "github.com/sine-io/propulse/internal/application/asset"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
+	appcommunitymarket "github.com/sine-io/propulse/internal/application/communitymarket"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appmetric "github.com/sine-io/propulse/internal/application/metric"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	appqueue "github.com/sine-io/propulse/internal/application/queue"
 	appreview "github.com/sine-io/propulse/internal/application/review"
+	domainasset "github.com/sine-io/propulse/internal/domain/asset"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
 	"github.com/sine-io/propulse/internal/infrastructure/config"
 	migraterunner "github.com/sine-io/propulse/internal/infrastructure/migrate"
@@ -30,9 +33,19 @@ const schedulerMetricRepairBatchSize = 100
 
 type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
-	GetAssumptions(ctx context.Context, query appcapacity.GetAssumptionsQuery) (domaincapacity.Assumptions, error)
+	GetAssumptions(ctx context.Context, query appcapacity.GetAssumptionsQuery) (appcapacity.AssumptionsView, error)
 	GetCalculation(ctx context.Context, query appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error)
 	LatestCalculation(ctx context.Context, query appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error)
+	ListPolicyVersions(ctx context.Context, query appcapacity.ListPolicyVersionsQuery) ([]domaincapacity.HousingPolicyVersion, error)
+	CreatePolicyVersion(ctx context.Context, command appcapacity.CreatePolicyVersionCommand) (domaincapacity.HousingPolicyVersion, error)
+}
+
+type AssetApplication interface {
+	CreateAsset(context.Context, appasset.CreateAssetCommand) (domainasset.Asset, error)
+	UpdateAsset(context.Context, appasset.UpdateAssetCommand) (domainasset.Asset, error)
+	DeleteAsset(context.Context, appasset.DeleteAssetCommand) error
+	GetAsset(context.Context, appasset.GetAssetQuery) (domainasset.Asset, error)
+	ListAssets(context.Context, appasset.ListAssetsQuery) (appasset.Page, error)
 }
 
 type NeighborhoodApplication interface {
@@ -50,7 +63,19 @@ type CollectionApplication interface {
 	ListDataSources(ctx context.Context, query appcollection.ListDataSourcesQuery) ([]appcollection.DataSource, error)
 	ImportCollectionRun(ctx context.Context, command appcollection.ImportCollectionRunCommand) (appcollection.ImportCollectionRunResult, error)
 	GetCollectionRun(ctx context.Context, query appcollection.GetCollectionRunQuery) (appcollection.CollectionRunDetail, error)
+	ListCollectionRuns(ctx context.Context, query appcollection.ListCollectionRunsQuery) (appcollection.CollectionRunsPage, error)
 	ListMetricRefreshCandidates(ctx context.Context, query appcollection.ListMetricRefreshCandidatesQuery) ([]appcollection.MetricRefreshCandidate, error)
+}
+
+type CommunityMarketApplication interface {
+	ImportSnapshot(ctx context.Context, command appcommunitymarket.ImportSnapshotCommand) (appcommunitymarket.ImportSnapshotResult, error)
+	ImportFangjian(ctx context.Context, command appcommunitymarket.ImportFangjianCommand) (appcommunitymarket.ImportFangjianResult, error)
+	LatestSnapshot(ctx context.Context, query appcommunitymarket.LatestSnapshotQuery) (appcommunitymarket.Snapshot, error)
+	ListListings(ctx context.Context, query appcommunitymarket.MarketListQuery) (appcommunitymarket.Page[appcommunitymarket.MarketListing], error)
+	GetListing(ctx context.Context, query appcommunitymarket.GetListingQuery) (appcommunitymarket.MarketListingDetail, error)
+	ListTransactions(ctx context.Context, query appcommunitymarket.MarketListQuery) (appcommunitymarket.Page[appcommunitymarket.MarketTransaction], error)
+	ListingAdjustments(ctx context.Context, query appcommunitymarket.ListingAdjustmentsQuery) ([]appcommunitymarket.ListingAdjustment, error)
+	Compare(ctx context.Context, query appcommunitymarket.ComparisonQuery) (appcommunitymarket.Comparison, error)
 }
 
 type DecisionApplication interface {
@@ -227,16 +252,18 @@ func enqueueMetricRepairJobs(ctx context.Context, collectionApp CollectionApplic
 
 func runHTTPServer(ctx context.Context, cfg config.Config, log zerolog.Logger, rt *runtime) error {
 	engine, err := router.New(router.Dependencies{
-		Log:                     log,
-		StaticFS:                webembed.Embedded(),
-		CapacityApplication:     rt.capacity,
-		NeighborhoodApplication: rt.neighborhood,
-		CollectionApplication:   rt.collection,
-		DecisionApplication:     rt.decision,
-		ReviewApplication:       rt.review,
-		AccessToken:             cfg.AccessToken,
-		UserID:                  cfg.UserID,
-		ReadinessChecker:        rt.readiness,
+		Log:                        log,
+		StaticFS:                   webembed.Embedded(),
+		CapacityApplication:        rt.capacity,
+		AssetApplication:           rt.asset,
+		NeighborhoodApplication:    rt.neighborhood,
+		CollectionApplication:      rt.collection,
+		CommunityMarketApplication: rt.communityMarket,
+		DecisionApplication:        rt.decision,
+		ReviewApplication:          rt.review,
+		AccessToken:                cfg.AccessToken,
+		UserID:                     cfg.UserID,
+		ReadinessChecker:           rt.readiness,
 	})
 	if err != nil {
 		return err

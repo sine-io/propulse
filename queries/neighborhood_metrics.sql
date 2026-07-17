@@ -126,18 +126,24 @@ price_cut_aggregate AS (
   SELECT COUNT(*)::int AS price_cut_homes
   FROM inventory_listings current_listing
   JOIN trigger_run tr ON TRUE
-  WHERE (
-    SELECT prior_listing.listing_price
-    FROM listing_observations prior_listing
-    JOIN collection_runs prior_run ON prior_run.id = prior_listing.collection_run_id
-    WHERE prior_run.status = 'completed'
-      AND prior_run.data_source_id = current_listing.data_source_id
-      AND prior_run.neighborhood_id = current_listing.neighborhood_id
-      AND prior_listing.source_listing_id = current_listing.source_listing_id
-      AND (prior_run.collected_at, prior_run.id) < (tr.collected_at, tr.id)
-    ORDER BY prior_run.collected_at DESC, prior_run.id DESC, prior_listing.captured_at DESC
-    LIMIT 1
-  ) > current_listing.listing_price
+  WHERE EXISTS (
+    SELECT 1
+    FROM listing_adjustments adjustment
+    WHERE adjustment.collection_run_id = current_listing.collection_run_id
+      AND adjustment.room_id = current_listing.source_listing_id
+      AND adjustment.price_after_wan < adjustment.price_before_wan
+  ) OR (
+      SELECT prior_listing.listing_price
+      FROM listing_observations prior_listing
+      JOIN collection_runs prior_run ON prior_run.id = prior_listing.collection_run_id
+      WHERE prior_run.status = 'completed'
+        AND prior_run.data_source_id = current_listing.data_source_id
+        AND prior_run.neighborhood_id = current_listing.neighborhood_id
+        AND prior_listing.source_listing_id = current_listing.source_listing_id
+        AND (prior_run.collected_at, prior_run.id) < (tr.collected_at, tr.id)
+      ORDER BY prior_run.collected_at DESC, prior_run.id DESC, prior_listing.captured_at DESC
+      LIMIT 1
+    ) > current_listing.listing_price
 ),
 latest_transactions AS (
   SELECT DISTINCT ON (cr.data_source_id, tx.source_record_id)

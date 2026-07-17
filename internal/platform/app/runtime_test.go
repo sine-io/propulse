@@ -166,7 +166,7 @@ func TestOpenRuntimeBuildsOneSharedApplicationSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openRuntime() error = %v", err)
 	}
-	if rt.capacity == nil || rt.neighborhood == nil || rt.collection == nil || rt.metric == nil || rt.review == nil {
+	if rt.capacity == nil || rt.neighborhood == nil || rt.collection == nil || rt.communityMarket == nil || rt.metric == nil || rt.review == nil {
 		t.Fatalf("runtime application set is incomplete: %+v", rt)
 	}
 	if rt.enqueuer != queue || rt.queueClient != queue {

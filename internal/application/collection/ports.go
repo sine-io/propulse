@@ -18,6 +18,7 @@ type Repository interface {
 	NeighborhoodExists(context.Context, string) (bool, error)
 	SaveCollectionRun(context.Context, ImportBatch) (SaveCollectionRunResult, error)
 	GetCollectionRun(context.Context, string) (CollectionRunDetail, error)
+	ListCollectionRuns(context.Context, CollectionRunFilter) (CollectionRunsPage, error)
 	ListMetricRefreshCandidates(context.Context, MetricRefreshCandidateFilter) ([]MetricRefreshCandidate, error)
 	UpdateMetricStatus(context.Context, string, MetricStatus) error
 }

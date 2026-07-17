@@ -15,6 +15,8 @@ import (
 const metricRepairSourceID = "import.retry"
 const defaultMetricRefreshCandidateLimit = 100
 const maxMetricRefreshCandidateLimit = 500
+const defaultCollectionRunPageSize = 20
+const maxCollectionRunPageSize = 100
 
 var sourceTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
@@ -85,6 +87,48 @@ func (s *Service) GetCollectionRun(ctx context.Context, query GetCollectionRunQu
 		return CollectionRunDetail{}, ErrInvalidRequest
 	}
 	return s.repo.GetCollectionRun(ctx, strings.TrimSpace(query.ID))
+}
+
+func (s *Service) ListCollectionRuns(ctx context.Context, query ListCollectionRunsQuery) (CollectionRunsPage, error) {
+	filter := CollectionRunFilter{
+		DataSourceID: strings.TrimSpace(query.DataSourceID), NeighborhoodID: strings.TrimSpace(query.NeighborhoodID),
+		Status: query.Status, MetricStatus: query.MetricStatus, From: query.From, To: query.To,
+		Page: query.Page, PageSize: query.PageSize,
+	}
+	if filter.Page == 0 {
+		filter.Page = 1
+	}
+	if filter.PageSize == 0 {
+		filter.PageSize = defaultCollectionRunPageSize
+	}
+	if filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > maxCollectionRunPageSize {
+		return CollectionRunsPage{}, ErrInvalidRequest
+	}
+	for _, id := range []string{filter.DataSourceID, filter.NeighborhoodID} {
+		if id != "" {
+			if _, err := uuid.Parse(id); err != nil {
+				return CollectionRunsPage{}, ErrInvalidRequest
+			}
+		}
+	}
+	if filter.Status != "" && filter.Status != CollectionRunStatusCompleted {
+		return CollectionRunsPage{}, ErrInvalidRequest
+	}
+	if filter.MetricStatus != "" && filter.MetricStatus != MetricStatusPending && filter.MetricStatus != MetricStatusCompleted && filter.MetricStatus != MetricStatusFailed {
+		return CollectionRunsPage{}, ErrInvalidRequest
+	}
+	if filter.From != nil {
+		from := filter.From.UTC()
+		filter.From = &from
+	}
+	if filter.To != nil {
+		to := filter.To.UTC()
+		filter.To = &to
+	}
+	if filter.From != nil && filter.To != nil && filter.To.Before(*filter.From) {
+		return CollectionRunsPage{}, ErrInvalidRequest
+	}
+	return s.repo.ListCollectionRuns(ctx, filter)
 }
 
 func (s *Service) ListMetricRefreshCandidates(ctx context.Context, query ListMetricRefreshCandidatesQuery) ([]MetricRefreshCandidate, error) {

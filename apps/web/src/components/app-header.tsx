@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { Activity, BookOpen, Calculator, Database, Eye, Target } from "lucide-react";
+import { Activity, BookOpen, Calculator, Database, Eye, Landmark, Target } from "lucide-react";
 
 import { AccessControl } from "./access-control";
 
 const navItems = [
   { label: "换房测算", href: "/calculator", icon: Calculator },
+  { label: "我的资产", href: "/assets", icon: Landmark },
   { label: "目标小区", href: "/neighborhoods", icon: Target },
   { label: "数据管理", href: "/data", icon: Database },
   { label: "出手窗口", href: "/action-window", icon: Activity },
@@ -14,6 +15,7 @@ const navItems = [
 
 const quickNavItems = [
   { label: "测算", href: "/calculator" },
+  { label: "资产", href: "/assets" },
   { label: "小区", href: "/neighborhoods" },
   { label: "数据", href: "/data" },
   { label: "窗口", href: "/action-window" },
@@ -85,7 +87,7 @@ export function AppHeader() {
 
       <nav
         aria-label="移动快捷导航"
-        className="mx-auto mb-6 mt-4 flex max-w-7xl space-x-2 overflow-x-auto px-4 pb-2 sm:px-6 lg:px-8 xl:hidden"
+        className="mx-auto mb-6 mt-4 flex w-full min-w-0 max-w-7xl space-x-2 overflow-x-auto px-4 pb-2 sm:px-6 lg:px-8 xl:hidden"
       >
         {quickNavItems.map((item) => (
           <Link

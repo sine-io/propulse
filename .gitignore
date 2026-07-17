@@ -13,3 +13,5 @@ pnpm-debug.log*
 .vercel/
 .worktrees/
 .superpowers/
+*.har
+data/fangjian/

@@ -5,15 +5,20 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
+  Building2,
   CalendarClock,
+  CarFront,
   CheckCircle,
   Database,
   History,
   LockKeyhole,
+  MapPinned,
   MapPin,
   Plus,
   RefreshCw,
   Search,
+  Zap,
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -22,6 +27,8 @@ import {
   CartesianGrid,
   Cell,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -32,11 +39,23 @@ import {
 import {
   addWatchlistItem,
   ApiError,
+  compareCommunityMarkets,
+  getListingAdjustments,
+  getMarketListings,
+  getMarketTransactions,
   getMetricHistory,
+  getCommunityMarketSnapshot,
   getNeighborhood,
   getNeighborhoodMetrics,
   searchNeighborhoods,
+  type CommunityMarketComparison,
   type MetricHistoryResponse,
+  type CommunityMarketSnapshot,
+  type ListingAdjustment,
+  type MarketListingsPage,
+  type MarketListQuery,
+  type MarketTransaction,
+  type MarketTransactionsPage,
   type Neighborhood,
   type NeighborhoodMetricResponse,
   type NeighborhoodSearchResponse,
@@ -44,6 +63,7 @@ import {
 import { getAccessToken, subscribeToAccessToken } from "@/lib/access-token";
 
 import { StatusBadge } from "./status-badge";
+import { CenteredLoadingState } from "./centered-loading-state";
 
 type DetailPageState = "loading" | "not_found" | "select_layout" | "metric_loading" | "no_metric" | "ready" | "failed";
 type CatalogState = "loading" | "ready" | "failed";
@@ -58,6 +78,7 @@ type AddSelection = {
 };
 
 type NeighborhoodView = {
+  communityMarket?: CommunityMarketSnapshot;
   history?: MetricHistoryResponse;
   historyFailed: boolean;
   metric?: NeighborhoodMetricResponse;
@@ -113,7 +134,7 @@ export function NeighborhoodsPage({
   }, [initialNeighborhoodId]);
 
   if (!routeReady) {
-    return <PageStateBand icon={Database} title="正在读取目标小区" tone="slate" />;
+    return <CenteredLoadingState className="min-h-[55vh]" title="正在读取目标小区" />;
   }
   if (!neighborhoodId) {
     return <NeighborhoodSelector navigate={navigate} />;
@@ -244,6 +265,32 @@ function NeighborhoodSelector({ navigate }: { navigate: (href: string) => void }
               搜索
             </button>
           </div>
+          {catalogState === "ready" && selection.q && results.length > 0 ? (
+            <ul aria-label="小区名称搜索结果" className="mt-2 max-w-2xl divide-y divide-slate-200 border border-slate-200 bg-white">
+              {results.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    aria-pressed={selection.neighborhoodId === item.id}
+                    onClick={() => {
+                      setInvalidSelection(undefined);
+                      commitSelection({
+                        area: item.area,
+                        city: item.city ?? "",
+                        neighborhoodId: item.id,
+                        q: selection.q,
+                        targetLayout: "",
+                      });
+                    }}
+                    className={`flex min-h-14 w-full items-center justify-between gap-4 px-3 py-2 text-left text-sm hover:bg-slate-50 ${selection.neighborhoodId === item.id ? "bg-blue-50" : ""}`}
+                  >
+                    <span className="font-medium text-slate-900">{item.name}</span>
+                    <span className="text-xs text-slate-500">{item.city ?? "城市未标注"} · {item.area}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </form>
 
         <NativeSelect
@@ -288,7 +335,7 @@ function NeighborhoodSelector({ navigate }: { navigate: (href: string) => void }
         </div>
       </section>
 
-      {catalogState === "loading" ? <PageStateBand icon={Database} title="正在加载小区目录" tone="slate" /> : null}
+      {catalogState === "loading" ? <CenteredLoadingState title="正在加载小区目录" /> : null}
       {catalogState === "failed" ? (
         <PageStateBand
           icon={AlertTriangle}
@@ -298,7 +345,7 @@ function NeighborhoodSelector({ navigate }: { navigate: (href: string) => void }
           action={<RetryButton onClick={() => setRequestVersion((version) => version + 1)} />}
         />
       ) : null}
-      {catalogState === "ready" && selection.city && selection.area && results.length === 0 ? (
+      {catalogState === "ready" && results.length === 0 && (Boolean(selection.q) || Boolean(selection.city && selection.area)) ? (
         <PageStateBand icon={Search} title="没有匹配的小区" detail="可以调整名称、城市或板块后重新搜索。" tone="slate" />
       ) : null}
       {invalidSelection ? <PageStateBand icon={AlertTriangle} title="原选择已失效" detail={invalidSelection} tone="amber" /> : null}
@@ -345,9 +392,16 @@ function NeighborhoodDetail({ neighborhoodId, navigate }: { neighborhoodId: stri
     setView({ historyFailed: false });
     setPageState("loading");
     getNeighborhood(neighborhoodId, controller.signal)
-      .then((neighborhood) => {
+      .then(async (neighborhood) => {
         if (controller.signal.aborted) return;
-        setView({ historyFailed: false, neighborhood });
+        let communityMarket: CommunityMarketSnapshot | undefined;
+        try {
+          communityMarket = await getCommunityMarketSnapshot(neighborhoodId, controller.signal);
+        } catch (error: unknown) {
+          if (!isNotFound(error) && !isAbortError(error)) throw error;
+        }
+        if (controller.signal.aborted) return;
+        setView({ communityMarket, historyFailed: false, neighborhood });
         setPageState("select_layout");
       })
       .catch((error: unknown) => {
@@ -411,7 +465,7 @@ function NeighborhoodDetail({ neighborhoodId, navigate }: { neighborhoodId: stri
   return (
     <main className="mx-auto w-full max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
       {pageState === "loading" ? (
-        <PageStateBand icon={Database} title="正在加载小区身份" tone="slate" />
+        <CenteredLoadingState title="正在加载小区身份" />
       ) : null}
       {pageState === "not_found" ? (
         <PageStateBand
@@ -434,6 +488,7 @@ function NeighborhoodDetail({ neighborhoodId, navigate }: { neighborhoodId: stri
       {view.neighborhood ? (
         <>
           <NeighborhoodHeader neighborhood={view.neighborhood} metric={view.metric} targetLayout={targetLayout} />
+          {view.communityMarket ? <CommunityMarketWorkspace neighborhoodId={neighborhoodId} snapshot={view.communityMarket} /> : null}
           {invalidSelection ? <PageStateBand icon={AlertTriangle} title="原选择已失效" detail={invalidSelection} tone="amber" /> : null}
           <WatchlistTargetAction
             canSubmit
@@ -454,7 +509,7 @@ function NeighborhoodDetail({ neighborhoodId, navigate }: { neighborhoodId: stri
         <PageStateBand icon={MapPin} title="请选择目标户型" tone="slate" />
       ) : null}
       {pageState === "metric_loading" ? (
-        <PageStateBand icon={Database} title="正在加载该户型的指标与历史" tone="slate" />
+        <CenteredLoadingState title="正在加载该户型的指标与历史" />
       ) : null}
       {pageState === "no_metric" && view.neighborhood ? (
         <>
@@ -918,6 +973,556 @@ function NeighborhoodHeader({
   );
 }
 
+type MarketTab = "overview" | "listings" | "transactions" | "trends" | "profile" | "surroundings";
+
+const marketTabs: { id: MarketTab; label: string }[] = [
+  { id: "overview", label: "概览" },
+  { id: "listings", label: "在售" },
+  { id: "transactions", label: "成交" },
+  { id: "trends", label: "趋势与调价" },
+  { id: "profile", label: "小区档案" },
+  { id: "surroundings", label: "周边" },
+];
+
+function CommunityMarketWorkspace({ neighborhoodId, snapshot }: { neighborhoodId: string; snapshot: CommunityMarketSnapshot }) {
+  const complete = snapshot.qualityStatus === "complete" && Boolean(snapshot.collectionRunId);
+  const [activeTab, setActiveTab] = useState<MarketTab>("overview");
+  const [peerOptions, setPeerOptions] = useState<Neighborhood[]>([]);
+  const [peerId, setPeerId] = useState("");
+  const [comparison, setComparison] = useState<CommunityMarketComparison>();
+  const [comparisonState, setComparisonState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [listingQuery, setListingQuery] = useState<MarketListQuery>({ page: 1, pageSize: 10, sortBy: "date", sortOrder: "desc" });
+  const [transactionQuery, setTransactionQuery] = useState<MarketListQuery>({ page: 1, pageSize: 10, sortBy: "date", sortOrder: "desc" });
+  const [listings, setListings] = useState<MarketListingsPage>();
+  const [transactions, setTransactions] = useState<MarketTransactionsPage>();
+  const [listingsState, setListingsState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [transactionsState, setTransactionsState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [expandedRoom, setExpandedRoom] = useState<string>();
+  const [adjustments, setAdjustments] = useState<Record<string, ListingAdjustment[]>>({});
+  const [adjustmentError, setAdjustmentError] = useState<string>();
+
+  useEffect(() => {
+    if (!complete) return;
+    const controller = new AbortController();
+    searchNeighborhoods({ page: 1, pageSize: 100 }, controller.signal)
+      .then((result) => {
+        const peers = result.items.filter((item) => item.id !== neighborhoodId);
+        setPeerOptions(peers);
+        setPeerId((current) => current || peers.find((item) => item.name.includes("亲和") || item.name.includes("鸣泉"))?.id || peers[0]?.id || "");
+      })
+      .catch((error: unknown) => {
+        if (!isAbortError(error)) setPeerOptions([]);
+      });
+    return () => controller.abort();
+  }, [complete, neighborhoodId]);
+
+  useEffect(() => {
+    if (!complete || !peerId) {
+      setComparison(undefined);
+      setComparisonState("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setComparisonState("loading");
+    compareCommunityMarkets(neighborhoodId, peerId, controller.signal)
+      .then((result) => {
+        setComparison(result);
+        setComparisonState("ready");
+      })
+      .catch((error: unknown) => {
+        if (!isAbortError(error)) setComparisonState("failed");
+      });
+    return () => controller.abort();
+  }, [complete, neighborhoodId, peerId]);
+
+  useEffect(() => {
+    if (!complete) return;
+    const controller = new AbortController();
+    setListingsState("loading");
+    getMarketListings(neighborhoodId, listingQuery, controller.signal)
+      .then((result) => {
+        setListings(result);
+        setListingsState("ready");
+      })
+      .catch((error: unknown) => {
+        if (!isAbortError(error)) setListingsState("failed");
+      });
+    return () => controller.abort();
+  }, [complete, listingQuery, neighborhoodId]);
+
+  useEffect(() => {
+    if (!complete) return;
+    const controller = new AbortController();
+    setTransactionsState("loading");
+    getMarketTransactions(neighborhoodId, transactionQuery, controller.signal)
+      .then((result) => {
+        setTransactions(result);
+        setTransactionsState("ready");
+      })
+      .catch((error: unknown) => {
+        if (!isAbortError(error)) setTransactionsState("failed");
+      });
+    return () => controller.abort();
+  }, [complete, neighborhoodId, transactionQuery]);
+
+  const toggleAdjustments = (roomId: string) => {
+    if (expandedRoom === roomId) {
+      setExpandedRoom(undefined);
+      return;
+    }
+    setExpandedRoom(roomId);
+    setAdjustmentError(undefined);
+    if (adjustments[roomId]) return;
+    getListingAdjustments(neighborhoodId, roomId)
+      .then((result) => setAdjustments((current) => ({ ...current, [roomId]: result.items })))
+      .catch(() => setAdjustmentError("调价记录读取失败"));
+  };
+
+  return (
+    <section aria-label="房见小区市场" className="border-b border-slate-200 pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-4">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-blue-700">小区聚合行情</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-bold text-slate-900">{snapshot.communityName}</h2>
+            <span className={`rounded px-2 py-1 text-xs font-medium ${complete ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
+              {complete ? "完整数据包" : "仅聚合快照"}
+            </span>
+          </div>
+          <p className="mt-2 break-words text-xs text-slate-500">采集于 {formatDateTime(snapshot.collectedAt)} · {snapshot.sourceRef}</p>
+        </div>
+        <label className="min-w-56 text-sm font-medium text-slate-700">
+          对比小区
+          <select
+            aria-label="对比小区"
+            className="mt-1 block h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+            disabled={!complete || peerOptions.length === 0}
+            onChange={(event) => setPeerId(event.target.value)}
+            value={peerId}
+          >
+            <option value="">{complete ? "选择对比小区" : "完整采集后可比较"}</option>
+            {peerOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <div aria-label="市场数据视图" className="flex gap-1 overflow-x-auto border-b border-slate-200 py-3" role="tablist">
+        {marketTabs.map((tab) => (
+          <button
+            key={tab.id}
+            aria-selected={activeTab === tab.id}
+            className={`h-9 flex-none rounded-md px-3 text-sm font-medium ${activeTab === tab.id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+            onClick={() => setActiveTab(tab.id)}
+            role="tab"
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "overview" ? (
+        <div role="tabpanel">
+          {comparison ? <ComparisonOverview comparison={comparison} /> : null}
+          {comparisonState === "loading" ? <p className="py-4 text-sm text-slate-500">正在读取对比行情...</p> : null}
+          {comparisonState === "failed" ? <p className="py-4 text-sm text-rose-700">对比行情读取失败，当前小区数据仍可查看。</p> : null}
+          <CommunityMarketProfilePanel snapshot={snapshot} />
+        </div>
+      ) : null}
+      {activeTab === "listings" ? (
+        <MarketListingsView
+          adjustments={adjustments}
+          adjustmentError={adjustmentError}
+          complete={complete}
+          expandedRoom={expandedRoom}
+          page={listings}
+          query={listingQuery}
+          setQuery={setListingQuery}
+          state={listingsState}
+          toggleAdjustments={toggleAdjustments}
+        />
+      ) : null}
+      {activeTab === "transactions" ? (
+        <MarketTransactionsView complete={complete} page={transactions} query={transactionQuery} setQuery={setTransactionQuery} state={transactionsState} />
+      ) : null}
+      {activeTab === "trends" ? <MarketTrendsView snapshot={snapshot} /> : null}
+      {activeTab === "profile" ? <CommunityMarketProfilePanel snapshot={snapshot} /> : null}
+      {activeTab === "surroundings" ? <MarketSurroundingsView snapshot={snapshot} /> : null}
+    </section>
+  );
+}
+
+function ComparisonOverview({ comparison }: { comparison: CommunityMarketComparison }) {
+  const metrics = [
+    { label: "挂牌均价", metric: comparison.listingUnitPrice, unit: "元/㎡" },
+    { label: "供应量", metric: comparison.supply, unit: "套" },
+    { label: "近三月成交", metric: comparison.recentTrades, unit: "套" },
+    { label: "挂牌成交价差", metric: comparison.listingTradeGap, unit: "元/㎡" },
+    { label: "成交周期", metric: comparison.averageTradeCycle, unit: "天" },
+  ];
+  return (
+    <section aria-label="双小区行情比较" className="py-5">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-3 border-b border-slate-200 pb-3 text-sm">
+        <h3 className="font-semibold text-slate-900">{comparison.primary.communityName}</h3>
+        <span className="text-xs text-slate-400">对比</span>
+        <h3 className="text-right font-semibold text-slate-900">{comparison.peer.communityName}</h3>
+      </div>
+      <div className="grid gap-px bg-slate-200 sm:grid-cols-2 lg:grid-cols-5">
+        {metrics.map(({ label, metric, unit }) => (
+          <div className="bg-white px-3 py-4" key={label}>
+            <p className="text-xs text-slate-500">{label}</p>
+            <div className="mt-2 flex items-baseline justify-between gap-2 text-sm font-semibold text-slate-900">
+              <span>{formatComparisonValue(metric.primary, unit)}</span>
+              <span>{formatComparisonValue(metric.peer, unit)}</span>
+            </div>
+            <p className={`mt-2 text-xs ${(metric.delta ?? 0) > 0 ? "text-rose-700" : "text-emerald-700"}`}>差值 {formatSigned(metric.delta, unit)}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MarketFilterBar({ query, setQuery }: { query: MarketListQuery; setQuery: (query: MarketListQuery) => void }) {
+  const update = (patch: Partial<MarketListQuery>) => setQuery({ ...query, ...patch, page: 1 });
+  return (
+    <div className="grid gap-3 border-b border-slate-200 py-4 sm:grid-cols-2 lg:grid-cols-5">
+      <label className="text-xs font-medium text-slate-600">户型
+        <select aria-label="市场户型筛选" className="mt-1 block h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm" onChange={(event) => update({ layout: event.target.value || undefined })} value={query.layout ?? ""}>
+          <option value="">全部户型</option>{["一室", "二室", "三室", "四室", "五室"].map((item) => <option key={item}>{item}</option>)}
+        </select>
+      </label>
+      <label className="text-xs font-medium text-slate-600">楼层
+        <select aria-label="市场楼层筛选" className="mt-1 block h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm" onChange={(event) => update({ floor: (event.target.value || undefined) as MarketListQuery["floor"] })} value={query.floor ?? ""}>
+          <option value="">全部楼层</option>{["高楼层", "中楼层", "低楼层"].map((item) => <option key={item}>{item}</option>)}
+        </select>
+      </label>
+      <label className="text-xs font-medium text-slate-600">最低总价（万）
+        <input aria-label="最低总价" className="mt-1 block h-9 w-full rounded-md border border-slate-300 px-2 text-sm" min="0" onChange={(event) => update({ minPriceWan: event.target.value ? Number(event.target.value) : undefined })} type="number" value={query.minPriceWan ?? ""} />
+      </label>
+      <label className="text-xs font-medium text-slate-600">最高总价（万）
+        <input aria-label="最高总价" className="mt-1 block h-9 w-full rounded-md border border-slate-300 px-2 text-sm" min="0" onChange={(event) => update({ maxPriceWan: event.target.value ? Number(event.target.value) : undefined })} type="number" value={query.maxPriceWan ?? ""} />
+      </label>
+      <label className="text-xs font-medium text-slate-600">排序
+        <select aria-label="市场排序" className="mt-1 block h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm" onChange={(event) => update({ sortBy: event.target.value as MarketListQuery["sortBy"] })} value={query.sortBy ?? "date"}>
+          <option value="date">日期</option><option value="price">总价</option><option value="unitPrice">单价</option><option value="area">面积</option><option value="adjustments">调价次数</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function MarketListingsView({ adjustments, adjustmentError, complete, expandedRoom, page, query, setQuery, state, toggleAdjustments }: {
+  adjustments: Record<string, ListingAdjustment[]>;
+  adjustmentError?: string;
+  complete: boolean;
+  expandedRoom?: string;
+  page?: MarketListingsPage;
+  query: MarketListQuery;
+  setQuery: (query: MarketListQuery) => void;
+  state: "idle" | "loading" | "ready" | "failed";
+  toggleAdjustments: (roomId: string) => void;
+}) {
+  if (!complete) return <MarketUnavailableState />;
+  return (
+    <div role="tabpanel">
+      <MarketFilterBar query={query} setQuery={setQuery} />
+      {state === "loading" ? <p className="py-8 text-center text-sm text-slate-500">正在读取在售房源...</p> : null}
+      {state === "failed" ? <p className="py-8 text-center text-sm text-rose-700">在售房源读取失败</p> : null}
+      {state === "ready" && page?.items.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">没有符合筛选条件的在售房源</p> : null}
+      <div className="divide-y divide-slate-200">
+        {page?.items.map((item) => (
+          <article className="py-4" key={item.roomId}>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.1fr_.8fr_.8fr_1fr_auto] lg:items-center">
+              <div><p className="font-semibold text-slate-900">{item.layout} · {formatProfileNumber(item.areaSqm, "㎡")}</p><p className="mt-1 text-xs text-slate-500">{item.floorDescription || item.floorBand} · {item.orientation || "朝向未知"}</p></div>
+              <div><p className="text-xs text-slate-500">挂牌总价</p><p className="font-semibold text-slate-900">{formatWan(item.listingTotalPriceWan)}</p></div>
+              <div><p className="text-xs text-slate-500">挂牌单价</p><p className="font-semibold text-slate-900">{formatUnitPrice(item.listingUnitPrice)}</p></div>
+              <div><p className="text-xs text-slate-500">挂牌时间</p><p className="font-semibold text-slate-900">{formatDateOnly(item.listedAt)} · {item.daysOnMarket} 天</p></div>
+              <button aria-expanded={expandedRoom === item.roomId} className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium" disabled={item.adjustmentCount === 0} onClick={() => toggleAdjustments(item.roomId)} type="button">
+                <History aria-hidden="true" className="h-4 w-4" />{item.adjustmentCount} 次
+              </button>
+            </div>
+            {expandedRoom === item.roomId ? <AdjustmentTimeline error={adjustmentError} items={adjustments[item.roomId]} /> : null}
+          </article>
+        ))}
+      </div>
+      {page ? <MarketPagination page={page.page} pageSize={page.pageSize} setPage={(next) => setQuery({ ...query, page: next })} total={page.total} /> : null}
+    </div>
+  );
+}
+
+function AdjustmentTimeline({ error, items }: { error?: string; items?: ListingAdjustment[] }) {
+  if (error) return <p className="mt-3 border-l-2 border-rose-400 pl-3 text-sm text-rose-700">{error}</p>;
+  if (!items) return <p className="mt-3 text-sm text-slate-500">正在读取调价记录...</p>;
+  if (items.length === 0) return <p className="mt-3 text-sm text-slate-500">该房源没有可用调价明细</p>;
+  return (
+    <ol aria-label="调价时间线" className="mt-4 space-y-2 border-l-2 border-slate-200 pl-4">
+      {items.map((item) => <li key={`${item.adjustedAt}-${item.priceBeforeWan}-${item.priceAfterWan}`} className="text-sm"><span className="font-medium text-slate-900">{formatDateOnly(item.adjustedAt)}</span><span className="ml-3 text-slate-600">{formatWan(item.priceBeforeWan)} → {formatWan(item.priceAfterWan)}</span><span className={`ml-3 ${item.amountWan < 0 ? "text-emerald-700" : "text-rose-700"}`}>{formatSigned(item.amountWan, "万")}</span></li>)}
+    </ol>
+  );
+}
+
+function MarketTransactionsView({ complete, page, query, setQuery, state }: { complete: boolean; page?: MarketTransactionsPage; query: MarketListQuery; setQuery: (query: MarketListQuery) => void; state: "idle" | "loading" | "ready" | "failed" }) {
+  if (!complete) return <MarketUnavailableState />;
+  return (
+    <div role="tabpanel">
+      <MarketFilterBar query={query} setQuery={setQuery} />
+      {state === "loading" ? <p className="py-8 text-center text-sm text-slate-500">正在读取历史成交...</p> : null}
+      {state === "failed" ? <p className="py-8 text-center text-sm text-rose-700">成交记录读取失败</p> : null}
+      {state === "ready" && page?.items.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">没有符合筛选条件的成交记录</p> : null}
+      <div className="divide-y divide-slate-200">
+        {page?.items.map((item) => <TransactionRow item={item} key={item.roomId} />)}
+      </div>
+      {page ? <MarketPagination page={page.page} pageSize={page.pageSize} setPage={(next) => setQuery({ ...query, page: next })} total={page.total} /> : null}
+    </div>
+  );
+}
+
+function TransactionRow({ item }: { item: MarketTransaction }) {
+  return (
+    <article className="grid gap-3 py-4 sm:grid-cols-2 lg:grid-cols-[1.1fr_.8fr_.8fr_.8fr_1fr] lg:items-center">
+      <div><p className="font-semibold text-slate-900">{item.layout} · {formatProfileNumber(item.areaSqm, "㎡")}</p><p className="mt-1 text-xs text-slate-500">{item.floorDescription || item.floorBand} · {item.orientation || "朝向未知"}</p></div>
+      <div><p className="text-xs text-slate-500">挂牌 / 成交</p><p className="font-semibold text-slate-900">{formatWan(item.listingTotalPriceWan)} / {formatWan(item.tradeTotalPriceWan)}</p></div>
+      <div><p className="text-xs text-slate-500">成交单价</p><p className="font-semibold text-slate-900">{formatUnitPrice(item.tradeUnitPrice)}</p></div>
+      <div><p className="text-xs text-slate-500">议价空间</p><p className="font-semibold text-emerald-700">{formatWan(item.negotiationWan)} · {formatProfileNumber(item.negotiationPercent, "%")}</p></div>
+      <div><p className="text-xs text-slate-500">成交日期</p><p className="font-semibold text-slate-900">{formatDateOnly(item.tradeDate)}</p></div>
+    </article>
+  );
+}
+
+function MarketPagination({ page, pageSize, setPage, total }: { page: number; pageSize: number; setPage: (page: number) => void; total: number }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div className="flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-slate-600">
+      <span>共 {total} 条 · 第 {page}/{pages} 页</span>
+      <div className="flex gap-2">
+        <button aria-label="上一页" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 disabled:opacity-40" disabled={page <= 1} onClick={() => setPage(page - 1)} type="button"><ArrowLeft className="h-4 w-4" /></button>
+        <button aria-label="下一页" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 disabled:opacity-40" disabled={page >= pages} onClick={() => setPage(page + 1)} type="button"><ArrowRight className="h-4 w-4" /></button>
+      </div>
+    </div>
+  );
+}
+
+function MarketTrendsView({ snapshot }: { snapshot: CommunityMarketSnapshot }) {
+  const trade = analysisRows(snapshot.analysis, "tradeTrends", "tradeTrends");
+  const supply = analysisRows(snapshot.analysis, "supplyTrend", "supplyTrend");
+  const cycle = analysisRows(snapshot.analysis, "tradeCycle", "tradeCycle6");
+  const hot = analysisRows(snapshot.analysis, "hotIndex", "hotIndex");
+  const confidence = analysisRows(snapshot.analysis, "confidenceIndex", "confidenceIndex");
+  const roomTypes = analysisRows(snapshot.analysis, "roomType", "roomTypes");
+  if ([trade, supply, cycle, hot, confidence, roomTypes].every((rows) => rows.length === 0)) return <MarketUnavailableState />;
+  return (
+    <div className="grid gap-8 py-6 lg:grid-cols-2" role="tabpanel">
+      <MarketLineChart lines={[{ key: "avgTradePriceCommunity", label: "小区成交均价", color: "#2563eb" }, { key: "avgTradePriceDistrict", label: "区域成交均价", color: "#0f766e" }]} rows={trade} title="成交价格趋势" xKey="tradeDate" />
+      <MarketLineChart lines={[{ key: "num", label: "供应套数", color: "#2563eb" }, { key: "takeLook", label: "带看", color: "#d97706" }, { key: "supplyDemandRatio", label: "供需比", color: "#0f766e" }]} rows={supply} title="供需趋势" xKey="listingDate" />
+      <MarketLineChart lines={[{ key: "avgDealCycle", label: "平均成交周期", color: "#7c3aed" }]} rows={cycle} title="成交周期" xKey="tradeDate" />
+      <MarketLineChart lines={[{ key: "hot", label: "热度", color: "#dc2626" }]} rows={hot} title="小区热度" xKey="listingDate" />
+      <MarketLineChart lines={[{ key: "confidenceIndex", label: "信心指数", color: "#0891b2" }]} rows={confidence} title="市场信心" xKey="tradeDate" />
+      <section>
+        <h3 className="text-sm font-semibold text-slate-900">户型成交结构</h3>
+        <div className="mt-4 divide-y divide-slate-200 border-y border-slate-200">
+          {roomTypes.slice(-8).map((row, index) => <div className="grid grid-cols-3 gap-2 py-2 text-sm" key={`${String(row.tradeDate)}-${String(row.roomTypeFilter)}-${index}`}><span>{String(row.tradeDate ?? "-")}</span><span>{String(row.roomTypeFilter ?? "-")}</span><span className="text-right">{String(row.tradeNum ?? 0)} 套 · {formatUnitPrice(numberValue(row.avgTradePrice))}</span></div>)}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MarketLineChart({ lines, rows, title, xKey }: { lines: { key: string; label: string; color: string }[]; rows: Record<string, unknown>[]; title: string; xKey: string }) {
+  return (
+    <section className="min-w-0">
+      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+      <div className="mt-3 h-64 w-full">
+        <ResponsiveContainer height="100%" width="100%">
+          <LineChart data={rows} margin={{ top: 8, right: 12, left: -8, bottom: 4 }}>
+            <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey={xKey} tick={{ fill: "#64748b", fontSize: 10 }} />
+            <YAxis tick={{ fill: "#64748b", fontSize: 10 }} />
+            <Tooltip /><Legend wrapperStyle={{ fontSize: 11 }} />
+            {lines.map((line) => <Line dataKey={line.key} dot={false} key={line.key} name={line.label} stroke={line.color} strokeWidth={2} type="monotone" />)}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  );
+}
+
+function MarketSurroundingsView({ snapshot }: { snapshot: CommunityMarketSnapshot }) {
+  const groups = surroundingGroups(snapshot.surroundings);
+  if (groups.length === 0) return <MarketUnavailableState />;
+  return (
+    <div className="grid gap-x-8 gap-y-6 py-6 sm:grid-cols-2 lg:grid-cols-3" role="tabpanel">
+      {groups.map((group) => (
+        <section className="border-t border-slate-200 pt-4" key={group.name}>
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><MapPinned className="h-4 w-4 text-blue-600" />{group.name}<span className="font-normal text-slate-500">{group.total} 处</span></h3>
+          <ul className="mt-3 space-y-2 text-sm text-slate-700">{group.items.map((item) => <li className="flex justify-between gap-3" key={`${group.name}-${item.name}`}><span className="min-w-0 break-words">{item.name}</span><span className="flex-none text-xs text-slate-500">{item.distance}</span></li>)}</ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function MarketUnavailableState() {
+  return <div className="my-6 border-l-4 border-amber-400 bg-amber-50 px-5 py-4 text-sm text-amber-950">当前快照没有这一视图所需的完整来源数据。</div>;
+}
+
+function analysisRows(analysis: Record<string, unknown>, section: string, field: string): Record<string, unknown>[] {
+  const sectionValue = asRecord(analysis?.[section]);
+  const rows = sectionValue?.[field];
+  return Array.isArray(rows) ? rows.filter((item): item is Record<string, unknown> => Boolean(asRecord(item))) : [];
+}
+
+function surroundingGroups(surroundings: Record<string, unknown>): { name: string; total: number; items: { name: string; distance: string }[] }[] {
+  const poi = surroundings?.poi;
+  if (!Array.isArray(poi)) return [];
+  return poi.flatMap((rawGroup) => {
+    const group = asRecord(rawGroup);
+    const page = asRecord(group?.itemPageDate);
+    const rows = Array.isArray(page?.rows) ? page.rows : [];
+    const items = rows.slice(0, 5).flatMap((rawItem) => {
+      const item = asRecord(rawItem);
+      if (!item) return [];
+      return [{ name: String(item.poiName ?? "未命名设施"), distance: item.distance == null ? "" : `${item.distance} m` }];
+    });
+    return group ? [{ name: String(group.bizType ?? "周边"), total: numberValue(page?.total), items }] : [];
+  });
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value != null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : Number(value) || 0;
+}
+
+function formatComparisonValue(value: number | null, unit: string): string {
+  return value == null ? "暂无" : `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(value)} ${unit}`;
+}
+
+function formatSigned(value: number | null, unit: string): string {
+  if (value == null) return "暂无";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(value)} ${unit}`;
+}
+
+function formatWan(value: number): string {
+  return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value)} 万`;
+}
+
+function formatDateOnly(value: string): string {
+  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: "Asia/Shanghai" }).format(new Date(value));
+}
+
+function CommunityMarketProfilePanel({ snapshot }: { snapshot: CommunityMarketSnapshot }) {
+  const cards = [
+    { label: "挂牌均价", value: formatUnitPrice(snapshot.listingAvgUnitPrice), detail: snapshot.latestListingDate ? `截至 ${snapshot.latestListingDate}` : "日期未知" },
+    { label: "在售套数", value: formatCount(snapshot.listingCount), detail: snapshot.onSaleAreaRangeSqm ? `面积 ${snapshot.onSaleAreaRangeSqm} ㎡` : "面积段未知" },
+    { label: "近三月成交", value: formatCount(snapshot.tradeCount3Months), detail: formatUnitPrice(snapshot.tradeUnitPrice3Months) },
+    { label: "近六月成交均价", value: formatUnitPrice(snapshot.tradeAvgUnitPrice6Months), detail: snapshot.latestTradeDate ? `最新成交 ${snapshot.latestTradeDate}` : "成交日期未知" },
+    { label: "近三月新增挂牌", value: formatCount(snapshot.newListingCount3Months), detail: formatUnitPrice(snapshot.newListingUnitPrice3Months) },
+    { label: "带看与转化", value: formatCount(snapshot.takeLookCount), detail: snapshot.takeLookConversionRatePercent == null ? "转化率未知" : `转化率 ${snapshot.takeLookConversionRatePercent.toFixed(2)}%` },
+  ];
+  const profileGroups = [
+    {
+      icon: Building2,
+      title: "建筑与规模",
+      items: [
+        { label: "省份", value: formatProfileLocation(snapshot.provinceName, snapshot.provinceCode) },
+        { label: "住宅类型", value: formatProfileText(snapshot.propertyType) },
+        { label: "标签", value: snapshot.propertyTags?.join("、") || "暂无" },
+        { label: "楼栋数", value: formatProfileNumber(snapshot.buildingCount, "栋") },
+        { label: "建筑类型", value: formatProfileText(snapshot.buildingType) },
+        { label: "建成年份", value: formatProfileNumber(snapshot.buildingYear, "年") },
+        { label: "开发商", value: formatProfileText(snapshot.developer) },
+        { label: "户数", value: formatProfileNumber(snapshot.householdCount, "户") },
+        { label: "容积率", value: formatProfileNumber(snapshot.plotRatio) },
+        { label: "绿地面积", value: formatProfileNumber(snapshot.greenAreaSqm, "㎡") },
+        { label: "绿化率", value: formatProfileNumber(snapshot.greeningRatePercent, "%") },
+      ],
+    },
+    {
+      icon: CarFront,
+      title: "物业与停车",
+      items: [
+        { label: "物业公司", value: formatProfileText(snapshot.propertyManagementCompany) },
+        { label: "物业费", value: formatProfileText(snapshot.propertyFee) },
+        { label: "固定车位数", value: formatProfileNumber(snapshot.fixedParkingSpaces, "个") },
+        { label: "车位比", value: formatProfileText(snapshot.parkingRatio) },
+        { label: "停车费", value: formatProfileText(snapshot.parkingFee) },
+      ],
+    },
+    {
+      icon: Zap,
+      title: "能源与管理",
+      items: [
+        { label: "供暖", value: formatProfileText(snapshot.heatingType) },
+        { label: "用水", value: formatProfileText(snapshot.waterType) },
+        { label: "用电", value: formatProfileText(snapshot.electricityType) },
+        { label: "燃气费", value: formatProfileText(snapshot.gasCost) },
+        { label: "封闭管理", value: formatProfileText(snapshot.closedManagement) },
+        { label: "人车分流", value: formatProfileText(snapshot.manCarSeparation) },
+      ],
+    },
+  ];
+
+  return (
+    <section aria-label="小区聚合行情与档案" className="border-b border-slate-200 pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-blue-700">小区聚合行情</p>
+          <h2 className="mt-1 text-xl font-bold text-slate-900">{snapshot.communityName}</h2>
+        </div>
+        <p className="max-w-full break-all text-right text-xs text-slate-500">采集于 {formatDateTime(snapshot.collectedAt)} · {snapshot.sourceRef}</p>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        {cards.map((card) => (
+          <article key={card.label} className="rounded-md border border-slate-200 bg-white p-4">
+            <h3 className="text-xs font-medium text-slate-500">{card.label}</h3>
+            <p className="mt-2 break-words text-lg font-bold text-slate-900">{card.value}</p>
+            <p className="mt-2 break-words text-xs text-slate-500">{card.detail}</p>
+          </article>
+        ))}
+      </div>
+      <div aria-label="小区档案" className="mt-6 grid gap-x-8 gap-y-6 lg:grid-cols-3">
+        {profileGroups.map((group) => (
+          <CommunityProfileGroup key={group.title} icon={group.icon} items={group.items} title={group.title} />
+        ))}
+      </div>
+      <p className="mt-4 text-sm text-slate-600">
+        房见公开接口提供的小区级聚合值。它不会替代单套挂牌、成交明细，也不参与房源粒度指标推算。
+      </p>
+    </section>
+  );
+}
+
+function CommunityProfileGroup({
+  icon: Icon,
+  items,
+  title,
+}: {
+  icon: typeof Building2;
+  items: { label: string; value: string }[];
+  title: string;
+}) {
+  return (
+    <section className="min-w-0 border-t border-slate-200 pt-4">
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+        <Icon aria-hidden="true" className="h-4 w-4 flex-none text-blue-600" />
+        {title}
+      </h3>
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+        {items.map((item) => (
+          <div key={item.label} className="min-w-0">
+            <dt className="text-xs text-slate-500">{item.label}</dt>
+            <dd className="mt-1 break-words font-medium text-slate-900">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
 function MetricGrid({ metric }: { metric: NeighborhoodMetricResponse }) {
   const cards = [
     { label: "挂牌价区间", value: formatPriceRange(metric.listingPriceMin, metric.listingPriceMax), detail: `${metric.listingSampleCount} 条挂牌样本` },
@@ -1032,6 +1637,29 @@ function formatPriceRange(min?: number | null, max?: number | null): string {
 
 function formatNumber(value: number): string {
   return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
+}
+
+function formatUnitPrice(value?: number | null): string {
+  return value == null ? "暂无" : `${new Intl.NumberFormat("zh-CN").format(value)} 元/㎡`;
+}
+
+function formatCount(value?: number | null): string {
+	return value == null ? "暂无" : `${value} 套`;
+}
+
+function formatProfileText(value?: string | null): string {
+  return value?.trim() || "暂无";
+}
+
+function formatProfileNumber(value?: number | null, unit = ""): string {
+  if (value == null) return "暂无";
+  const formatted = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 4 }).format(value);
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function formatProfileLocation(name?: string | null, code?: string | null): string {
+  if (name && code) return `${name}（${code}）`;
+  return name || code || "暂无";
 }
 
 function formatDateTime(value: string): string {

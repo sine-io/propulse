@@ -27,13 +27,17 @@ func (r *CapacityRepository) Save(ctx context.Context, record appcapacity.Calcul
 	if err != nil {
 		return appcapacity.CalculationRecord{}, err
 	}
+	var selectionContext json.RawMessage
+	if record.SelectionContext != nil {
+		selectionContext, err = json.Marshal(record.SelectionContext)
+		if err != nil {
+			return appcapacity.CalculationRecord{}, err
+		}
+	}
 
 	model := CapacityCalculationModel{
-		ID:        record.ID,
-		UserID:    record.UserID,
-		Input:     input,
-		Result:    result,
-		CreatedAt: record.CreatedAt,
+		ID: record.ID, UserID: record.UserID, Input: input, Result: result,
+		SelectionContext: selectionContext, CreatedAt: record.CreatedAt,
 	}
 	if err := r.db.WithContext(ctx).Create(&model).Error; err != nil {
 		return appcapacity.CalculationRecord{}, err
@@ -80,43 +84,63 @@ func capacityCalculationFromModel(model CapacityCalculationModel) (appcapacity.C
 	if err := json.Unmarshal(model.Result, &result); err != nil {
 		return appcapacity.CalculationRecord{}, err
 	}
+	var selectionContext *appcapacity.SelectionContext
+	if len(model.SelectionContext) > 0 && string(model.SelectionContext) != "null" {
+		var persisted appcapacity.SelectionContext
+		if err := json.Unmarshal(model.SelectionContext, &persisted); err != nil {
+			return appcapacity.CalculationRecord{}, err
+		}
+		selectionContext = &persisted
+	}
 	return appcapacity.CalculationRecord{
-		ID: model.ID, UserID: model.UserID, Input: input.domainInput(), Result: result.domainResult(), CreatedAt: model.CreatedAt,
+		ID: model.ID, UserID: model.UserID, Input: input.domainInput(), Result: result.domainResult(),
+		SelectionContext: selectionContext, CreatedAt: model.CreatedAt,
 	}, nil
 }
 
 type capacityPersistenceInput struct {
-	CashOnHand                float64                        `json:"cashOnHand"`
-	OldHomeValue              float64                        `json:"oldHomeValue"`
-	OldLoanBalance            float64                        `json:"oldLoanBalance"`
-	MonthlyIncome             float64                        `json:"monthlyIncome"`
-	CurrentMonthlyMortgage    float64                        `json:"currentMonthlyMortgage"`
-	AcceptableMonthlyMortgage float64                        `json:"acceptableMonthlyMortgage"`
-	TargetTotalPrice          float64                        `json:"targetTotalPrice"`
-	RenovationBudget          float64                        `json:"renovationBudget"`
-	TransactionCosts          float64                        `json:"transactionCosts"`
-	TransitionRentCost        float64                        `json:"transitionRentCost"`
-	LoanOverride              *capacityPersistenceLoanParams `json:"loanOverride,omitempty"`
-	CityPolicyOverride        *capacityPersistenceCityPolicy `json:"cityPolicyOverride,omitempty"`
+	CashOnHand                float64                              `json:"cashOnHand"`
+	OldHomeValue              float64                              `json:"oldHomeValue"`
+	OldLoanBalance            float64                              `json:"oldLoanBalance"`
+	MonthlyIncome             float64                              `json:"monthlyIncome"`
+	CurrentMonthlyMortgage    float64                              `json:"currentMonthlyMortgage"`
+	AcceptableMonthlyMortgage float64                              `json:"acceptableMonthlyMortgage"`
+	TargetTotalPrice          float64                              `json:"targetTotalPrice"`
+	RenovationBudget          float64                              `json:"renovationBudget"`
+	TransactionCosts          float64                              `json:"transactionCosts"`
+	TransitionRentCost        float64                              `json:"transitionRentCost"`
+	TransactionScenario       *domaincapacity.TransactionScenario  `json:"transactionScenario,omitempty"`
+	LoanPlan                  *domaincapacity.LoanPlan             `json:"loanPlan,omitempty"`
+	ManualOverrides           *domaincapacity.CalculationOverrides `json:"manualOverrides,omitempty"`
+	LoanOverride              *capacityPersistenceLoanParams       `json:"loanOverride,omitempty"`
+	CityPolicyOverride        *capacityPersistenceCityPolicy       `json:"cityPolicyOverride,omitempty"`
 }
 
 type capacityPersistenceResult struct {
-	NetOldHomeProceeds          float64                           `json:"netOldHomeProceeds"`
-	DeployableCash              float64                           `json:"deployableCash"`
-	SafeTotalPrice              float64                           `json:"safeTotalPrice"`
-	StrainedTotalPrice          float64                           `json:"strainedTotalPrice"`
-	DangerTotalPrice            float64                           `json:"dangerTotalPrice"`
-	DownPaymentGap              float64                           `json:"downPaymentGap"`
-	MonthlyPayment              float64                           `json:"monthlyPayment"`
-	MonthlyPaymentRatio         float64                           `json:"monthlyPaymentRatio"`
-	PressureLevel               domaincapacity.PressureLevel      `json:"pressureLevel"`
-	MinimumSafeOldHomeSalePrice float64                           `json:"minimumSafeOldHomeSalePrice"`
-	Strategy                    string                            `json:"strategy"`
-	Reasons                     []string                          `json:"reasons"`
-	RuleVersion                 string                            `json:"ruleVersion,omitempty"`
-	EffectiveDate               string                            `json:"effectiveDate,omitempty"`
-	TraceabilityStatus          domaincapacity.TraceabilityStatus `json:"traceabilityStatus,omitempty"`
-	AppliedAssumptions          *capacityPersistenceAssumptions   `json:"appliedAssumptions,omitempty"`
+	NetOldHomeProceeds          float64                                `json:"netOldHomeProceeds"`
+	DeployableCash              float64                                `json:"deployableCash"`
+	SafeTotalPrice              float64                                `json:"safeTotalPrice"`
+	StrainedTotalPrice          float64                                `json:"strainedTotalPrice"`
+	DangerTotalPrice            float64                                `json:"dangerTotalPrice"`
+	DownPaymentGap              float64                                `json:"downPaymentGap"`
+	MonthlyPayment              float64                                `json:"monthlyPayment"`
+	MonthlyPaymentRatio         float64                                `json:"monthlyPaymentRatio"`
+	PressureLevel               domaincapacity.PressureLevel           `json:"pressureLevel"`
+	MinimumSafeOldHomeSalePrice float64                                `json:"minimumSafeOldHomeSalePrice"`
+	Strategy                    string                                 `json:"strategy"`
+	Reasons                     []string                               `json:"reasons"`
+	RuleVersion                 string                                 `json:"ruleVersion,omitempty"`
+	EffectiveDate               string                                 `json:"effectiveDate,omitempty"`
+	TraceabilityStatus          domaincapacity.TraceabilityStatus      `json:"traceabilityStatus,omitempty"`
+	AppliedAssumptions          *capacityPersistenceAssumptions        `json:"appliedAssumptions,omitempty"`
+	RecommendedDownPaymentRate  float64                                `json:"recommendedDownPaymentRate,omitempty"`
+	RecommendedDownPayment      float64                                `json:"recommendedDownPayment,omitempty"`
+	LoanBreakdown               *domaincapacity.LoanBreakdown          `json:"loanBreakdown,omitempty"`
+	TaxBreakdown                *domaincapacity.TaxBreakdown           `json:"taxBreakdown,omitempty"`
+	PolicyVersion               *domaincapacity.PolicyVersionReference `json:"policyVersion,omitempty"`
+	Sources                     []domaincapacity.PolicySource          `json:"sources,omitempty"`
+	ManualOverrides             []domaincapacity.AppliedManualOverride `json:"manualOverrides,omitempty"`
+	Disclaimer                  string                                 `json:"disclaimer,omitempty"`
 }
 
 type capacityPersistenceLoanParams struct {
@@ -161,7 +185,8 @@ func newCapacityPersistenceInput(input domaincapacity.HousingCapacityInput) capa
 		AcceptableMonthlyMortgage: input.AcceptableMonthlyMortgage, TargetTotalPrice: input.TargetTotalPrice,
 		RenovationBudget: input.RenovationBudget, TransactionCosts: input.TransactionCosts,
 		TransitionRentCost: input.TransitionRentCost, LoanOverride: newCapacityPersistenceLoanParams(input.LoanOverride),
-		CityPolicyOverride: newCapacityPersistenceCityPolicy(input.CityPolicyOverride),
+		CityPolicyOverride: newCapacityPersistenceCityPolicy(input.CityPolicyOverride), TransactionScenario: input.TransactionScenario,
+		LoanPlan: input.LoanPlan, ManualOverrides: input.ManualOverrides,
 	}
 }
 
@@ -172,7 +197,8 @@ func (input capacityPersistenceInput) domainInput() domaincapacity.HousingCapaci
 		AcceptableMonthlyMortgage: input.AcceptableMonthlyMortgage, TargetTotalPrice: input.TargetTotalPrice,
 		RenovationBudget: input.RenovationBudget, TransactionCosts: input.TransactionCosts,
 		TransitionRentCost: input.TransitionRentCost, LoanOverride: input.LoanOverride.domainPtr(),
-		CityPolicyOverride: input.CityPolicyOverride.domainPtr(),
+		CityPolicyOverride: input.CityPolicyOverride.domainPtr(), TransactionScenario: input.TransactionScenario,
+		LoanPlan: input.LoanPlan, ManualOverrides: input.ManualOverrides,
 	}
 }
 
@@ -185,7 +211,10 @@ func newCapacityPersistenceResult(result domaincapacity.HousingCapacityResult) c
 		PressureLevel: result.PressureLevel, MinimumSafeOldHomeSalePrice: result.MinimumSafeOldHomeSalePrice,
 		Strategy: result.Strategy, Reasons: result.Reasons, RuleVersion: result.RuleVersion,
 		EffectiveDate: result.EffectiveDate, TraceabilityStatus: result.TraceabilityStatus,
-		AppliedAssumptions: newCapacityPersistenceAssumptions(result.AppliedAssumptions),
+		AppliedAssumptions:         newCapacityPersistenceAssumptions(result.AppliedAssumptions),
+		RecommendedDownPaymentRate: result.RecommendedDownPaymentRate, RecommendedDownPayment: result.RecommendedDownPayment,
+		LoanBreakdown: result.LoanBreakdown, TaxBreakdown: result.TaxBreakdown, PolicyVersion: result.PolicyVersion,
+		Sources: result.Sources, ManualOverrides: result.ManualOverrides, Disclaimer: result.Disclaimer,
 	}
 }
 
@@ -198,7 +227,10 @@ func (result capacityPersistenceResult) domainResult() domaincapacity.HousingCap
 		PressureLevel: result.PressureLevel, MinimumSafeOldHomeSalePrice: result.MinimumSafeOldHomeSalePrice,
 		Strategy: result.Strategy, Reasons: result.Reasons, RuleVersion: result.RuleVersion,
 		EffectiveDate: result.EffectiveDate, TraceabilityStatus: result.TraceabilityStatus,
-		AppliedAssumptions: result.AppliedAssumptions.domainPtr(),
+		AppliedAssumptions:         result.AppliedAssumptions.domainPtr(),
+		RecommendedDownPaymentRate: result.RecommendedDownPaymentRate, RecommendedDownPayment: result.RecommendedDownPayment,
+		LoanBreakdown: result.LoanBreakdown, TaxBreakdown: result.TaxBreakdown, PolicyVersion: result.PolicyVersion,
+		Sources: result.Sources, ManualOverrides: result.ManualOverrides, Disclaimer: result.Disclaimer,
 	}
 	if domainResult.AppliedAssumptions == nil {
 		domainResult.TraceabilityStatus = domaincapacity.TraceabilityLegacyUnversioned

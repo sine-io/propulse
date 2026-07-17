@@ -89,6 +89,9 @@ type HousingCapacityInput struct {
 	RenovationBudget          float64
 	TransactionCosts          float64
 	TransitionRentCost        float64
+	TransactionScenario       *TransactionScenario
+	LoanPlan                  *LoanPlan
+	ManualOverrides           *CalculationOverrides
 	LoanOverride              *LoanParams
 	CityPolicyOverride        *CityPolicy
 }
@@ -110,6 +113,14 @@ type HousingCapacityResult struct {
 	EffectiveDate               string
 	TraceabilityStatus          TraceabilityStatus
 	AppliedAssumptions          *Assumptions
+	RecommendedDownPaymentRate  float64
+	RecommendedDownPayment      float64
+	LoanBreakdown               *LoanBreakdown
+	TaxBreakdown                *TaxBreakdown
+	PolicyVersion               *PolicyVersionReference
+	Sources                     []PolicySource
+	ManualOverrides             []AppliedManualOverride
+	Disclaimer                  string
 }
 
 func (input HousingCapacityInput) ValidateAt(asOf time.Time) error {

@@ -5,10 +5,19 @@ import { setAccessToken } from "@/lib/access-token";
 import {
   addWatchlistItem,
   ApiError,
+  compareCommunityMarkets,
+  getListingAdjustments,
+  getMarketListings,
+  getMarketTransactions,
   getMetricHistory,
+  getCommunityMarketSnapshot,
   getNeighborhood,
   getNeighborhoodMetrics,
   searchNeighborhoods,
+  type CommunityMarketSnapshot,
+  type CommunityMarketComparison,
+  type MarketListingsPage,
+  type MarketTransactionsPage,
   type MetricHistoryPoint,
   type MetricHistoryResponse,
   type Neighborhood,
@@ -23,7 +32,12 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
   return {
     ...actual,
     addWatchlistItem: vi.fn(),
+    compareCommunityMarkets: vi.fn(),
+    getListingAdjustments: vi.fn(),
+    getMarketListings: vi.fn(),
+    getMarketTransactions: vi.fn(),
     getMetricHistory: vi.fn(),
+    getCommunityMarketSnapshot: vi.fn(),
     getNeighborhood: vi.fn(),
     getNeighborhoodMetrics: vi.fn(),
     searchNeighborhoods: vi.fn(),
@@ -48,6 +62,14 @@ const secondNeighborhoodFixture: Neighborhood = {
   city: "上海",
   area: "浦东",
   availableLayouts: ["一房"],
+};
+
+const mingquanFixture: Neighborhood = {
+  id: "99999999-9999-4999-8999-999999999999",
+  name: "鸣泉花园",
+  city: "天津",
+  area: "梅江",
+  availableLayouts: ["87㎡", "88㎡"],
 };
 
 const transactionEvidence = {
@@ -154,13 +176,166 @@ const catalogFixture: NeighborhoodSearchResponse = {
   },
 };
 
+const communityMarketFixture: CommunityMarketSnapshot = {
+  id: "88888888-8888-4888-8888-888888888888",
+  dataSourceId: dataSourceID,
+  neighborhoodId: neighborhoodID,
+  sourceRef: "fangjian-mingquan-2026-07-16T125857Z",
+  collectedAt: "2026-07-16T12:58:57Z",
+  contentChecksum: "a".repeat(64),
+  collectionRunId: null,
+  qualityStatus: "aggregate_only",
+  sourceCommunityId: "a2d56505411446cfe70fd3960beb19c7",
+  communityName: "富力津门湖鸣泉花园",
+  formerName: "鸣泉花园",
+  provinceCode: "120000",
+  provinceName: "天津市",
+  cityCode: "120100",
+  cityName: "天津市",
+  districtCode: "120111",
+  districtName: "西青区",
+  blockCode: "BK2022112435579",
+  blockName: "梅江南",
+  propertyType: "普通住宅",
+  propertyTags: ["商品房", "私产"],
+  buildingCount: 11,
+  buildingType: "板楼",
+  buildingYear: 2012,
+  developer: "天津耀华投资发展有限公司",
+  householdCount: 1089,
+  closedManagement: "是",
+  plotRatio: 1.8,
+  greenAreaSqm: 14271,
+  greeningRatePercent: 40,
+  propertyManagementCompany: "天津碧桂园物业有限公司",
+  propertyFee: "2.3-2.9",
+  fixedParkingSpaces: 1550,
+  parkingRatio: "1:0.7",
+  parkingFee: "500",
+  heatingType: "集中供暖",
+  waterType: "民水",
+  electricityType: "民电",
+  gasCost: "2.5-2.61",
+  manCarSeparation: "否",
+  latitude: 39.057089,
+  longitude: 117.203624,
+  latestListingDate: "2026-06-29",
+  listingAvgUnitPrice: 22741,
+  listingCount: 46,
+  listingAreaSqm: 5491.78,
+  listingAvgTotalPriceWan: 272,
+  listingAvgUnitPrice6Months: 22884.52,
+  newListingCount3Months: 9,
+  newListingAvgTotalPrice3MonthsWan: 270,
+  newListingUnitPrice3Months: 20425,
+  latestTradeDate: "2026-06-12",
+  latestTradeAvgUnitPrice: 16461,
+  tradeCount3Months: 5,
+  tradeArea3MonthsSqm: 639.37,
+  tradeAvgTotalPrice3MonthsWan: 215,
+  tradeUnitPrice3Months: 16780,
+  tradeAvgUnitPrice6Months: 17371,
+  tradeCountPerMonth6Months: 1,
+  takeLookCount: 125,
+  takeLookConversionRatePercent: 3.25,
+  onSaleAreaRangeSqm: "84-229",
+  onSalePriceRangeWan: "149-479",
+  onSaleRoomTypes: ["五室", "四室", "二室", "三室"],
+  analysis: {},
+  surroundings: {},
+  cityContext: {},
+  createdAt: "2026-07-16T13:00:00Z",
+};
+
+const communityMarketWithoutProfile: CommunityMarketSnapshot = {
+  ...communityMarketFixture,
+  provinceCode: null,
+  provinceName: null,
+  propertyType: null,
+  propertyTags: null,
+  buildingCount: null,
+  buildingType: null,
+  buildingYear: null,
+  developer: null,
+  householdCount: null,
+  closedManagement: null,
+  plotRatio: null,
+  greenAreaSqm: null,
+  greeningRatePercent: null,
+  propertyManagementCompany: null,
+  propertyFee: null,
+  fixedParkingSpaces: null,
+  parkingRatio: null,
+  parkingFee: null,
+  heatingType: null,
+  waterType: null,
+  electricityType: null,
+  gasCost: null,
+  manCarSeparation: null,
+};
+
+const completeCommunityMarket: CommunityMarketSnapshot = {
+  ...communityMarketFixture,
+  collectionRunId: collectionRunID,
+  qualityStatus: "complete",
+  analysis: {
+    tradeTrends: { tradeTrends: [{ tradeDate: "2026-06", avgTradePriceCommunity: 16780, avgTradePriceDistrict: 22000 }] },
+    supplyTrend: { supplyTrend: [{ listingDate: "2026-06", num: 46, takeLook: 125, supplyDemandRatio: 2.1 }] },
+    tradeCycle: { tradeCycle6: [{ tradeDate: "2026-06", avgDealCycle: 91 }] },
+    hotIndex: { hotIndex: [{ listingDate: "2026-06", hot: 121 }] },
+    confidenceIndex: { confidenceIndex: [{ tradeDate: "2026-06", confidenceIndex: 57 }] },
+    roomType: { roomTypes: [{ tradeDate: "2026-06", roomTypeFilter: "二室", tradeNum: 4, avgTradePrice: 16000 }] },
+  },
+  surroundings: {
+    poi: [{ bizType: "交通", itemPageDate: { total: 1, rows: [{ poiName: "梅江会展中心站", distance: 850 }] } }],
+  },
+};
+
+const peerMarket: CommunityMarketSnapshot = {
+  ...completeCommunityMarket,
+  id: "99999999-9999-4999-8999-999999999999",
+  neighborhoodId: secondNeighborhoodFixture.id,
+  collectionRunId: "55555555-5555-4555-8555-555555555555",
+  communityName: "亲和美园",
+  sourceCommunityId: "0a5b87b0d81dadbb50fb85df01489a13",
+  listingAvgUnitPrice: 8000,
+  listingCount: 71,
+  tradeCount3Months: 12,
+};
+
+const marketComparison: CommunityMarketComparison = {
+  primary: completeCommunityMarket,
+  peer: peerMarket,
+  listingUnitPrice: { primary: 22741, peer: 8000, delta: 14741 },
+  supply: { primary: 46, peer: 71, delta: -25 },
+  recentTrades: { primary: 5, peer: 12, delta: -7 },
+  listingTradeGap: { primary: 5961, peer: 2000, delta: 3961 },
+  averageTradeCycle: { primary: 91, peer: 75, delta: 16 },
+};
+
+const marketListings: MarketListingsPage = {
+  items: [{ roomId: "room-1", layout: "二室", areaSqm: 78.67, listingTotalPriceWan: 63, listingUnitPrice: 8009, listedAt: "2026-06-28T00:00:00Z", daysOnMarket: 19, floorBand: "高楼层", floorDescription: "高楼层(共18层)", orientation: "南 北", adjustmentCount: 2, followCount: 3, lookCount30Days: 1 }],
+  total: 1,
+  page: 1,
+  pageSize: 10,
+};
+
+const marketTransactions: MarketTransactionsPage = {
+  items: [{ roomId: "trade-1", layout: "二室", areaSqm: 81.43, listingTotalPriceWan: 53, tradeTotalPriceWan: 45, tradeUnitPrice: 5526.22, tradeDate: "2026-06-14T00:00:00Z", negotiationWan: 8, negotiationPercent: 15.09, floorBand: "高楼层", floorDescription: "高楼层/18层", orientation: "南", adjustmentCount: 9 }],
+  total: 1,
+  page: 1,
+  pageSize: 10,
+};
+
 describe("NeighborhoodsPage add flow", () => {
   beforeEach(() => {
     vi.mocked(addWatchlistItem).mockReset();
     vi.mocked(getMetricHistory).mockReset();
+    vi.mocked(getCommunityMarketSnapshot).mockReset().mockRejectedValue(new ApiError("not_found", "missing", 404));
     vi.mocked(getNeighborhood).mockReset().mockImplementation(async (id) => {
       if (id === neighborhoodID) return neighborhoodFixture;
       if (id === secondNeighborhoodFixture.id) return secondNeighborhoodFixture;
+      if (id === mingquanFixture.id) return mingquanFixture;
       throw new ApiError("not_found", "missing", 404);
     });
     vi.mocked(getNeighborhoodMetrics).mockReset();
@@ -266,7 +441,8 @@ describe("NeighborhoodsPage add flow", () => {
   it("renders loading, empty, failed, and retry catalog states", async () => {
     vi.mocked(searchNeighborhoods).mockReturnValueOnce(new Promise(() => undefined));
     const { unmount } = render(<NeighborhoodsPage initialNeighborhoodId="" />);
-    expect(await screen.findByText("正在加载小区目录")).toBeInTheDocument();
+    const loadingText = await screen.findByText("正在加载小区目录");
+    expect(loadingText.closest("[role=status]")?.querySelector(".animate-spin")).toBeInTheDocument();
     unmount();
 
     vi.mocked(searchNeighborhoods).mockReset()
@@ -286,6 +462,46 @@ describe("NeighborhoodsPage add flow", () => {
     fireEvent.change(screen.getByLabelText("板块"), { target: { value: "滨江" } });
 
     expect(await screen.findByText("没有匹配的小区")).toBeInTheDocument();
+  });
+
+  it.each(["鸣泉花园", "鸣泉"])("shows and selects a pure name result for %s", async (keyword) => {
+    vi.mocked(searchNeighborhoods).mockImplementation(async (query) => {
+      const q = typeof query === "string" ? query : query?.q;
+      return {
+        items: q ? [mingquanFixture] : [],
+        total: q ? 1 : 0,
+        page: 1,
+        pageSize: 100,
+        filters: { cities: ["天津"], areas: [{ city: "天津", area: "梅江" }] },
+      };
+    });
+    render(<NeighborhoodsPage initialNeighborhoodId="" />);
+
+    fireEvent.change(await screen.findByLabelText("小区名称"), { target: { value: keyword } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    const result = await screen.findByRole("button", { name: /鸣泉花园/ });
+    fireEvent.click(result);
+
+    expect(screen.getByLabelText("城市")).toHaveValue("天津");
+    expect(screen.getByLabelText("板块")).toHaveValue("梅江");
+    expect(screen.getByLabelText("小区")).toHaveValue(mingquanFixture.id);
+    expect(screen.getByLabelText("目标户型")).not.toBeDisabled();
+  });
+
+  it("shows an empty state for a pure name search without city or area", async () => {
+    vi.mocked(searchNeighborhoods).mockResolvedValue({
+      ...catalogFixture,
+      items: [],
+      total: 0,
+    });
+    render(<NeighborhoodsPage initialNeighborhoodId="" />);
+
+    fireEvent.change(await screen.findByLabelText("小区名称"), { target: { value: "不存在的小区" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+
+    expect(await screen.findByText("没有匹配的小区")).toBeInTheDocument();
+    expect(screen.getByLabelText("城市")).toHaveValue("");
+    expect(screen.getByLabelText("板块")).toHaveValue("");
   });
 
   it("keeps the target on duplicate and failed submissions, then retries", async () => {
@@ -322,10 +538,15 @@ describe("NeighborhoodsPage add flow", () => {
 describe("NeighborhoodsPage detail", () => {
   beforeEach(() => {
     vi.mocked(addWatchlistItem).mockReset();
+    vi.mocked(getCommunityMarketSnapshot).mockReset().mockRejectedValue(new ApiError("not_found", "missing", 404));
     vi.mocked(getNeighborhood).mockReset().mockResolvedValue(neighborhoodFixture);
     vi.mocked(getNeighborhoodMetrics).mockReset().mockResolvedValue(metricFixture);
     vi.mocked(getMetricHistory).mockReset().mockResolvedValue(historyFixture);
     vi.mocked(searchNeighborhoods).mockReset();
+    vi.mocked(compareCommunityMarkets).mockReset();
+    vi.mocked(getListingAdjustments).mockReset();
+    vi.mocked(getMarketListings).mockReset();
+    vi.mocked(getMarketTransactions).mockReset();
     window.sessionStorage.clear();
     window.history.replaceState({}, "", `/neighborhoods?id=${neighborhoodID}&targetLayout=%E4%B8%A4%E6%88%BF`);
   });
@@ -339,6 +560,85 @@ describe("NeighborhoodsPage detail", () => {
     expect(getMetricHistory).toHaveBeenCalledWith(neighborhoodID, "两房", {}, expect.any(AbortSignal));
     expect(screen.getByLabelText("目标户型")).toHaveValue("两房");
     expect(screen.queryByText("降价提醒")).not.toBeInTheDocument();
+  });
+
+  it("renders a complete community profile with source-native values", async () => {
+    vi.mocked(getCommunityMarketSnapshot).mockResolvedValueOnce(communityMarketFixture);
+    render(<NeighborhoodsPage initialNeighborhoodId={neighborhoodID} />);
+
+    expect(await screen.findByLabelText("小区档案")).toBeInTheDocument();
+    for (const heading of ["建筑与规模", "物业与停车", "能源与管理"]) {
+      expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    }
+    expect(screen.getByText("天津市（120000）")).toBeInTheDocument();
+    expect(screen.getByText("天津耀华投资发展有限公司")).toBeInTheDocument();
+    expect(screen.getByText("2.3-2.9")).toBeInTheDocument();
+    expect(screen.getByText("2.5-2.61")).toBeInTheDocument();
+    expect(screen.getByText(/不会替代单套挂牌、成交明细/)).toBeInTheDocument();
+  });
+
+  it("supports comparison tabs, real listing adjustments, transactions, trends, and surroundings", async () => {
+    vi.mocked(getCommunityMarketSnapshot).mockResolvedValueOnce(completeCommunityMarket);
+    vi.mocked(searchNeighborhoods).mockResolvedValueOnce({
+      items: [neighborhoodFixture, secondNeighborhoodFixture], total: 2, page: 1, pageSize: 100,
+      filters: { cities: ["杭州", "上海"], areas: [{ city: "杭州", area: "滨江" }, { city: "上海", area: "浦东" }] },
+    });
+    vi.mocked(compareCommunityMarkets).mockResolvedValueOnce(marketComparison);
+    vi.mocked(getMarketListings).mockResolvedValue(marketListings);
+    vi.mocked(getMarketTransactions).mockResolvedValue(marketTransactions);
+    vi.mocked(getListingAdjustments).mockResolvedValueOnce({ items: [
+      { id: "66666666-6666-4666-8666-666666666666", roomId: "room-1", adjustedAt: "2026-06-29T00:00:00Z", priceBeforeWan: 65, priceAfterWan: 63, amountWan: -2 },
+    ] });
+
+    render(<NeighborhoodsPage initialNeighborhoodId={neighborhoodID} />);
+
+    expect(await screen.findByText("完整数据包")).toBeInTheDocument();
+    await waitFor(() => expect(compareCommunityMarkets).toHaveBeenCalledWith(neighborhoodID, secondNeighborhoodFixture.id, expect.any(AbortSignal)));
+    expect(await screen.findByLabelText("双小区行情比较")).toHaveTextContent("亲和美园");
+
+    fireEvent.click(screen.getByRole("tab", { name: "在售" }));
+    expect(await screen.findByText(/高楼层\(共18层\) · 南 北/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "2 次" }));
+    expect(await screen.findByLabelText("调价时间线")).toHaveTextContent("-2 万");
+
+    fireEvent.click(screen.getByRole("tab", { name: "成交" }));
+    expect(await screen.findByText("53 万 / 45 万")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "趋势与调价" }));
+    expect(screen.getByRole("heading", { name: "成交价格趋势" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "市场信心" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "周边" }));
+    expect(screen.getByText("梅江会展中心站")).toBeInTheDocument();
+  });
+
+  it("renders partial profile values and marks missing values as unavailable", async () => {
+    vi.mocked(getCommunityMarketSnapshot).mockResolvedValueOnce({
+      ...communityMarketWithoutProfile,
+      propertyType: "普通住宅",
+      heatingType: "集中供暖",
+    });
+    render(<NeighborhoodsPage initialNeighborhoodId={neighborhoodID} />);
+
+    expect(await screen.findByText("普通住宅")).toBeInTheDocument();
+    expect(screen.getByText("集中供暖")).toBeInTheDocument();
+    expect(screen.getAllByText("暂无").length).toBeGreaterThan(0);
+  });
+
+  it("renders an older market snapshot with no profile as an empty profile", async () => {
+    vi.mocked(getCommunityMarketSnapshot).mockResolvedValueOnce(communityMarketWithoutProfile);
+    render(<NeighborhoodsPage initialNeighborhoodId={neighborhoodID} />);
+
+    expect(await screen.findByLabelText("小区档案")).toBeInTheDocument();
+    expect(screen.getAllByText("暂无").length).toBeGreaterThanOrEqual(20);
+  });
+
+  it("omits the aggregate and profile panel when the snapshot endpoint returns 404", async () => {
+    render(<NeighborhoodsPage initialNeighborhoodId={neighborhoodID} />);
+
+    expect(await screen.findByRole("heading", { name: "接口花园" })).toBeInTheDocument();
+    await waitFor(() => expect(getCommunityMarketSnapshot).toHaveBeenCalled());
+    expect(screen.queryByLabelText("小区档案")).not.toBeInTheDocument();
   });
 
   it("does not request metrics until a detail layout is selected", async () => {

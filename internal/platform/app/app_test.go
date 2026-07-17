@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	appcollection "github.com/sine-io/propulse/internal/application/collection"
+	appcommunitymarket "github.com/sine-io/propulse/internal/application/communitymarket"
 	appdecision "github.com/sine-io/propulse/internal/application/decision"
 	appneighborhood "github.com/sine-io/propulse/internal/application/neighborhood"
 	appreview "github.com/sine-io/propulse/internal/application/review"
@@ -197,12 +198,13 @@ func TestRunWaitsForInFlightHTTPHandlerBeforeClosingRuntime(t *testing.T) {
 	}
 	runtimeClosed := make(chan struct{})
 	rt := &runtime{
-		capacity:     capacity,
-		neighborhood: &stubAppNeighborhoodApplication{},
-		collection:   &stubAppCollectionApplication{},
-		decision:     &stubAppDecisionApplication{},
-		review:       &stubAppReviewApplication{},
-		queueClient:  closeSignalCloser{closed: runtimeClosed},
+		capacity:        capacity,
+		neighborhood:    &stubAppNeighborhoodApplication{},
+		collection:      &stubAppCollectionApplication{},
+		communityMarket: &stubAppCommunityMarketApplication{},
+		decision:        &stubAppDecisionApplication{},
+		review:          &stubAppReviewApplication{},
+		queueClient:     closeSignalCloser{closed: runtimeClosed},
 	}
 	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
 		return rt, nil
@@ -439,12 +441,13 @@ func TestRunStartsAPIModeWithInjectedCapacityApplication(t *testing.T) {
 			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
 		}
 		return &runtime{
-			capacity:     service,
-			neighborhood: &stubAppNeighborhoodApplication{},
-			collection:   &stubAppCollectionApplication{},
-			decision:     &stubAppDecisionApplication{},
-			review:       &stubAppReviewApplication{},
-			queueClient:  noopCloser{},
+			capacity:        service,
+			neighborhood:    &stubAppNeighborhoodApplication{},
+			collection:      &stubAppCollectionApplication{},
+			communityMarket: &stubAppCommunityMarketApplication{},
+			decision:        &stubAppDecisionApplication{},
+			review:          &stubAppReviewApplication{},
+			queueClient:     noopCloser{},
 		}, nil
 	}
 
@@ -513,12 +516,13 @@ func TestRunStartsAPIModeWithInjectedNeighborhoodApplication(t *testing.T) {
 			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
 		}
 		return &runtime{
-			capacity:     &stubAppCapacityApplication{},
-			neighborhood: service,
-			collection:   &stubAppCollectionApplication{},
-			decision:     &stubAppDecisionApplication{},
-			review:       &stubAppReviewApplication{},
-			queueClient:  noopCloser{},
+			capacity:        &stubAppCapacityApplication{},
+			neighborhood:    service,
+			collection:      &stubAppCollectionApplication{},
+			communityMarket: &stubAppCommunityMarketApplication{},
+			decision:        &stubAppDecisionApplication{},
+			review:          &stubAppReviewApplication{},
+			queueClient:     noopCloser{},
 		}, nil
 	}
 
@@ -574,12 +578,13 @@ func TestRunStartsAPIModeWithInjectedCollectionApplication(t *testing.T) {
 			t.Fatalf("DatabaseURL = %q, want postgres://test", cfg.DatabaseURL)
 		}
 		return &runtime{
-			capacity:     &stubAppCapacityApplication{},
-			neighborhood: &stubAppNeighborhoodApplication{},
-			collection:   service,
-			decision:     &stubAppDecisionApplication{},
-			review:       &stubAppReviewApplication{},
-			queueClient:  noopCloser{},
+			capacity:        &stubAppCapacityApplication{},
+			neighborhood:    &stubAppNeighborhoodApplication{},
+			collection:      service,
+			communityMarket: &stubAppCommunityMarketApplication{},
+			decision:        &stubAppDecisionApplication{},
+			review:          &stubAppReviewApplication{},
+			queueClient:     noopCloser{},
 		}, nil
 	}
 
@@ -621,12 +626,13 @@ func TestRunHTTPServerPassesRuntimeReadinessCheckerToRouter(t *testing.T) {
 
 	checker := &appReadinessStub{}
 	rt := &runtime{
-		capacity:     &stubAppCapacityApplication{},
-		neighborhood: &stubAppNeighborhoodApplication{},
-		collection:   &stubAppCollectionApplication{},
-		decision:     &stubAppDecisionApplication{},
-		review:       &stubAppReviewApplication{},
-		readiness:    checker,
+		capacity:        &stubAppCapacityApplication{},
+		neighborhood:    &stubAppNeighborhoodApplication{},
+		collection:      &stubAppCollectionApplication{},
+		communityMarket: &stubAppCommunityMarketApplication{},
+		decision:        &stubAppDecisionApplication{},
+		review:          &stubAppReviewApplication{},
+		readiness:       checker,
 	}
 	listenAndServe = func(server *http.Server) error {
 		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
@@ -660,12 +666,13 @@ func testRunStartsHTTPServer(t *testing.T, mode string) {
 	}()
 	openRuntimeFunc = func(_ context.Context, _ config.Config, _ zerolog.Logger) (*runtime, error) {
 		return &runtime{
-			capacity:     &stubAppCapacityApplication{},
-			neighborhood: &stubAppNeighborhoodApplication{},
-			collection:   &stubAppCollectionApplication{},
-			decision:     &stubAppDecisionApplication{},
-			review:       &stubAppReviewApplication{},
-			queueClient:  noopCloser{},
+			capacity:        &stubAppCapacityApplication{},
+			neighborhood:    &stubAppNeighborhoodApplication{},
+			collection:      &stubAppCollectionApplication{},
+			communityMarket: &stubAppCommunityMarketApplication{},
+			decision:        &stubAppDecisionApplication{},
+			review:          &stubAppReviewApplication{},
+			queueClient:     noopCloser{},
 		}, nil
 	}
 	startQueueWorker = func(ctx context.Context, _ config.Config, _ zerolog.Logger, _ *runtime) error {
@@ -884,8 +891,16 @@ func (s *stubAppCapacityApplication) CreateCalculation(_ context.Context, _ appc
 	return s.createRecord, nil
 }
 
-func (s *stubAppCapacityApplication) GetAssumptions(_ context.Context, _ appcapacity.GetAssumptionsQuery) (domaincapacity.Assumptions, error) {
-	return domaincapacity.Assumptions{}, nil
+func (s *stubAppCapacityApplication) GetAssumptions(_ context.Context, _ appcapacity.GetAssumptionsQuery) (appcapacity.AssumptionsView, error) {
+	return appcapacity.AssumptionsView{}, nil
+}
+
+func (s *stubAppCapacityApplication) ListPolicyVersions(context.Context, appcapacity.ListPolicyVersionsQuery) ([]domaincapacity.HousingPolicyVersion, error) {
+	return []domaincapacity.HousingPolicyVersion{}, nil
+}
+
+func (s *stubAppCapacityApplication) CreatePolicyVersion(_ context.Context, command appcapacity.CreatePolicyVersionCommand) (domaincapacity.HousingPolicyVersion, error) {
+	return command.Policy, nil
 }
 
 func (s *stubAppCapacityApplication) GetCalculation(_ context.Context, _ appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error) {
@@ -938,6 +953,35 @@ type stubAppCollectionApplication struct {
 	refreshCandidates []appcollection.MetricRefreshCandidate
 }
 
+type stubAppCommunityMarketApplication struct{}
+
+func (*stubAppCommunityMarketApplication) ImportSnapshot(context.Context, appcommunitymarket.ImportSnapshotCommand) (appcommunitymarket.ImportSnapshotResult, error) {
+	return appcommunitymarket.ImportSnapshotResult{}, nil
+}
+
+func (*stubAppCommunityMarketApplication) LatestSnapshot(context.Context, appcommunitymarket.LatestSnapshotQuery) (appcommunitymarket.Snapshot, error) {
+	return appcommunitymarket.Snapshot{}, appcommunitymarket.ErrSnapshotNotFound
+}
+
+func (*stubAppCommunityMarketApplication) ImportFangjian(context.Context, appcommunitymarket.ImportFangjianCommand) (appcommunitymarket.ImportFangjianResult, error) {
+	return appcommunitymarket.ImportFangjianResult{}, nil
+}
+func (*stubAppCommunityMarketApplication) ListListings(context.Context, appcommunitymarket.MarketListQuery) (appcommunitymarket.Page[appcommunitymarket.MarketListing], error) {
+	return appcommunitymarket.Page[appcommunitymarket.MarketListing]{}, nil
+}
+func (*stubAppCommunityMarketApplication) GetListing(context.Context, appcommunitymarket.GetListingQuery) (appcommunitymarket.MarketListingDetail, error) {
+	return appcommunitymarket.MarketListingDetail{}, appcommunitymarket.ErrListingNotFound
+}
+func (*stubAppCommunityMarketApplication) ListTransactions(context.Context, appcommunitymarket.MarketListQuery) (appcommunitymarket.Page[appcommunitymarket.MarketTransaction], error) {
+	return appcommunitymarket.Page[appcommunitymarket.MarketTransaction]{}, nil
+}
+func (*stubAppCommunityMarketApplication) ListingAdjustments(context.Context, appcommunitymarket.ListingAdjustmentsQuery) ([]appcommunitymarket.ListingAdjustment, error) {
+	return nil, nil
+}
+func (*stubAppCommunityMarketApplication) Compare(context.Context, appcommunitymarket.ComparisonQuery) (appcommunitymarket.Comparison, error) {
+	return appcommunitymarket.Comparison{}, nil
+}
+
 type stubMetricTaskEnqueuer struct {
 	mu               sync.Mutex
 	neighborhoodIDs  []string
@@ -981,6 +1025,10 @@ func (s *stubAppCollectionApplication) ImportCollectionRun(_ context.Context, _ 
 
 func (s *stubAppCollectionApplication) GetCollectionRun(context.Context, appcollection.GetCollectionRunQuery) (appcollection.CollectionRunDetail, error) {
 	return appcollection.CollectionRunDetail{}, nil
+}
+
+func (s *stubAppCollectionApplication) ListCollectionRuns(context.Context, appcollection.ListCollectionRunsQuery) (appcollection.CollectionRunsPage, error) {
+	return appcollection.CollectionRunsPage{Items: []appcollection.CollectionRunSummary{}, Page: 1, PageSize: 20}, nil
 }
 
 func (s *stubAppCollectionApplication) ListMetricRefreshCandidates(_ context.Context, query appcollection.ListMetricRefreshCandidatesQuery) ([]appcollection.MetricRefreshCandidate, error) {

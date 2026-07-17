@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,7 @@ import (
 
 type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
-	GetAssumptions(ctx context.Context, query appcapacity.GetAssumptionsQuery) (domaincapacity.Assumptions, error)
+	GetAssumptions(ctx context.Context, query appcapacity.GetAssumptionsQuery) (appcapacity.AssumptionsView, error)
 	GetCalculation(ctx context.Context, query appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error)
 	LatestCalculation(ctx context.Context, query appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error)
 }
@@ -28,18 +29,37 @@ func NewCapacity(app CapacityApplication, userID string) Capacity {
 }
 
 type housingCapacityInputRequest struct {
-	CashOnHand                *float64                `json:"cashOnHand"`
-	OldHomeValue              *float64                `json:"oldHomeValue"`
-	OldLoanBalance            *float64                `json:"oldLoanBalance"`
-	MonthlyIncome             *float64                `json:"monthlyIncome"`
-	CurrentMonthlyMortgage    *float64                `json:"currentMonthlyMortgage"`
-	AcceptableMonthlyMortgage *float64                `json:"acceptableMonthlyMortgage"`
-	TargetTotalPrice          *float64                `json:"targetTotalPrice"`
-	RenovationBudget          *float64                `json:"renovationBudget"`
-	TransactionCosts          *float64                `json:"transactionCosts"`
-	TransitionRentCost        *float64                `json:"transitionRentCost"`
-	LoanOverride              *loanParamsRequest      `json:"loanOverride,omitempty"`
-	CityPolicyOverride        *cityPolicyInputRequest `json:"cityPolicyOverride,omitempty"`
+	CashOnHand                *float64                     `json:"cashOnHand"`
+	OldHomeValue              *float64                     `json:"oldHomeValue"`
+	OldLoanBalance            *float64                     `json:"oldLoanBalance"`
+	MonthlyIncome             *float64                     `json:"monthlyIncome"`
+	CurrentMonthlyMortgage    *float64                     `json:"currentMonthlyMortgage"`
+	AcceptableMonthlyMortgage *float64                     `json:"acceptableMonthlyMortgage"`
+	TargetTotalPrice          *float64                     `json:"targetTotalPrice"`
+	RenovationBudget          *float64                     `json:"renovationBudget"`
+	TransactionCosts          *float64                     `json:"transactionCosts"`
+	TransitionRentCost        *float64                     `json:"transitionRentCost"`
+	TransactionScenario       *transactionScenarioRequest  `json:"transactionScenario,omitempty"`
+	LoanPlan                  *loanPlanRequest             `json:"loanPlan,omitempty"`
+	ManualOverrides           *calculationOverridesRequest `json:"manualOverrides,omitempty"`
+	LoanOverride              *loanParamsRequest           `json:"loanOverride,omitempty"`
+	CityPolicyOverride        *cityPolicyInputRequest      `json:"cityPolicyOverride,omitempty"`
+	OldHomeSelection          *oldHomeSelectionRequest     `json:"oldHomeSelection,omitempty"`
+	TargetHomeSelection       *targetHomeSelectionRequest  `json:"targetHomeSelection,omitempty"`
+}
+
+type oldHomeSelectionRequest struct {
+	Mode                 *appcapacity.OldHomeSelectionMode `json:"mode"`
+	AssetID              string                            `json:"assetId,omitempty"`
+	ExpectedSalePriceWan *float64                          `json:"expectedSalePriceWan,omitempty"`
+	PriceConfirmed       bool                              `json:"priceConfirmed"`
+}
+
+type targetHomeSelectionRequest struct {
+	NeighborhoodID           *string  `json:"neighborhoodId"`
+	RoomID                   *string  `json:"roomId"`
+	ExpectedPurchasePriceWan *float64 `json:"expectedPurchasePriceWan"`
+	PriceConfirmed           bool     `json:"priceConfirmed"`
 }
 
 type loanParamsRequest struct {
@@ -57,25 +77,29 @@ type cityPolicyInputRequest struct {
 }
 
 type calculationResponse struct {
-	ID        string                        `json:"id"`
-	Input     housingCapacityInputResponse  `json:"input"`
-	Result    housingCapacityResultResponse `json:"result"`
-	CreatedAt string                        `json:"createdAt"`
+	ID               string                        `json:"id"`
+	Input            housingCapacityInputResponse  `json:"input"`
+	Result           housingCapacityResultResponse `json:"result"`
+	SelectionContext *appcapacity.SelectionContext `json:"selectionContext,omitempty"`
+	CreatedAt        string                        `json:"createdAt"`
 }
 
 type housingCapacityInputResponse struct {
-	CashOnHand                float64                  `json:"cashOnHand"`
-	OldHomeValue              float64                  `json:"oldHomeValue"`
-	OldLoanBalance            float64                  `json:"oldLoanBalance"`
-	MonthlyIncome             float64                  `json:"monthlyIncome"`
-	CurrentMonthlyMortgage    float64                  `json:"currentMonthlyMortgage"`
-	AcceptableMonthlyMortgage float64                  `json:"acceptableMonthlyMortgage"`
-	TargetTotalPrice          float64                  `json:"targetTotalPrice"`
-	RenovationBudget          float64                  `json:"renovationBudget"`
-	TransactionCosts          float64                  `json:"transactionCosts"`
-	TransitionRentCost        float64                  `json:"transitionRentCost"`
-	LoanOverride              *loanParamsResponse      `json:"loanOverride,omitempty"`
-	CityPolicyOverride        *cityPolicyInputResponse `json:"cityPolicyOverride,omitempty"`
+	CashOnHand                float64                       `json:"cashOnHand"`
+	OldHomeValue              float64                       `json:"oldHomeValue"`
+	OldLoanBalance            float64                       `json:"oldLoanBalance"`
+	MonthlyIncome             float64                       `json:"monthlyIncome"`
+	CurrentMonthlyMortgage    float64                       `json:"currentMonthlyMortgage"`
+	AcceptableMonthlyMortgage float64                       `json:"acceptableMonthlyMortgage"`
+	TargetTotalPrice          float64                       `json:"targetTotalPrice"`
+	RenovationBudget          float64                       `json:"renovationBudget"`
+	TransactionCosts          float64                       `json:"transactionCosts"`
+	TransitionRentCost        float64                       `json:"transitionRentCost"`
+	TransactionScenario       *transactionScenarioResponse  `json:"transactionScenario,omitempty"`
+	LoanPlan                  *loanPlanResponse             `json:"loanPlan,omitempty"`
+	ManualOverrides           *calculationOverridesResponse `json:"manualOverrides,omitempty"`
+	LoanOverride              *loanParamsResponse           `json:"loanOverride,omitempty"`
+	CityPolicyOverride        *cityPolicyInputResponse      `json:"cityPolicyOverride,omitempty"`
 }
 
 type loanParamsResponse struct {
@@ -110,7 +134,13 @@ type pressureThresholdsResponse struct {
 
 type capacityAssumptionsResponse struct {
 	appliedAssumptionsResponse
-	DownPaymentRate float64 `json:"downPaymentRate"`
+	DownPaymentRate   float64                `json:"downPaymentRate"`
+	PolicyVersion     *housingPolicyResponse `json:"policyVersion,omitempty"`
+	Sources           []policySourceResponse `json:"sources"`
+	LoanOptions       []loanOptionResponse   `json:"loanOptions"`
+	HomePurchaseOrder string                 `json:"homePurchaseOrder"`
+	LoanTermMonths    int                    `json:"loanTermMonths"`
+	Disclaimer        string                 `json:"disclaimer"`
 }
 
 type appliedAssumptionsResponse struct {
@@ -143,11 +173,19 @@ type housingCapacityResultResponse struct {
 	EffectiveDate               string                            `json:"effectiveDate"`
 	TraceabilityStatus          domaincapacity.TraceabilityStatus `json:"traceabilityStatus"`
 	AppliedAssumptions          *appliedAssumptionsResponse       `json:"appliedAssumptions"`
+	RecommendedDownPaymentRate  float64                           `json:"recommendedDownPaymentRate,omitempty"`
+	RecommendedDownPayment      float64                           `json:"recommendedDownPayment,omitempty"`
+	LoanBreakdown               *loanBreakdownResponse            `json:"loanBreakdown,omitempty"`
+	TaxBreakdown                *taxBreakdownResponse             `json:"taxBreakdown,omitempty"`
+	PolicyVersion               *policyVersionReferenceResponse   `json:"policyVersion,omitempty"`
+	Sources                     []policySourceResponse            `json:"sources,omitempty"`
+	ManualOverrides             []appliedManualOverrideResponse   `json:"manualOverrides,omitempty"`
+	Disclaimer                  string                            `json:"disclaimer,omitempty"`
 }
 
 func (h Capacity) CreateCalculation(c *gin.Context) {
 	var request housingCapacityInputRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
+	if err := decodeStrictJSON(c, &request); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
 		return
 	}
@@ -157,10 +195,30 @@ func (h Capacity) CreateCalculation(c *gin.Context) {
 		return
 	}
 
-	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{UserID: h.userID, Input: input})
+	oldSelection, err := request.oldHomeSelectionInput()
 	if err != nil {
-		if errors.Is(err, domaincapacity.ErrInvalidInput) {
+		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
+		return
+	}
+	targetSelection, err := request.targetHomeSelectionInput()
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
+		return
+	}
+	record, err := h.app.CreateCalculation(c.Request.Context(), appcapacity.CreateCalculationCommand{
+		UserID: h.userID, Input: input, OldHomeSelection: oldSelection, TargetHomeSelection: targetSelection,
+	})
+	if err != nil {
+		if errors.Is(err, domaincapacity.ErrInvalidInput) || errors.Is(err, appcapacity.ErrInvalidSelection) {
 			writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
+			return
+		}
+		if errors.Is(err, appcapacity.ErrSelectedAssetNotFound) || errors.Is(err, appcapacity.ErrTargetListingNotFound) {
+			writeError(c, http.StatusNotFound, "selection_not_found", "selected asset or target listing was not found")
+			return
+		}
+		if errors.Is(err, appcapacity.ErrTargetListingUnavailable) {
+			writeError(c, http.StatusConflict, "listing_unavailable", "selected target listing is no longer active")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -172,8 +230,23 @@ func (h Capacity) CreateCalculation(c *gin.Context) {
 
 // GetAssumptions exposes the injected, currently effective rule set used to prefill the calculator.
 func (h Capacity) GetAssumptions(c *gin.Context) {
-	assumptions, err := h.app.GetAssumptions(c.Request.Context(), appcapacity.GetAssumptionsQuery{})
+	term := 0
+	if raw := c.Query("loanTermMonths"); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil {
+			writeError(c, http.StatusBadRequest, "invalid_request", "query parameters are invalid")
+			return
+		}
+		term = parsed
+	}
+	assumptions, err := h.app.GetAssumptions(c.Request.Context(), appcapacity.GetAssumptionsQuery{
+		City: c.Query("city"), HomePurchaseOrder: domaincapacity.HomePurchaseOrder(c.Query("homePurchaseOrder")), LoanTermMonths: term,
+	})
 	if err != nil {
+		if errors.Is(err, domaincapacity.ErrInvalidInput) {
+			writeError(c, http.StatusBadRequest, "invalid_request", "query parameters are invalid")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
@@ -195,9 +268,10 @@ func (h Capacity) GetCalculation(c *gin.Context) {
 }
 
 func (request housingCapacityInputRequest) domainInput() (domaincapacity.HousingCapacityInput, error) {
+	newPolicyInput := request.TransactionScenario != nil || request.LoanPlan != nil || request.ManualOverrides != nil
 	if request.CashOnHand == nil || request.OldHomeValue == nil || request.OldLoanBalance == nil ||
 		request.MonthlyIncome == nil || request.CurrentMonthlyMortgage == nil || request.AcceptableMonthlyMortgage == nil ||
-		request.TargetTotalPrice == nil || request.RenovationBudget == nil || request.TransactionCosts == nil ||
+		request.TargetTotalPrice == nil || request.RenovationBudget == nil || (!newPolicyInput && request.TransactionCosts == nil) ||
 		request.TransitionRentCost == nil {
 		return domaincapacity.HousingCapacityInput{}, domaincapacity.ErrInvalidInput
 	}
@@ -205,8 +279,28 @@ func (request housingCapacityInputRequest) domainInput() (domaincapacity.Housing
 		CashOnHand: *request.CashOnHand, OldHomeValue: *request.OldHomeValue, OldLoanBalance: *request.OldLoanBalance,
 		MonthlyIncome: *request.MonthlyIncome, CurrentMonthlyMortgage: *request.CurrentMonthlyMortgage,
 		AcceptableMonthlyMortgage: *request.AcceptableMonthlyMortgage, TargetTotalPrice: *request.TargetTotalPrice,
-		RenovationBudget: *request.RenovationBudget, TransactionCosts: *request.TransactionCosts,
+		RenovationBudget:   *request.RenovationBudget,
 		TransitionRentCost: *request.TransitionRentCost,
+	}
+	if request.TransactionCosts != nil {
+		input.TransactionCosts = *request.TransactionCosts
+	}
+	if request.TransactionScenario != nil {
+		scenario, parseErr := request.TransactionScenario.domain()
+		if parseErr != nil {
+			return domaincapacity.HousingCapacityInput{}, parseErr
+		}
+		input.TransactionScenario = &scenario
+	}
+	if request.LoanPlan != nil {
+		plan, parseErr := request.LoanPlan.domain()
+		if parseErr != nil {
+			return domaincapacity.HousingCapacityInput{}, parseErr
+		}
+		input.LoanPlan = &plan
+	}
+	if request.ManualOverrides != nil {
+		input.ManualOverrides = request.ManualOverrides.domain()
 	}
 	if request.LoanOverride != nil {
 		loan := request.LoanOverride
@@ -236,8 +330,38 @@ func (request housingCapacityInputRequest) domainInput() (domaincapacity.Housing
 func newCalculationResponse(record appcapacity.CalculationRecord) calculationResponse {
 	return calculationResponse{
 		ID: record.ID, Input: newHousingCapacityInputResponse(record.Input),
-		Result: newHousingCapacityResultResponse(record.Result), CreatedAt: record.CreatedAt.UTC().Format(time.RFC3339),
+		Result: newHousingCapacityResultResponse(record.Result), SelectionContext: record.SelectionContext,
+		CreatedAt: record.CreatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func (request housingCapacityInputRequest) oldHomeSelectionInput() (*appcapacity.OldHomeSelectionInput, error) {
+	if request.OldHomeSelection == nil {
+		return nil, nil
+	}
+	if request.OldHomeSelection.Mode == nil {
+		return nil, appcapacity.ErrInvalidSelection
+	}
+	return &appcapacity.OldHomeSelectionInput{
+		Mode: *request.OldHomeSelection.Mode, AssetID: request.OldHomeSelection.AssetID,
+		ExpectedSalePriceWan: request.OldHomeSelection.ExpectedSalePriceWan,
+		PriceConfirmed:       request.OldHomeSelection.PriceConfirmed,
+	}, nil
+}
+
+func (request housingCapacityInputRequest) targetHomeSelectionInput() (*appcapacity.TargetHomeSelectionInput, error) {
+	if request.TargetHomeSelection == nil {
+		return nil, nil
+	}
+	if request.TargetHomeSelection.NeighborhoodID == nil || request.TargetHomeSelection.RoomID == nil ||
+		request.TargetHomeSelection.ExpectedPurchasePriceWan == nil {
+		return nil, appcapacity.ErrInvalidSelection
+	}
+	return &appcapacity.TargetHomeSelectionInput{
+		NeighborhoodID: *request.TargetHomeSelection.NeighborhoodID, RoomID: *request.TargetHomeSelection.RoomID,
+		ExpectedPurchasePriceWan: request.TargetHomeSelection.ExpectedPurchasePriceWan,
+		PriceConfirmed:           request.TargetHomeSelection.PriceConfirmed,
+	}, nil
 }
 
 func newHousingCapacityInputResponse(input domaincapacity.HousingCapacityInput) housingCapacityInputResponse {
@@ -247,6 +371,18 @@ func newHousingCapacityInputResponse(input domaincapacity.HousingCapacityInput) 
 		AcceptableMonthlyMortgage: input.AcceptableMonthlyMortgage, TargetTotalPrice: input.TargetTotalPrice,
 		RenovationBudget: input.RenovationBudget, TransactionCosts: input.TransactionCosts,
 		TransitionRentCost: input.TransitionRentCost,
+	}
+	if input.TransactionScenario != nil {
+		scenario := newTransactionScenarioResponse(*input.TransactionScenario)
+		response.TransactionScenario = &scenario
+	}
+	if input.LoanPlan != nil {
+		plan := newLoanPlanResponse(*input.LoanPlan)
+		response.LoanPlan = &plan
+	}
+	if input.ManualOverrides != nil {
+		overrides := newCalculationOverridesResponse(*input.ManualOverrides)
+		response.ManualOverrides = &overrides
 	}
 	if input.LoanOverride != nil {
 		loan := newLoanParamsResponse(*input.LoanOverride)
@@ -268,6 +404,21 @@ func newHousingCapacityResultResponse(result domaincapacity.HousingCapacityResul
 		PressureLevel: result.PressureLevel, MinimumSafeOldHomeSalePrice: result.MinimumSafeOldHomeSalePrice,
 		Strategy: result.Strategy, Reasons: result.Reasons, RuleVersion: result.RuleVersion,
 		EffectiveDate: result.EffectiveDate, TraceabilityStatus: result.TraceabilityStatus,
+		RecommendedDownPaymentRate: result.RecommendedDownPaymentRate, RecommendedDownPayment: result.RecommendedDownPayment,
+		Sources: newPolicySourceResponses(result.Sources), ManualOverrides: newAppliedManualOverrideResponses(result.ManualOverrides),
+		Disclaimer: result.Disclaimer,
+	}
+	if result.LoanBreakdown != nil {
+		loan := newLoanBreakdownResponse(*result.LoanBreakdown)
+		response.LoanBreakdown = &loan
+	}
+	if result.TaxBreakdown != nil {
+		taxes := newTaxBreakdownResponse(*result.TaxBreakdown)
+		response.TaxBreakdown = &taxes
+	}
+	if result.PolicyVersion != nil {
+		policy := newPolicyVersionReferenceResponse(*result.PolicyVersion)
+		response.PolicyVersion = &policy
 	}
 	if result.AppliedAssumptions != nil {
 		assumptions := newAppliedAssumptionsResponse(*result.AppliedAssumptions)
@@ -276,11 +427,29 @@ func newHousingCapacityResultResponse(result domaincapacity.HousingCapacityResul
 	return response
 }
 
-func newCapacityAssumptionsResponse(assumptions domaincapacity.Assumptions) capacityAssumptionsResponse {
-	return capacityAssumptionsResponse{
-		appliedAssumptionsResponse: newAppliedAssumptionsResponse(assumptions),
-		DownPaymentRate:            assumptions.CityPolicy.DownPaymentRate,
+func newCapacityAssumptionsResponse(view appcapacity.AssumptionsView) capacityAssumptionsResponse {
+	response := capacityAssumptionsResponse{
+		appliedAssumptionsResponse: newAppliedAssumptionsResponse(view.Legacy),
+		DownPaymentRate:            view.Legacy.CityPolicy.DownPaymentRate,
+		Sources:                    []policySourceResponse{}, LoanOptions: newLoanOptionResponses(view.LoanOptions),
+		HomePurchaseOrder: string(view.HomePurchaseOrder), LoanTermMonths: view.LoanTermMonths, Disclaimer: view.Disclaimer,
 	}
+	if view.Policy != nil {
+		policy := newHousingPolicyResponse(*view.Policy)
+		response.PolicyVersion = &policy
+		response.Sources = policy.Sources
+		response.RuleVersion = policy.Version
+		response.EffectiveDate = policy.EffectiveFrom
+		response.RuleSource = policy.Name
+		if len(view.LoanOptions) > 0 {
+			response.DownPaymentRate = view.LoanOptions[0].DownPaymentRate
+			response.CityPolicy = cityPolicyResponse{
+				City: policy.City, PolicyName: policy.Name, DownPaymentRate: response.DownPaymentRate,
+				EffectiveDate: policy.EffectiveFrom, Source: policy.Sources[0].URL, Origin: domaincapacity.OriginConfiguredDefault,
+			}
+		}
+	}
+	return response
 }
 
 func newAppliedAssumptionsResponse(assumptions domaincapacity.Assumptions) appliedAssumptionsResponse {

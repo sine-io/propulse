@@ -162,6 +162,52 @@ func TestListAndGetCollectionRunsUseRepositoryQueries(t *testing.T) {
 	}
 }
 
+func TestListCollectionRunsNormalizesFiltersAndPagination(t *testing.T) {
+	repo := newFakeRepository()
+	repo.runPage = CollectionRunsPage{Items: []CollectionRunSummary{}, Total: 21, Page: 2, PageSize: 10}
+	service := NewService(repo, fixedCollectionClock, nil, testMetricAlgorithmVersion)
+	from := time.Date(2026, 7, 1, 8, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	to := time.Date(2026, 7, 17, 8, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+
+	page, err := service.ListCollectionRuns(context.Background(), ListCollectionRunsQuery{
+		DataSourceID: " " + testSourceID + " ", NeighborhoodID: " " + testNeighborhoodID + " ",
+		Status: CollectionRunStatusCompleted, MetricStatus: MetricStatusCompleted,
+		From: &from, To: &to, Page: 2, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListCollectionRuns() error = %v", err)
+	}
+	if page.Total != 21 || repo.runListCalls != 1 || repo.runFilter.DataSourceID != testSourceID ||
+		repo.runFilter.NeighborhoodID != testNeighborhoodID || repo.runFilter.Page != 2 || repo.runFilter.PageSize != 10 {
+		t.Fatalf("page/filter = %#v / %#v", page, repo.runFilter)
+	}
+	if repo.runFilter.From.Location() != time.UTC || repo.runFilter.To.Location() != time.UTC {
+		t.Fatalf("filter dates were not normalized to UTC: %#v", repo.runFilter)
+	}
+}
+
+func TestListCollectionRunsRejectsInvalidFiltersBeforeRepository(t *testing.T) {
+	tests := map[string]ListCollectionRunsQuery{
+		"bad source":    {DataSourceID: "not-a-uuid"},
+		"bad status":    {Status: "running"},
+		"bad metric":    {MetricStatus: "unknown"},
+		"bad page size": {PageSize: maxCollectionRunPageSize + 1},
+	}
+	from := fixedCollectionClock()
+	to := from.Add(-time.Hour)
+	tests["reversed dates"] = ListCollectionRunsQuery{From: &from, To: &to}
+	for name, query := range tests {
+		t.Run(name, func(t *testing.T) {
+			repo := newFakeRepository()
+			_, err := NewService(repo, fixedCollectionClock, nil, testMetricAlgorithmVersion).
+				ListCollectionRuns(context.Background(), query)
+			if !errors.Is(err, ErrInvalidRequest) || repo.runListCalls != 0 {
+				t.Fatalf("error/calls = %v/%d, want ErrInvalidRequest/0", err, repo.runListCalls)
+			}
+		})
+	}
+}
+
 func TestListMetricRefreshCandidatesNormalizesQuery(t *testing.T) {
 	repo := newFakeRepository()
 	repo.refreshCandidates = []MetricRefreshCandidate{{CollectionRunID: "run_1", NeighborhoodID: testNeighborhoodID}}
@@ -214,6 +260,9 @@ type fakeRepository struct {
 	refreshUpdatedBefore    time.Time
 	refreshLimit            int
 	refreshAlgorithmVersion string
+	runPage                 CollectionRunsPage
+	runFilter               CollectionRunFilter
+	runListCalls            int
 	createSourceCalls       int
 	sourceExistsCalls       int
 	saveCalls               int
@@ -244,6 +293,14 @@ func (r *fakeRepository) SaveCollectionRun(_ context.Context, batch ImportBatch)
 }
 func (r *fakeRepository) GetCollectionRun(context.Context, string) (CollectionRunDetail, error) {
 	return r.detail, nil
+}
+func (r *fakeRepository) ListCollectionRuns(_ context.Context, filter CollectionRunFilter) (CollectionRunsPage, error) {
+	r.runListCalls++
+	r.runFilter = filter
+	if r.runPage.Items == nil {
+		return CollectionRunsPage{Items: []CollectionRunSummary{}, Page: 1, PageSize: 20}, nil
+	}
+	return r.runPage, nil
 }
 func (r *fakeRepository) ListMetricRefreshCandidates(_ context.Context, filter MetricRefreshCandidateFilter) ([]MetricRefreshCandidate, error) {
 	r.refreshUpdatedBefore = filter.UpdatedBefore

@@ -24,22 +24,30 @@ type CollectionApplication interface {
 	httphandler.DataSourceApplication
 }
 
+type CapacityApplication interface {
+	httphandler.CapacityApplication
+	httphandler.CapacityPolicyApplication
+}
+
 type Dependencies struct {
-	Log                     zerolog.Logger
-	StaticFS                fs.FS
-	CapacityApplication     httphandler.CapacityApplication
-	NeighborhoodApplication httphandler.NeighborhoodApplication
-	CollectionApplication   CollectionApplication
-	DecisionApplication     httphandler.DecisionApplication
-	ReviewApplication       httphandler.ReviewApplication
-	AccessToken             string
-	UserID                  string
-	ReadinessChecker        ReadinessChecker
+	Log                        zerolog.Logger
+	StaticFS                   fs.FS
+	CapacityApplication        CapacityApplication
+	AssetApplication           httphandler.AssetApplication
+	NeighborhoodApplication    httphandler.NeighborhoodApplication
+	CollectionApplication      CollectionApplication
+	CommunityMarketApplication httphandler.CommunityMarketApplication
+	DecisionApplication        httphandler.DecisionApplication
+	ReviewApplication          httphandler.ReviewApplication
+	AccessToken                string
+	UserID                     string
+	ReadinessChecker           ReadinessChecker
 }
 
 var frontendRoutes = map[string]string{
 	"/":                                      "index.html",
 	"/calculator":                            "calculator.html",
+	"/assets":                                "assets.html",
 	"/data":                                  "data.html",
 	"/watchlist":                             "watchlist.html",
 	"/action-window":                         "action-window.html",
@@ -101,13 +109,30 @@ func New(deps Dependencies) (*gin.Engine, error) {
 	protected.POST("/capacity/calculations", capacityHandler.CreateCalculation)
 	protected.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
 
+	if deps.AssetApplication != nil {
+		assetsHandler := httphandler.NewAssets(deps.AssetApplication, deps.UserID)
+		protected.POST("/assets", assetsHandler.Create)
+		protected.GET("/assets", assetsHandler.List)
+		protected.GET("/assets/:id", assetsHandler.Get)
+		protected.PATCH("/assets/:id", assetsHandler.Update)
+		protected.DELETE("/assets/:id", assetsHandler.Delete)
+	}
+
 	neighborhoodHandler := httphandler.NewNeighborhood(deps.NeighborhoodApplication)
+	communityMarketHandler := httphandler.NewCommunityMarket(deps.CommunityMarketApplication)
 	watchlistHandler := httphandler.NewWatchlist(deps.NeighborhoodApplication, deps.UserID)
 	protected.POST("/neighborhoods", neighborhoodHandler.CreateNeighborhood)
 	api.GET("/neighborhoods", neighborhoodHandler.SearchNeighborhoods)
 	api.GET("/neighborhoods/:id", neighborhoodHandler.GetNeighborhood)
 	api.GET("/neighborhoods/:id/metrics", neighborhoodHandler.GetMetrics)
 	api.GET("/neighborhoods/:id/metrics/history", neighborhoodHandler.GetMetricHistory)
+	api.GET("/neighborhoods/:id/community-market", communityMarketHandler.GetLatest)
+	api.GET("/neighborhoods/:id/community-market/latest", communityMarketHandler.GetLatest)
+	api.GET("/neighborhoods/:id/market-listings", communityMarketHandler.ListListings)
+	api.GET("/neighborhoods/:id/market-listings/:roomId", communityMarketHandler.GetListing)
+	api.GET("/neighborhoods/:id/market-transactions", communityMarketHandler.ListTransactions)
+	api.GET("/neighborhoods/:id/market-listings/:roomId/adjustments", communityMarketHandler.ListAdjustments)
+	api.GET("/community-market/comparison", communityMarketHandler.Compare)
 	protected.POST("/watchlist/items", watchlistHandler.AddItem)
 	protected.GET("/watchlist", watchlistHandler.List)
 
@@ -124,12 +149,18 @@ func New(deps Dependencies) (*gin.Engine, error) {
 	admin.Use(httpmiddleware.AccessAuth(deps.AccessToken))
 	dataSourcesHandler := httphandler.NewAdminDataSources(deps.CollectionApplication)
 	adminImportsHandler := httphandler.NewAdminImports(deps.CollectionApplication)
+	adminCapacityPoliciesHandler := httphandler.NewAdminCapacityPolicies(deps.CapacityApplication)
 	admin.POST("/data-sources", dataSourcesHandler.Create)
 	admin.GET("/data-sources", dataSourcesHandler.List)
 	admin.POST("/imports/json", adminImportsHandler.CreateJSON)
 	admin.POST("/imports/csv", adminImportsHandler.CreateCSV)
 	admin.GET("/imports/csv/template", adminImportsHandler.GetCSVTemplate)
+	admin.GET("/imports", adminImportsHandler.List)
 	admin.GET("/imports/:id", adminImportsHandler.GetDetail)
+	admin.GET("/capacity/policies", adminCapacityPoliciesHandler.List)
+	admin.POST("/capacity/policies", adminCapacityPoliciesHandler.Create)
+	admin.POST("/community-market/imports/csv", communityMarketHandler.ImportCSV)
+	admin.POST("/community-market/imports/fangjian", communityMarketHandler.ImportFangjian)
 
 	fileServer := http.FileServer(http.FS(staticFS))
 	engine.GET("/_next/*filepath", gin.WrapH(fileServer))
@@ -138,8 +169,13 @@ func New(deps Dependencies) (*gin.Engine, error) {
 
 	for route, name := range frontendRoutes {
 		engine.GET(route, serveFrontendFile(staticFS, name))
+		rscRoute := route + ".txt"
+		if route == "/" {
+			rscRoute = "/index.txt"
+		}
+		engine.GET(rscRoute, serveFrontendRSCFile(staticFS, strings.TrimSuffix(name, ".html")+".txt"))
 	}
-	engine.GET("/data/imports/:id", serveFrontendFile(staticFS, "data/imports/_.html"))
+	engine.GET("/data/imports/:id", serveFrontendImport(staticFS))
 
 	engine.NoRoute(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/api/v1") || strings.HasPrefix(c.Request.URL.Path, "/admin/api") {
@@ -153,7 +189,7 @@ func New(deps Dependencies) (*gin.Engine, error) {
 }
 
 func validateDependencies(deps Dependencies) error {
-	missing := make([]string, 0, 4)
+	missing := make([]string, 0, 6)
 	if deps.CapacityApplication == nil {
 		missing = append(missing, "CapacityApplication")
 	}
@@ -162,6 +198,9 @@ func validateDependencies(deps Dependencies) error {
 	}
 	if deps.CollectionApplication == nil {
 		missing = append(missing, "CollectionApplication")
+	}
+	if deps.CommunityMarketApplication == nil {
+		missing = append(missing, "CommunityMarketApplication")
 	}
 	if deps.DecisionApplication == nil {
 		missing = append(missing, "DecisionApplication")
@@ -196,5 +235,26 @@ func serveFrontendFile(staticFS fs.FS, name string) gin.HandlerFunc {
 			return
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", body)
+	}
+}
+
+func serveFrontendRSCFile(staticFS fs.FS, name string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		body, err := fs.ReadFile(staticFS, name)
+		if err != nil {
+			jsonNotFound(c)
+			return
+		}
+		c.Data(http.StatusOK, "text/x-component; charset=utf-8", body)
+	}
+}
+
+func serveFrontendImport(staticFS fs.FS) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if strings.HasSuffix(c.Param("id"), ".txt") {
+			serveFrontendRSCFile(staticFS, "data/imports/_.txt")(c)
+			return
+		}
+		serveFrontendFile(staticFS, "data/imports/_.html")(c)
 	}
 }

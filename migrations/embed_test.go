@@ -36,9 +36,39 @@ func TestEmbeddedMigrationSetIsCompleteAndOrdered(t *testing.T) {
 		"000006_versioned_metric_evidence.up.sql",
 		"000007_watchlist_target_layout.down.sql",
 		"000007_watchlist_target_layout.up.sql",
+		"000008_community_market_snapshots.down.sql",
+		"000008_community_market_snapshots.up.sql",
+		"000009_community_market_profiles.down.sql",
+		"000009_community_market_profiles.up.sql",
+		"000010_capacity_policy_versions.down.sql",
+		"000010_capacity_policy_versions.up.sql",
+		"000011_fangjian_market_bundles.down.sql",
+		"000011_fangjian_market_bundles.up.sql",
+		"000012_user_property_assets.down.sql",
+		"000012_user_property_assets.up.sql",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("embedded migrations = %#v, want %#v", names, want)
+	}
+
+	bundleMigration, err := fs.ReadFile(FS, "000011_fangjian_market_bundles.up.sql")
+	if err != nil {
+		t.Fatalf("ReadFile(bundle migration) error = %v", err)
+	}
+	for _, required := range []string{"listing_adjustments", "collection_run_id UUID", "analysis JSONB", "surroundings JSONB", "city_context JSONB", "attributes JSONB"} {
+		if !strings.Contains(string(bundleMigration), required) {
+			t.Fatalf("Fangjian bundle migration is missing %q", required)
+		}
+	}
+
+	assetMigration, err := fs.ReadFile(FS, "000012_user_property_assets.up.sql")
+	if err != nil {
+		t.Fatalf("ReadFile(asset migration) error = %v", err)
+	}
+	for _, required := range []string{"CREATE TABLE user_property_assets", "source_snapshot JSONB", "deleted_at TIMESTAMPTZ", "ADD COLUMN selection_context JSONB", "WHERE deleted_at IS NULL"} {
+		if !strings.Contains(string(assetMigration), required) {
+			t.Fatalf("asset migration is missing %q", required)
+		}
 	}
 
 	body, err := fs.ReadFile(FS, "000001_initial_schema.up.sql")
@@ -108,6 +138,60 @@ func TestWatchlistTargetLayoutMigrationDoesNotInventCityOrLayout(t *testing.T) {
 	for _, forbidden := range []string{"青枫", "默认城市", "默认户型"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("watchlist target migration contains inferred fallback %q", forbidden)
+		}
+	}
+}
+
+func TestCommunityMarketProfileMigrationIsAdditiveAndOrdersCompleteReimports(t *testing.T) {
+	body, err := fs.ReadFile(FS, "000009_community_market_profiles.up.sql")
+	if err != nil {
+		t.Fatalf("ReadFile(version 9) error = %v", err)
+	}
+
+	for _, required := range []string{
+		"ADD COLUMN province_code TEXT",
+		"ADD COLUMN property_tags JSONB",
+		"ADD COLUMN building_count INT",
+		"ADD COLUMN property_management_company TEXT",
+		"ADD COLUMN fixed_parking_spaces INT",
+		"ADD COLUMN man_car_separation TEXT",
+		"collected_at DESC, created_at DESC, id DESC",
+	} {
+		if !strings.Contains(string(body), required) {
+			t.Fatalf("community market profile migration is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"ALTER COLUMN province_code SET NOT NULL", "UPDATE neighborhoods", "INSERT INTO neighborhoods"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("community market profile migration contains unsafe operation %q", forbidden)
+		}
+	}
+}
+
+func TestCapacityPolicyMigrationSeedsVersionedOfficialSourcesAndGuardsOverlap(t *testing.T) {
+	body, err := fs.ReadFile(FS, "000010_capacity_policy_versions.up.sql")
+	if err != nil {
+		t.Fatalf("ReadFile(version 10) error = %v", err)
+	}
+	for _, required := range []string{
+		"CREATE TABLE capacity_policy_versions",
+		"EXCLUDE USING gist",
+		"daterange(effective_from, COALESCE(effective_to, 'infinity'::date), '[)')",
+		`"Code": "commercial_down_payment"`,
+		`"Code": "commercial_rate"`,
+		`"Code": "provident_down_payment"`,
+		`"Code": "provident_fund"`,
+		`"Code": "deed_tax"`,
+		`"Code": "housing_vat"`,
+		`"Code": "tax_surcharges"`,
+		`"Code": "individual_income_tax"`,
+		"https://zfcxjs.tj.gov.cn/xxgk_70/zcjdx/202410/t20241016_6754643.html",
+		"https://fgk.chinatax.gov.cn/zcfgk/c102416/c5246356/content.html",
+		`"VATRate": 0.03`,
+		`"VATExemptHoldingYears": 2`,
+	} {
+		if !strings.Contains(string(body), required) {
+			t.Fatalf("capacity policy migration is missing %q", required)
 		}
 	}
 }
