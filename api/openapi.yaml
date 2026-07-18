@@ -48,6 +48,43 @@ paths:
               schema:
                 $ref: '#/components/schemas/CapacityAssumptionsResponse'
   /api/v1/capacity/calculations:
+    get:
+      summary: List saved housing capacity calculation summaries
+      description: Returns the configured user's calculations ordered by creation time descending.
+      security:
+        - AccessBearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          description: Fuzzy search by report ID, target home, old home, or generated date.
+          schema: {type: string}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: pageSize
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: Paginated calculation history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculationHistoryPageResponse'
+        '400':
+          description: Invalid search or pagination parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/AccessRequired'
+        '500':
+          description: Calculation history could not be loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       summary: Create a housing capacity calculation
       security:
@@ -2207,6 +2244,46 @@ components:
         createdAt:
           type: string
           format: date-time
+    CalculationHistorySummary:
+      type: object
+      required: [id, createdAt, pressureLevel, targetTotalPrice, targetNeighborhoodName, targetLayout, oldHomeName]
+      properties:
+        id:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        pressureLevel:
+          type: string
+          enum: [safe, strained, danger]
+        targetTotalPrice:
+          type: number
+          minimum: 0
+          description: 万元
+        targetNeighborhoodName:
+          type: string
+        targetLayout:
+          type: string
+        oldHomeName:
+          type: string
+    CalculationHistoryPageResponse:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalculationHistorySummary'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 100
     CreateNeighborhoodRequest:
       type: object
       required: [name, city, area, availableLayouts]

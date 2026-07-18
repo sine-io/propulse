@@ -522,6 +522,83 @@ func TestGetCapacityCalculationReturnsLegacyTraceabilityWithoutAssumptions(t *te
 	}
 }
 
+func TestListCapacityCalculationsReturnsSummaryPage(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	createdAt := time.Date(2026, 7, 17, 8, 30, 0, 0, time.UTC)
+	service := &stubCapacityApplication{listResult: appcapacity.CalculationHistoryPage{
+		Items: []appcapacity.CalculationSummary{{
+			ID: "calc-1", CreatedAt: createdAt, PressureLevel: domaincapacity.PressureStrained,
+			TargetTotalPrice: 480, TargetNeighborhoodName: "海河花园", TargetLayout: "3室2厅", OldHomeName: "现住房",
+		}},
+		Total: 21, Page: 2, PageSize: 20,
+	}}
+	engine := gin.New()
+	engine.GET("/api/v1/capacity/calculations", NewCapacity(service, user.SingleUserID).ListCalculations)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/capacity/calculations?q=%E6%B5%B7%E6%B2%B3&page=2&pageSize=20", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if service.listQuery.UserID != user.SingleUserID || service.listQuery.Query != "海河" || service.listQuery.Page != 2 || service.listQuery.PageSize != 20 {
+		t.Fatalf("list query = %#v", service.listQuery)
+	}
+	var response calculationHistoryPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if response.Total != 21 || response.Page != 2 || response.PageSize != 20 || len(response.Items) != 1 {
+		t.Fatalf("response = %#v", response)
+	}
+	item := response.Items[0]
+	if item.ID != "calc-1" || item.CreatedAt != "2026-07-17T08:30:00Z" || item.PressureLevel != domaincapacity.PressureStrained ||
+		item.TargetTotalPrice != 480 || item.TargetNeighborhoodName != "海河花园" || item.TargetLayout != "3室2厅" || item.OldHomeName != "现住房" {
+		t.Fatalf("item = %#v", item)
+	}
+}
+
+func TestListCapacityCalculationsValidatesPagination(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	for _, query := range []string{"page=0", "page=invalid", "pageSize=0", "pageSize=101"} {
+		t.Run(query, func(t *testing.T) {
+			service := &stubCapacityApplication{}
+			engine := gin.New()
+			engine.GET("/api/v1/capacity/calculations", NewCapacity(service, user.SingleUserID).ListCalculations)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/capacity/calculations?"+query, nil)
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+		})
+	}
+}
+
+func TestListCapacityCalculationsMapsApplicationErrors(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "invalid query", err: appcapacity.ErrInvalidCalculationQuery, want: http.StatusBadRequest},
+		{name: "repository", err: errors.New("boom"), want: http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &stubCapacityApplication{listErr: tc.err}
+			engine := gin.New()
+			engine.GET("/api/v1/capacity/calculations", NewCapacity(service, user.SingleUserID).ListCalculations)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/capacity/calculations", nil)
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.want)
+			}
+		})
+	}
+}
+
 type stubCapacityApplication struct {
 	createRecord     appcapacity.CalculationRecord
 	createErr        error
@@ -533,6 +610,9 @@ type stubCapacityApplication struct {
 	assumptionsView  *appcapacity.AssumptionsView
 	assumptionsQuery appcapacity.GetAssumptionsQuery
 	assumptionsErr   error
+	listResult       appcapacity.CalculationHistoryPage
+	listErr          error
+	listQuery        appcapacity.ListCalculationsQuery
 }
 
 func (s *stubCapacityApplication) GetAssumptions(_ context.Context, query appcapacity.GetAssumptionsQuery) (appcapacity.AssumptionsView, error) {
@@ -570,6 +650,11 @@ func (s *stubCapacityApplication) GetCalculation(_ context.Context, _ appcapacit
 		return appcapacity.CalculationRecord{}, s.getErr
 	}
 	return s.getRecord, nil
+}
+
+func (s *stubCapacityApplication) ListCalculations(_ context.Context, query appcapacity.ListCalculationsQuery) (appcapacity.CalculationHistoryPage, error) {
+	s.listQuery = query
+	return s.listResult, s.listErr
 }
 
 func (s *stubCapacityApplication) LatestCalculation(_ context.Context, _ appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error) {

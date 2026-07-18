@@ -39,6 +39,7 @@ func TestAccessProtectionContract(t *testing.T) {
 	contracts := []operationContract{
 		{path: "/api/v1/access", method: "get", protected: true},
 		{path: "/api/v1/capacity/assumptions", method: "get"},
+		{path: "/api/v1/capacity/calculations", method: "get", protected: true},
 		{path: "/api/v1/capacity/calculations", method: "post", protected: true},
 		{path: "/api/v1/capacity/calculations/{id}", method: "get", protected: true},
 		{path: "/api/v1/assets", method: "post", protected: true},
@@ -192,6 +193,30 @@ func TestPropertyAssetAndCalculationSelectionContracts(t *testing.T) {
 	if requiredMap(t, requiredMap(t, calculation, "properties"), "selectionContext")["$ref"] != "#/components/schemas/PropertySelectionContext" {
 		t.Fatal("CalculationResponse selectionContext must reference the frozen context schema")
 	}
+
+	history := requiredMap(t, requiredMap(t, paths, "/api/v1/capacity/calculations"), "get")
+	if got := requiredString(t, responseJSONSchema(t, history, "200"), "$ref"); got != "#/components/schemas/CalculationHistoryPageResponse" {
+		t.Fatalf("calculation history response schema = %q", got)
+	}
+	page := operationParameter(t, history, "page", "query")
+	pageSize := operationParameter(t, history, "pageSize", "query")
+	if page == nil || fmt.Sprint(requiredMap(t, page, "schema")["default"]) != "1" {
+		t.Fatalf("calculation history page parameter = %#v", page)
+	}
+	if pageSize == nil {
+		t.Fatal("calculation history pageSize parameter is missing")
+	}
+	pageSizeSchema := requiredMap(t, pageSize, "schema")
+	if fmt.Sprint(pageSizeSchema["default"]) != "20" || fmt.Sprint(pageSizeSchema["maximum"]) != "100" {
+		t.Fatalf("calculation history pageSize schema = %#v", pageSizeSchema)
+	}
+	if operationParameter(t, history, "q", "query") == nil {
+		t.Fatal("calculation history q parameter is missing")
+	}
+	assertRequiredFields(t, requiredMap(t, schemas, "CalculationHistorySummary"), []string{
+		"id", "createdAt", "pressureLevel", "targetTotalPrice", "targetNeighborhoodName", "targetLayout", "oldHomeName",
+	})
+	assertRequiredFields(t, requiredMap(t, schemas, "CalculationHistoryPageResponse"), []string{"items", "total", "page", "pageSize"})
 }
 
 func TestReviewNotesContract(t *testing.T) {

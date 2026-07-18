@@ -91,7 +91,54 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List saved housing capacity calculation summaries
+         * @description Returns the configured user's calculations ordered by creation time descending.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Fuzzy search by report ID, target home, old home, or generated date. */
+                    q?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated calculation history */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CalculationHistoryPageResponse"];
+                    };
+                };
+                /** @description Invalid search or pagination parameters */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                401: components["responses"]["AccessRequired"];
+                /** @description Calculation history could not be loaded */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
         put?: never;
         /** Create a housing capacity calculation */
         post: {
@@ -2941,6 +2988,24 @@ export interface components {
             selectionContext?: components["schemas"]["PropertySelectionContext"];
             /** Format: date-time */
             createdAt: string;
+        };
+        CalculationHistorySummary: {
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** @enum {string} */
+            pressureLevel: "safe" | "strained" | "danger";
+            /** @description 万元 */
+            targetTotalPrice: number;
+            targetNeighborhoodName: string;
+            targetLayout: string;
+            oldHomeName: string;
+        };
+        CalculationHistoryPageResponse: {
+            items: components["schemas"]["CalculationHistorySummary"][];
+            total: number;
+            page: number;
+            pageSize: number;
         };
         CreateNeighborhoodRequest: {
             name: string;

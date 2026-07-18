@@ -245,26 +245,72 @@ func TestCapacityRepositoryPersistsAndFindsCalculations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Calculate() error = %v", err)
 	}
+	userID := "capacity-history-" + uuid.NewString()
+	olderAt := time.Date(2026, 7, 16, 2, 0, 0, 0, time.UTC)
 	record, err := repo.Save(ctx, appcapacity.CalculationRecord{
-		ID: uuid.NewString(), UserID: "repository-test-user", Input: input, Result: result, CreatedAt: time.Now().UTC(),
+		ID: uuid.NewString(), UserID: userID, Input: input, Result: result, CreatedAt: olderAt,
 	})
 	if err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 
-	found, err := repo.Find(ctx, record.ID)
+	found, err := repo.FindByUser(ctx, record.UserID, record.ID)
 	if err != nil {
 		t.Fatalf("Find() error = %v", err)
 	}
 	if !reflect.DeepEqual(found.Input, input) || !reflect.DeepEqual(found.Result, result) {
 		t.Fatalf("found calculation lost traceability: %#v", found)
 	}
-	latest, err := repo.FindLatestByUser(ctx, "repository-test-user")
+	if _, err := repo.FindByUser(ctx, "another-user", record.ID); !errors.Is(err, appcapacity.ErrCalculationNotFound) {
+		t.Fatalf("FindByUser(other user) error = %v, want ErrCalculationNotFound", err)
+	}
+
+	newerAt := time.Date(2026, 7, 17, 2, 30, 0, 0, time.UTC)
+	newer, err := repo.Save(ctx, appcapacity.CalculationRecord{
+		ID: uuid.NewString(), UserID: userID, Input: input, Result: result, CreatedAt: newerAt,
+		SelectionContext: &appcapacity.SelectionContext{
+			OldHome: &appcapacity.OldHomeSelectionSnapshot{Mode: appcapacity.OldHomeAsset, AssetName: "现住房"},
+			TargetHome: &appcapacity.TargetHomeSelectionSnapshot{Property: appcapacity.SelectionPropertySnapshot{
+				NeighborhoodName: "海河花园", Layout: "3室2厅",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Save(newer) error = %v", err)
+	}
+	if _, err := repo.Save(ctx, appcapacity.CalculationRecord{
+		ID: uuid.NewString(), UserID: "other-" + userID, Input: input, Result: result, CreatedAt: newerAt.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("Save(other user) error = %v", err)
+	}
+
+	latest, err := repo.FindLatestByUser(ctx, userID)
 	if err != nil {
 		t.Fatalf("FindLatestByUser() error = %v", err)
 	}
-	if latest.ID != record.ID || !reflect.DeepEqual(latest.Result, result) {
-		t.Fatalf("latest = %#v, want calculation %q", latest, record.ID)
+	if latest.ID != newer.ID || !reflect.DeepEqual(latest.Result, result) {
+		t.Fatalf("latest = %#v, want calculation %q", latest, newer.ID)
+	}
+
+	firstPage, err := repo.ListByUser(ctx, appcapacity.CalculationListFilter{UserID: userID, Page: 1, PageSize: 1})
+	if err != nil {
+		t.Fatalf("ListByUser(first page) error = %v", err)
+	}
+	if firstPage.Total != 2 || len(firstPage.Items) != 1 || firstPage.Items[0].ID != newer.ID ||
+		firstPage.Items[0].TargetNeighborhoodName != "海河花园" || firstPage.Items[0].OldHomeName != "现住房" {
+		t.Fatalf("first page = %#v", firstPage)
+	}
+	secondPage, err := repo.ListByUser(ctx, appcapacity.CalculationListFilter{UserID: userID, Page: 2, PageSize: 1})
+	if err != nil || len(secondPage.Items) != 1 || secondPage.Items[0].ID != record.ID ||
+		secondPage.Items[0].TargetNeighborhoodName != "" || secondPage.Items[0].OldHomeName != "" {
+		t.Fatalf("legacy second page/error = %#v/%v", secondPage, err)
+	}
+
+	for _, keyword := range []string{newer.ID[:8], "海河", "3室", "现住", "2026-07-17"} {
+		page, err := repo.ListByUser(ctx, appcapacity.CalculationListFilter{UserID: userID, Query: keyword, Page: 1, PageSize: 20})
+		if err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != newer.ID {
+			t.Fatalf("ListByUser(%q) = %#v, %v", keyword, page, err)
+		}
 	}
 }
 

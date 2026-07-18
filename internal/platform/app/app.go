@@ -35,6 +35,7 @@ type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
 	GetAssumptions(ctx context.Context, query appcapacity.GetAssumptionsQuery) (appcapacity.AssumptionsView, error)
 	GetCalculation(ctx context.Context, query appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error)
+	ListCalculations(ctx context.Context, query appcapacity.ListCalculationsQuery) (appcapacity.CalculationHistoryPage, error)
 	LatestCalculation(ctx context.Context, query appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error)
 	ListPolicyVersions(ctx context.Context, query appcapacity.ListPolicyVersionsQuery) ([]domaincapacity.HousingPolicyVersion, error)
 	CreatePolicyVersion(ctx context.Context, command appcapacity.CreatePolicyVersionCommand) (domaincapacity.HousingPolicyVersion, error)

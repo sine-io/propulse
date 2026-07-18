@@ -107,6 +107,7 @@ func New(deps Dependencies) (*gin.Engine, error) {
 	capacityHandler := httphandler.NewCapacity(deps.CapacityApplication, deps.UserID)
 	api.GET("/capacity/assumptions", capacityHandler.GetAssumptions)
 	protected.POST("/capacity/calculations", capacityHandler.CreateCalculation)
+	protected.GET("/capacity/calculations", capacityHandler.ListCalculations)
 	protected.GET("/capacity/calculations/:id", capacityHandler.GetCalculation)
 
 	if deps.AssetApplication != nil {

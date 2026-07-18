@@ -12,6 +12,7 @@ import (
 )
 
 var ErrCalculationNotFound = errors.New("capacity calculation not found")
+var ErrInvalidCalculationQuery = errors.New("invalid capacity calculation query")
 var ErrPolicyNotFound = errors.New("capacity policy not found")
 var ErrPolicyConflict = errors.New("capacity policy effective range conflicts with an existing version")
 var ErrInvalidPolicy = errors.New("invalid capacity policy")
@@ -22,8 +23,9 @@ var ErrTargetListingUnavailable = errors.New("selected target listing unavailabl
 
 type CalculationRepository interface {
 	Save(ctx context.Context, record CalculationRecord) (CalculationRecord, error)
-	Find(ctx context.Context, id string) (CalculationRecord, error)
+	FindByUser(ctx context.Context, userID, id string) (CalculationRecord, error)
 	FindLatestByUser(ctx context.Context, userID string) (CalculationRecord, error)
+	ListByUser(ctx context.Context, filter CalculationListFilter) (CalculationHistoryPage, error)
 }
 
 type PolicyRepository interface {
@@ -47,6 +49,30 @@ type CalculationRecord struct {
 	Result           domaincapacity.HousingCapacityResult
 	SelectionContext *SelectionContext
 	CreatedAt        time.Time
+}
+
+type CalculationListFilter struct {
+	UserID   string
+	Query    string
+	Page     int
+	PageSize int
+}
+
+type CalculationSummary struct {
+	ID                     string
+	CreatedAt              time.Time
+	PressureLevel          domaincapacity.PressureLevel
+	TargetTotalPrice       float64
+	TargetNeighborhoodName string
+	TargetLayout           string
+	OldHomeName            string
+}
+
+type CalculationHistoryPage struct {
+	Items    []CalculationSummary
+	Total    int64
+	Page     int
+	PageSize int
 }
 
 type LoanOption struct {

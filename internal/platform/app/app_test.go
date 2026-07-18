@@ -907,6 +907,10 @@ func (s *stubAppCapacityApplication) GetCalculation(_ context.Context, _ appcapa
 	return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
 }
 
+func (s *stubAppCapacityApplication) ListCalculations(_ context.Context, _ appcapacity.ListCalculationsQuery) (appcapacity.CalculationHistoryPage, error) {
+	return appcapacity.CalculationHistoryPage{}, nil
+}
+
 func (s *stubAppCapacityApplication) LatestCalculation(_ context.Context, _ appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error) {
 	return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
 }

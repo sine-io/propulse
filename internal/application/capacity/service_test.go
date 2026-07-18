@@ -3,6 +3,8 @@ package capacity
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,7 +208,7 @@ func TestGetCalculationReturnsStoredRecord(t *testing.T) {
 	repo := &memoryCalculationRepository{
 		records: map[string]CalculationRecord{
 			"calc_123": {
-				ID: "calc_123",
+				ID: "calc_123", UserID: user.SingleUserID,
 				Input: domaincapacity.HousingCapacityInput{
 					CashOnHand: 10,
 				},
@@ -219,7 +221,7 @@ func TestGetCalculationReturnsStoredRecord(t *testing.T) {
 	}
 	service := NewService(repo, testAssumptions(), time.Now, func() string { return "unused" })
 
-	record, err := service.GetCalculation(context.Background(), GetCalculationQuery{ID: "calc_123"})
+	record, err := service.GetCalculation(context.Background(), GetCalculationQuery{UserID: user.SingleUserID, ID: "calc_123"})
 	if err != nil {
 		t.Fatalf("GetCalculation() error = %v", err)
 	}
@@ -235,9 +237,112 @@ func TestGetCalculationReturnsNotFound(t *testing.T) {
 	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{}}
 	service := NewService(repo, testAssumptions(), time.Now, func() string { return "unused" })
 
-	_, err := service.GetCalculation(context.Background(), GetCalculationQuery{ID: "missing"})
+	_, err := service.GetCalculation(context.Background(), GetCalculationQuery{UserID: user.SingleUserID, ID: "missing"})
 	if !errors.Is(err, ErrCalculationNotFound) {
 		t.Fatalf("GetCalculation() error = %v, want ErrCalculationNotFound", err)
+	}
+}
+
+func TestGetCalculationIsIsolatedByUser(t *testing.T) {
+	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{
+		"calc-private": {ID: "calc-private", UserID: "other-user"},
+	}}
+	service := NewService(repo, testAssumptions(), time.Now, nil)
+
+	_, err := service.GetCalculation(context.Background(), GetCalculationQuery{
+		UserID: user.SingleUserID, ID: "calc-private",
+	})
+	if !errors.Is(err, ErrCalculationNotFound) {
+		t.Fatalf("GetCalculation() error = %v, want ErrCalculationNotFound", err)
+	}
+}
+
+func TestListCalculationsDefaultsFiltersAndPaginatesNewestFirst(t *testing.T) {
+	newer := calculationHistoryRecord("calc-newer", user.SingleUserID, time.Date(2026, 7, 17, 9, 0, 0, 0, time.UTC), "海河花园", "3室2厅", "现住房")
+	older := calculationHistoryRecord("calc-older", user.SingleUserID, time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC), "梅江花园", "2室1厅", "")
+	other := calculationHistoryRecord("calc-other", "other-user", time.Date(2026, 7, 18, 9, 0, 0, 0, time.UTC), "海河花园", "3室2厅", "别人的房")
+	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{
+		newer.ID: newer, older.ID: older, other.ID: other,
+	}}
+	service := NewService(repo, testAssumptions(), time.Now, nil)
+
+	page, err := service.ListCalculations(context.Background(), ListCalculationsQuery{
+		UserID: " " + user.SingleUserID + " ", Page: 2, PageSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("ListCalculations() error = %v", err)
+	}
+	if page.Total != 2 || page.Page != 2 || page.PageSize != 1 || len(page.Items) != 1 || page.Items[0].ID != older.ID {
+		t.Fatalf("page = %#v, want second user-owned record", page)
+	}
+	if repo.listFilter.UserID != user.SingleUserID {
+		t.Fatalf("repository user = %q, want trimmed user", repo.listFilter.UserID)
+	}
+}
+
+func TestListCalculationsSearchesSnapshotAndDateFields(t *testing.T) {
+	record := calculationHistoryRecord("calc-history-123", user.SingleUserID, time.Date(2026, 7, 17, 9, 30, 0, 0, time.UTC), "海河花园", "3室2厅", "现住房")
+	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{record.ID: record}}
+	service := NewService(repo, testAssumptions(), time.Now, nil)
+
+	for _, keyword := range []string{"history-123", "海河", "3室", "现住", "2026-07-17"} {
+		page, err := service.ListCalculations(context.Background(), ListCalculationsQuery{
+			UserID: user.SingleUserID, Query: " " + keyword + " ",
+		})
+		if err != nil {
+			t.Fatalf("ListCalculations(%q) error = %v", keyword, err)
+		}
+		if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != record.ID {
+			t.Fatalf("ListCalculations(%q) = %#v, want matching record", keyword, page)
+		}
+	}
+}
+
+func TestListCalculationsSupportsLegacyRecordsWithoutSelectionSnapshots(t *testing.T) {
+	record := CalculationRecord{
+		ID: "legacy", UserID: user.SingleUserID,
+		Input:     domaincapacity.HousingCapacityInput{TargetTotalPrice: 420},
+		Result:    domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureStrained},
+		CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	service := NewService(&memoryCalculationRepository{records: map[string]CalculationRecord{record.ID: record}}, testAssumptions(), time.Now, nil)
+
+	page, err := service.ListCalculations(context.Background(), ListCalculationsQuery{UserID: user.SingleUserID})
+	if err != nil {
+		t.Fatalf("ListCalculations() error = %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].TargetNeighborhoodName != "" || page.Items[0].TargetLayout != "" || page.Items[0].OldHomeName != "" {
+		t.Fatalf("legacy summary = %#v", page.Items)
+	}
+}
+
+func TestListCalculationsReturnsEmptyPageAndRepositoryErrors(t *testing.T) {
+	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{}}
+	service := NewService(repo, testAssumptions(), time.Now, nil)
+	page, err := service.ListCalculations(context.Background(), ListCalculationsQuery{UserID: user.SingleUserID})
+	if err != nil || page.Total != 0 || len(page.Items) != 0 || page.Page != 1 || page.PageSize != 20 {
+		t.Fatalf("empty page/error = %#v/%v", page, err)
+	}
+
+	repositoryErr := errors.New("repository unavailable")
+	repo.listErr = repositoryErr
+	_, err = service.ListCalculations(context.Background(), ListCalculationsQuery{UserID: user.SingleUserID})
+	if !errors.Is(err, repositoryErr) {
+		t.Fatalf("ListCalculations() error = %v, want repository error", err)
+	}
+}
+
+func TestListCalculationsRejectsInvalidPagination(t *testing.T) {
+	service := NewService(&memoryCalculationRepository{}, testAssumptions(), time.Now, nil)
+	for _, query := range []ListCalculationsQuery{
+		{UserID: ""},
+		{UserID: user.SingleUserID, Page: -1},
+		{UserID: user.SingleUserID, PageSize: -1},
+		{UserID: user.SingleUserID, PageSize: 101},
+	} {
+		if _, err := service.ListCalculations(context.Background(), query); !errors.Is(err, ErrInvalidCalculationQuery) {
+			t.Fatalf("ListCalculations(%#v) error = %v, want ErrInvalidCalculationQuery", query, err)
+		}
 	}
 }
 
@@ -272,6 +377,25 @@ func TestLatestCalculationReturnsNewestRecordForUser(t *testing.T) {
 	}
 }
 
+func calculationHistoryRecord(id, userID string, createdAt time.Time, neighborhood, layout, oldHomeName string) CalculationRecord {
+	oldHome := &OldHomeSelectionSnapshot{Mode: OldHomeNone, ConfirmedAt: createdAt}
+	if oldHomeName != "" {
+		oldHome.Mode = OldHomeAsset
+		oldHome.AssetName = oldHomeName
+	}
+	return CalculationRecord{
+		ID: id, UserID: userID, CreatedAt: createdAt,
+		Input:  domaincapacity.HousingCapacityInput{TargetTotalPrice: 500},
+		Result: domaincapacity.HousingCapacityResult{PressureLevel: domaincapacity.PressureSafe},
+		SelectionContext: &SelectionContext{
+			OldHome: oldHome,
+			TargetHome: &TargetHomeSelectionSnapshot{Property: SelectionPropertySnapshot{
+				NeighborhoodName: neighborhood, Layout: layout,
+			}},
+		},
+	}
+}
+
 func TestLatestCalculationReturnsNotFound(t *testing.T) {
 	repo := &memoryCalculationRepository{records: map[string]CalculationRecord{}}
 	service := NewService(repo, testAssumptions(), time.Now, func() string { return "unused" })
@@ -283,9 +407,11 @@ func TestLatestCalculationReturnsNotFound(t *testing.T) {
 }
 
 type memoryCalculationRepository struct {
-	records   map[string]CalculationRecord
-	nextID    string
-	createdAt time.Time
+	records    map[string]CalculationRecord
+	nextID     string
+	createdAt  time.Time
+	listErr    error
+	listFilter CalculationListFilter
 }
 
 type memoryPolicyRepository struct {
@@ -370,12 +496,69 @@ func (m *memoryCalculationRepository) Save(_ context.Context, record Calculation
 	return record, nil
 }
 
-func (m *memoryCalculationRepository) Find(_ context.Context, id string) (CalculationRecord, error) {
+func (m *memoryCalculationRepository) FindByUser(_ context.Context, userID, id string) (CalculationRecord, error) {
 	record, ok := m.records[id]
-	if !ok {
+	if !ok || record.UserID != userID {
 		return CalculationRecord{}, ErrCalculationNotFound
 	}
 	return record, nil
+}
+
+func (m *memoryCalculationRepository) ListByUser(_ context.Context, filter CalculationListFilter) (CalculationHistoryPage, error) {
+	m.listFilter = filter
+	if m.listErr != nil {
+		return CalculationHistoryPage{}, m.listErr
+	}
+	records := make([]CalculationRecord, 0, len(m.records))
+	keyword := strings.ToLower(filter.Query)
+	for _, record := range m.records {
+		if record.UserID != filter.UserID {
+			continue
+		}
+		summary := testCalculationSummary(record)
+		searchable := strings.ToLower(strings.Join([]string{
+			summary.ID, summary.TargetNeighborhoodName, summary.TargetLayout, summary.OldHomeName,
+			summary.CreatedAt.Format("2006-01-02 15:04:05"),
+		}, " "))
+		if keyword == "" || strings.Contains(searchable, keyword) {
+			records = append(records, record)
+		}
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].CreatedAt.Equal(records[j].CreatedAt) {
+			return records[i].ID > records[j].ID
+		}
+		return records[i].CreatedAt.After(records[j].CreatedAt)
+	})
+	total := int64(len(records))
+	start := (filter.Page - 1) * filter.PageSize
+	if start > len(records) {
+		start = len(records)
+	}
+	end := min(start+filter.PageSize, len(records))
+	items := make([]CalculationSummary, 0, end-start)
+	for _, record := range records[start:end] {
+		items = append(items, testCalculationSummary(record))
+	}
+	return CalculationHistoryPage{Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
+}
+
+func testCalculationSummary(record CalculationRecord) CalculationSummary {
+	summary := CalculationSummary{
+		ID: record.ID, CreatedAt: record.CreatedAt, PressureLevel: record.Result.PressureLevel,
+		TargetTotalPrice: record.Input.TargetTotalPrice,
+	}
+	if record.SelectionContext == nil {
+		return summary
+	}
+	if target := record.SelectionContext.TargetHome; target != nil {
+		summary.TargetNeighborhoodName = target.Property.NeighborhoodName
+		summary.TargetLayout = target.Property.Layout
+	}
+	if oldHome := record.SelectionContext.OldHome; oldHome != nil && oldHome.Mode == OldHomeAsset {
+		summary.OldHomeName = oldHome.AssetName
+	}
+	return summary
 }
 
 func (m *memoryCalculationRepository) FindLatestByUser(_ context.Context, userID string) (CalculationRecord, error) {

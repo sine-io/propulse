@@ -7,6 +7,7 @@ import {
   ApiError,
   createReviewNote,
   createCapacityCalculation,
+  getCapacityCalculation,
   getCSVImportTemplate,
   getActionWindow,
   getMetricHistory,
@@ -20,6 +21,7 @@ import {
   importCSVCollectionRun,
   importJSONCollectionRun,
   listDataSources,
+  listCapacityCalculations,
   listReviewNotes,
   searchNeighborhoods,
   updateReviewNote,
@@ -70,6 +72,29 @@ describe("api-client", () => {
         headers: { "content-type": "application/json" },
         method: "POST",
       }),
+    );
+  });
+
+  it("lists calculation history and reads an encoded report ID", async () => {
+    const signal = new AbortController().signal;
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 2, pageSize: 10 }))
+      .mockResolvedValueOnce(jsonResponse({ id: "calc/1" }));
+
+    await expect(listCapacityCalculations({ q: "海河 3室", page: 2, pageSize: 10 }, signal)).resolves.toEqual({
+      items: [], total: 0, page: 2, pageSize: 10,
+    });
+    await expect(getCapacityCalculation("calc/1", signal)).resolves.toEqual({ id: "calc/1" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/capacity/calculations?q=%E6%B5%B7%E6%B2%B3+3%E5%AE%A4&page=2&pageSize=10",
+      expect.objectContaining({ signal }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/capacity/calculations/calc%2F1",
+      expect.objectContaining({ signal }),
     );
   });
 

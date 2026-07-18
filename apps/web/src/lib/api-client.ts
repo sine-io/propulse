@@ -14,6 +14,8 @@ export type HousingCapacityResult = components["schemas"]["HousingCapacityResult
 export type CapacityAssumptionsResponse =
   components["schemas"]["CapacityAssumptionsResponse"];
 export type CalculationResponse = components["schemas"]["CalculationResponse"];
+export type CalculationHistorySummary = components["schemas"]["CalculationHistorySummary"];
+export type CalculationHistoryPage = components["schemas"]["CalculationHistoryPageResponse"];
 export type PropertySelectionContext = components["schemas"]["PropertySelectionContext"];
 export type Asset = components["schemas"]["AssetResponse"];
 export type AssetsPage = components["schemas"]["AssetsPageResponse"];
@@ -121,6 +123,37 @@ export async function createCapacityCalculation(
     method: "POST",
     signal,
   });
+}
+
+export interface CapacityCalculationsQuery {
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listCapacityCalculations(
+  query: CapacityCalculationsQuery = {},
+  signal?: AbortSignal,
+): Promise<CalculationHistoryPage> {
+  const params = new URLSearchParams();
+  if (query.q !== undefined) params.set("q", query.q);
+  if (query.page !== undefined) params.set("page", String(query.page));
+  if (query.pageSize !== undefined) params.set("pageSize", String(query.pageSize));
+  const suffix = params.size ? `?${params.toString()}` : "";
+  return request<CalculationHistoryPage>(
+    `/api/v1/capacity/calculations${suffix}`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function getCapacityCalculation(
+  id: string,
+  signal?: AbortSignal,
+): Promise<CalculationResponse> {
+  return request<CalculationResponse>(
+    `/api/v1/capacity/calculations/${encodeURIComponent(id)}`,
+    signal ? { signal } : undefined,
+  );
 }
 
 export async function listAssets(

@@ -4,11 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setAccessToken } from "@/lib/access-token";
 import {
+  ApiError,
   createCapacityCalculation,
   getCapacityAssumptions,
+  getCapacityCalculation,
   getMarketListingDetail,
   getMarketListings,
   listAssets,
+  listCapacityCalculations,
   searchNeighborhoods,
   type Asset,
   type CalculationResponse,
@@ -25,9 +28,11 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
     ...actual,
     createCapacityCalculation: vi.fn(),
     getCapacityAssumptions: vi.fn(),
+    getCapacityCalculation: vi.fn(),
     getMarketListingDetail: vi.fn(),
     getMarketListings: vi.fn(),
     listAssets: vi.fn(),
+    listCapacityCalculations: vi.fn(),
     searchNeighborhoods: vi.fn(),
   };
 });
@@ -222,6 +227,16 @@ const report = {
   createdAt: "2026-07-17T08:00:00Z",
 } satisfies CalculationResponse;
 
+const reportSummary = {
+  id: report.id,
+  createdAt: report.createdAt,
+  pressureLevel: report.result.pressureLevel,
+  targetTotalPrice: report.input.targetTotalPrice,
+  targetNeighborhoodName: neighborhood.name,
+  targetLayout: listing.layout,
+  oldHomeName: asset.name,
+} as const;
+
 function fillFamily() {
   for (const [label, value] of [
     ["当前可用现金 (万)", "150"],
@@ -234,8 +249,10 @@ function fillFamily() {
 }
 
 async function chooseTarget() {
-  fireEvent.click(await screen.findByRole("button", { name: /海河花园/ }));
-  fireEvent.click(await screen.findByLabelText(/3室2厅 · 118㎡/));
+  fireEvent.focus(screen.getByRole("combobox", { name: "目标小区" }));
+  fireEvent.click(await screen.findByRole("option", { name: /海河花园/ }));
+  fireEvent.focus(screen.getByRole("combobox", { name: "目标房源" }));
+  fireEvent.click(await screen.findByRole("option", { name: /3室2厅 · 118㎡/ }));
   await screen.findByText(/数据已陈旧/);
 }
 
@@ -245,6 +262,8 @@ describe("CalculatorPanel asset and listing workflow", () => {
     setAccessToken("secret");
     vi.mocked(getCapacityAssumptions).mockReset().mockResolvedValue(assumptions);
     vi.mocked(listAssets).mockReset().mockResolvedValue({ items: [asset], total: 1, page: 1, pageSize: 100 });
+    vi.mocked(listCapacityCalculations).mockReset().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
+    vi.mocked(getCapacityCalculation).mockReset();
     vi.mocked(searchNeighborhoods).mockReset().mockResolvedValue({ items: [neighborhood], total: 1, page: 1, pageSize: 100, filters: { cities: ["天津"], areas: [{ city: "天津", area: "河西区" }] } });
     vi.mocked(getMarketListings).mockReset().mockResolvedValue({ items: [listing], total: 1, page: 1, pageSize: 100 });
     vi.mocked(getMarketListingDetail).mockReset().mockResolvedValue(listing);
@@ -254,7 +273,7 @@ describe("CalculatorPanel asset and listing workflow", () => {
   it("selects an owned asset and authoritative target listing, then submits confirmed snapshots", async () => {
     render(createElement(CalculatorPanel));
 
-    fireEvent.click(await screen.findByRole("button", { name: /现住房/ }));
+    fireEvent.change(await screen.findByRole("combobox", { name: "选择旧房产" }), { target: { value: asset.id } });
     expect(screen.getByLabelText("旧房预期售价 (万)")).toHaveValue("320");
     expect(screen.getByLabelText("当前贷款余额 (万)")).toHaveValue("60");
     await chooseTarget();
@@ -279,7 +298,7 @@ describe("CalculatorPanel asset and listing workflow", () => {
 
   it("writes zero old-home inputs for the explicit no-old-home path", async () => {
     render(createElement(CalculatorPanel));
-    fireEvent.click(screen.getByRole("button", { name: /无旧房/ }));
+    expect(screen.getByRole("combobox", { name: "选择旧房产" })).toHaveValue("none");
     await chooseTarget();
     fireEvent.click(screen.getByLabelText("确认采用该目标房成交价"));
     fillFamily();
@@ -306,8 +325,138 @@ describe("CalculatorPanel asset and listing workflow", () => {
   it("shows recoverable empty inventory state without accepting a manual target", async () => {
     vi.mocked(getMarketListings).mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 100 });
     render(createElement(CalculatorPanel));
-    fireEvent.click(await screen.findByRole("button", { name: /海河花园/ }));
+    fireEvent.focus(screen.getByRole("combobox", { name: "目标小区" }));
+    fireEvent.click(await screen.findByRole("option", { name: /海河花园/ }));
     expect(await screen.findByText(/暂无当前在售房源/)).toBeInTheDocument();
     expect(screen.queryByLabelText("预计成交价 (万)")).not.toBeInTheDocument();
+  });
+
+  it("debounces neighborhood search and locally filters listings by property facts", async () => {
+    render(createElement(CalculatorPanel));
+    const neighborhoodInput = screen.getByRole("combobox", { name: "目标小区" });
+    fireEvent.change(neighborhoodInput, { target: { value: "海河" } });
+    await waitFor(() => expect(searchNeighborhoods).toHaveBeenCalledWith(
+      expect.objectContaining({ q: "海河", page: 1, pageSize: 100 }),
+      expect.any(AbortSignal),
+    ));
+
+    fireEvent.click(await screen.findByRole("option", { name: /海河花园/ }));
+    const listingInput = screen.getByRole("combobox", { name: "目标房源" });
+    fireEvent.focus(listingInput);
+    await screen.findByRole("option", { name: /3室2厅 · 118㎡/ });
+    fireEvent.change(listingInput, { target: { value: "南北 500" } });
+    expect(screen.getByRole("option", { name: /3室2厅 · 118㎡/ })).toBeInTheDocument();
+    fireEvent.change(listingInput, { target: { value: "低楼层" } });
+    expect(screen.getByText("没有匹配房源")).toBeInTheDocument();
+  });
+
+  it("clears the linked listing, price, and confirmation when the neighborhood changes", async () => {
+    const anotherNeighborhood = { ...neighborhood, id: "88888888-8888-4888-8888-888888888888", name: "文化中心" };
+    vi.mocked(searchNeighborhoods).mockResolvedValue({
+      items: [neighborhood, anotherNeighborhood], total: 2, page: 1, pageSize: 100,
+      filters: { cities: ["天津"], areas: [{ city: "天津", area: "河西区" }] },
+    });
+    render(createElement(CalculatorPanel));
+    await chooseTarget();
+    fireEvent.click(screen.getByLabelText("确认采用该目标房成交价"));
+
+    fireEvent.click(screen.getByRole("button", { name: "清空目标小区" }));
+    expect(screen.getByRole("combobox", { name: "目标房源" })).toBeDisabled();
+    expect(screen.queryByLabelText("预计成交价 (万)")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("确认采用该目标房成交价")).not.toBeInTheDocument();
+  });
+
+  it("loads the latest history snapshot without overwriting the new calculation draft", async () => {
+    vi.mocked(listCapacityCalculations).mockResolvedValue({ items: [reportSummary], total: 1, page: 1, pageSize: 20 });
+    vi.mocked(getCapacityCalculation).mockResolvedValue(report);
+    render(createElement(CalculatorPanel));
+
+    expect(await screen.findByText("现金流处于安全区间。")).toBeInTheDocument();
+    expect(screen.getByText(/快照状态：历史快照/)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "选择旧房产" })).toHaveValue("none");
+    expect(screen.getByLabelText("当前可用现金 (万)")).toHaveValue("");
+    expect(getCapacityCalculation).toHaveBeenCalledWith(report.id, expect.any(AbortSignal));
+  });
+
+  it("searches history, switches the report only after selection, and keeps it while editing the draft", async () => {
+    const olderSummary = { ...reportSummary, id: "calc-older", createdAt: "2026-07-16T08:00:00Z", targetNeighborhoodName: "梅江花园" };
+    const olderReport = { ...report, id: olderSummary.id, createdAt: olderSummary.createdAt, result: { ...report.result, reasons: ["旧报告仍然可追溯。"] } } satisfies CalculationResponse;
+    vi.mocked(listCapacityCalculations).mockResolvedValue({ items: [reportSummary, olderSummary], total: 2, page: 1, pageSize: 20 });
+    vi.mocked(getCapacityCalculation).mockImplementation((id) => Promise.resolve(id === olderSummary.id ? olderReport : report));
+    render(createElement(CalculatorPanel));
+    await screen.findByText("现金流处于安全区间。");
+
+    const historyInput = screen.getByRole("combobox", { name: "诊断历史" });
+    fireEvent.focus(historyInput);
+    fireEvent.click(screen.getByRole("option", { name: /梅江花园/ }));
+    expect(await screen.findByText("旧报告仍然可追溯。")).toBeInTheDocument();
+    expect(screen.getByLabelText("当前可用现金 (万)")).toHaveValue("");
+
+    fireEvent.change(screen.getByLabelText("当前可用现金 (万)"), { target: { value: "200" } });
+    expect(screen.getByText("旧报告仍然可追溯。")).toBeInTheDocument();
+    fireEvent.change(historyInput, { target: { value: "2026-07-16" } });
+    await waitFor(() => expect(listCapacityCalculations).toHaveBeenLastCalledWith(
+      expect.objectContaining({ q: "2026-07-16" }),
+      expect.any(AbortSignal),
+    ));
+    expect(screen.getByText("旧报告仍然可追溯。")).toBeInTheDocument();
+  });
+
+  it("inserts a newly generated report at the front of history", async () => {
+    render(createElement(CalculatorPanel));
+    await chooseTarget();
+    fireEvent.click(screen.getByLabelText("确认采用该目标房成交价"));
+    fillFamily();
+    fireEvent.click(screen.getByRole("button", { name: "生成诊断报告" }));
+
+    expect(await screen.findByText(/快照状态：刚刚生成/)).toBeInTheDocument();
+    expect((screen.getByRole("combobox", { name: "诊断历史" }) as HTMLInputElement).value).toContain("海河花园");
+    expect(screen.getByText("1 份报告")).toBeInTheDocument();
+  });
+
+  it("shows locked, stale-history, and contextual method states", async () => {
+    setAccessToken("");
+    const { unmount } = render(createElement(CalculatorPanel));
+    expect(await screen.findByText("个人空间尚未解锁")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "诊断历史" })).toBeDisabled();
+    unmount();
+
+    setAccessToken("secret");
+    vi.mocked(listCapacityCalculations).mockResolvedValue({ items: [reportSummary], total: 1, page: 1, pageSize: 20 });
+    vi.mocked(getCapacityCalculation).mockRejectedValue(new ApiError("not_found", "missing", 404));
+    render(createElement(CalculatorPanel));
+    expect(await screen.findByText("这条历史记录已失效")).toBeInTheDocument();
+  });
+
+  it("shows report methods in context and hides the old-home method without an old-home snapshot", async () => {
+    const noOldReport = {
+      ...report,
+      id: "calc-no-old",
+      selectionContext: {
+        ...report.selectionContext,
+        oldHome: {
+          mode: "none" as const,
+          assetId: null,
+          assetName: "",
+          property: null,
+          originalPurchasePriceWan: 0,
+          purchasedOn: "",
+          holdingYears: 0,
+          confirmedSalePriceWan: 0,
+          confirmedLoanBalanceWan: 0,
+          priceDifferenceWan: null,
+          assetUpdatedAt: null,
+          marketReference: null,
+          confirmedAt: report.createdAt,
+        },
+      },
+    } satisfies CalculationResponse;
+    const noOldSummary = { ...reportSummary, id: noOldReport.id, oldHomeName: "" };
+    vi.mocked(listCapacityCalculations).mockResolvedValue({ items: [noOldSummary], total: 1, page: 1, pageSize: 20 });
+    vi.mocked(getCapacityCalculation).mockResolvedValue(noOldReport);
+    render(createElement(CalculatorPanel));
+
+    expect(await screen.findByRole("link", { name: /了解计算口径/ })).toHaveAttribute("href", "/methods/monthly-payment-safety");
+    expect(screen.queryByRole("link", { name: "旧房迟迟卖不掉怎么办？" })).not.toBeInTheDocument();
   });
 });

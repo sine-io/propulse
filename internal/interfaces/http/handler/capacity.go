@@ -16,6 +16,7 @@ type CapacityApplication interface {
 	CreateCalculation(ctx context.Context, command appcapacity.CreateCalculationCommand) (appcapacity.CalculationRecord, error)
 	GetAssumptions(ctx context.Context, query appcapacity.GetAssumptionsQuery) (appcapacity.AssumptionsView, error)
 	GetCalculation(ctx context.Context, query appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error)
+	ListCalculations(ctx context.Context, query appcapacity.ListCalculationsQuery) (appcapacity.CalculationHistoryPage, error)
 	LatestCalculation(ctx context.Context, query appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error)
 }
 
@@ -82,6 +83,23 @@ type calculationResponse struct {
 	Result           housingCapacityResultResponse `json:"result"`
 	SelectionContext *appcapacity.SelectionContext `json:"selectionContext,omitempty"`
 	CreatedAt        string                        `json:"createdAt"`
+}
+
+type calculationSummaryResponse struct {
+	ID                     string                       `json:"id"`
+	CreatedAt              string                       `json:"createdAt"`
+	PressureLevel          domaincapacity.PressureLevel `json:"pressureLevel"`
+	TargetTotalPrice       float64                      `json:"targetTotalPrice"`
+	TargetNeighborhoodName string                       `json:"targetNeighborhoodName"`
+	TargetLayout           string                       `json:"targetLayout"`
+	OldHomeName            string                       `json:"oldHomeName"`
+}
+
+type calculationHistoryPageResponse struct {
+	Items    []calculationSummaryResponse `json:"items"`
+	Total    int64                        `json:"total"`
+	Page     int                          `json:"page"`
+	PageSize int                          `json:"pageSize"`
 }
 
 type housingCapacityInputResponse struct {
@@ -254,7 +272,7 @@ func (h Capacity) GetAssumptions(c *gin.Context) {
 }
 
 func (h Capacity) GetCalculation(c *gin.Context) {
-	record, err := h.app.GetCalculation(c.Request.Context(), appcapacity.GetCalculationQuery{ID: c.Param("id")})
+	record, err := h.app.GetCalculation(c.Request.Context(), appcapacity.GetCalculationQuery{UserID: h.userID, ID: c.Param("id")})
 	if err != nil {
 		if errors.Is(err, appcapacity.ErrCalculationNotFound) {
 			writeError(c, http.StatusNotFound, "not_found", "calculation not found")
@@ -265,6 +283,54 @@ func (h Capacity) GetCalculation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, newCalculationResponse(record))
+}
+
+func (h Capacity) ListCalculations(c *gin.Context) {
+	page, err := parseOptionalPositiveInt(c, "page")
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_query", "query parameters are invalid")
+		return
+	}
+	pageSize, err := parseOptionalPositiveInt(c, "pageSize")
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_query", "query parameters are invalid")
+		return
+	}
+	result, err := h.app.ListCalculations(c.Request.Context(), appcapacity.ListCalculationsQuery{
+		UserID: h.userID, Query: c.Query("q"), Page: page, PageSize: pageSize,
+	})
+	if err != nil {
+		if errors.Is(err, appcapacity.ErrInvalidCalculationQuery) {
+			writeError(c, http.StatusBadRequest, "invalid_query", "query parameters are invalid")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "internal_error", "internal server error")
+		return
+	}
+	response := calculationHistoryPageResponse{
+		Items: make([]calculationSummaryResponse, 0, len(result.Items)),
+		Total: result.Total, Page: result.Page, PageSize: result.PageSize,
+	}
+	for _, item := range result.Items {
+		response.Items = append(response.Items, calculationSummaryResponse{
+			ID: item.ID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339), PressureLevel: item.PressureLevel,
+			TargetTotalPrice: item.TargetTotalPrice, TargetNeighborhoodName: item.TargetNeighborhoodName,
+			TargetLayout: item.TargetLayout, OldHomeName: item.OldHomeName,
+		})
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func parseOptionalPositiveInt(c *gin.Context, name string) (int, error) {
+	raw, exists := c.GetQuery(name)
+	if !exists {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 || (name == "pageSize" && value > 100) {
+		return 0, appcapacity.ErrInvalidCalculationQuery
+	}
+	return value, nil
 }
 
 func (request housingCapacityInputRequest) domainInput() (domaincapacity.HousingCapacityInput, error) {

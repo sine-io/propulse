@@ -812,6 +812,7 @@ func TestProtectedRoutesRequireAccessToken(t *testing.T) {
 		body   string
 	}{
 		{method: http.MethodPost, path: "/api/v1/capacity/calculations", body: `{}`},
+		{method: http.MethodGet, path: "/api/v1/capacity/calculations"},
 		{method: http.MethodGet, path: "/api/v1/access"},
 		{method: http.MethodGet, path: "/api/v1/capacity/calculations/calculation_1"},
 		{method: http.MethodPost, path: "/api/v1/assets", body: `{}`},
@@ -928,6 +929,11 @@ func (s *stubCapacityApplication) CreateCalculation(_ context.Context, _ appcapa
 func (s *stubCapacityApplication) GetCalculation(_ context.Context, _ appcapacity.GetCalculationQuery) (appcapacity.CalculationRecord, error) {
 	s.calls++
 	return appcapacity.CalculationRecord{}, nil
+}
+
+func (s *stubCapacityApplication) ListCalculations(_ context.Context, _ appcapacity.ListCalculationsQuery) (appcapacity.CalculationHistoryPage, error) {
+	s.calls++
+	return appcapacity.CalculationHistoryPage{}, nil
 }
 
 func (s *stubCapacityApplication) LatestCalculation(_ context.Context, _ appcapacity.LatestCalculationQuery) (appcapacity.CalculationRecord, error) {

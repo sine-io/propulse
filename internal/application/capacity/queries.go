@@ -61,11 +61,41 @@ func (s *Service) ListPolicyVersions(ctx context.Context, query ListPolicyVersio
 }
 
 type GetCalculationQuery struct {
-	ID string
+	UserID string
+	ID     string
 }
 
 func (s *Service) GetCalculation(ctx context.Context, query GetCalculationQuery) (CalculationRecord, error) {
-	return s.repo.Find(ctx, query.ID)
+	userID := strings.TrimSpace(query.UserID)
+	id := strings.TrimSpace(query.ID)
+	if userID == "" || id == "" {
+		return CalculationRecord{}, ErrCalculationNotFound
+	}
+	return s.repo.FindByUser(ctx, userID, id)
+}
+
+type ListCalculationsQuery struct {
+	UserID   string
+	Query    string
+	Page     int
+	PageSize int
+}
+
+func (s *Service) ListCalculations(ctx context.Context, query ListCalculationsQuery) (CalculationHistoryPage, error) {
+	query.UserID = strings.TrimSpace(query.UserID)
+	query.Query = strings.TrimSpace(query.Query)
+	if query.Page == 0 {
+		query.Page = 1
+	}
+	if query.PageSize == 0 {
+		query.PageSize = 20
+	}
+	if query.UserID == "" || query.Page < 1 || query.PageSize < 1 || query.PageSize > 100 {
+		return CalculationHistoryPage{}, ErrInvalidCalculationQuery
+	}
+	return s.repo.ListByUser(ctx, CalculationListFilter{
+		UserID: query.UserID, Query: query.Query, Page: query.Page, PageSize: query.PageSize,
+	})
 }
 
 type LatestCalculationQuery struct {

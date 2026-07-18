@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	appcapacity "github.com/sine-io/propulse/internal/application/capacity"
 	domaincapacity "github.com/sine-io/propulse/internal/domain/capacity"
@@ -46,9 +47,9 @@ func (r *CapacityRepository) Save(ctx context.Context, record appcapacity.Calcul
 	return record, nil
 }
 
-func (r *CapacityRepository) Find(ctx context.Context, id string) (appcapacity.CalculationRecord, error) {
+func (r *CapacityRepository) FindByUser(ctx context.Context, userID, id string) (appcapacity.CalculationRecord, error) {
 	var model CapacityCalculationModel
-	err := r.db.WithContext(ctx).First(&model, "id = ?", id).Error
+	err := r.db.WithContext(ctx).Where("user_id = ? AND id = ?", userID, id).First(&model).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return appcapacity.CalculationRecord{}, appcapacity.ErrCalculationNotFound
@@ -57,6 +58,45 @@ func (r *CapacityRepository) Find(ctx context.Context, id string) (appcapacity.C
 	}
 
 	return capacityCalculationFromModel(model)
+}
+
+func (r *CapacityRepository) ListByUser(ctx context.Context, filter appcapacity.CalculationListFilter) (appcapacity.CalculationHistoryPage, error) {
+	query := r.db.WithContext(ctx).Model(&CapacityCalculationModel{}).Where("user_id = ?", filter.UserID)
+	if keyword := strings.TrimSpace(filter.Query); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where(`(
+			CAST(id AS TEXT) ILIKE ? OR
+			COALESCE(selection_context #>> '{targetHome,property,neighborhoodName}', '') ILIKE ? OR
+			COALESCE(selection_context #>> '{targetHome,property,layout}', '') ILIKE ? OR
+			COALESCE(selection_context #>> '{oldHome,assetName}', '') ILIKE ? OR
+			TO_CHAR(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD HH24:MI:SS') ILIKE ?
+		)`, pattern, pattern, pattern, pattern, pattern)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return appcapacity.CalculationHistoryPage{}, err
+	}
+
+	models := make([]CapacityCalculationModel, 0, filter.PageSize)
+	if err := query.Order("created_at DESC, id DESC").
+		Offset((filter.Page - 1) * filter.PageSize).
+		Limit(filter.PageSize).
+		Find(&models).Error; err != nil {
+		return appcapacity.CalculationHistoryPage{}, err
+	}
+
+	items := make([]appcapacity.CalculationSummary, 0, len(models))
+	for _, model := range models {
+		record, err := capacityCalculationFromModel(model)
+		if err != nil {
+			return appcapacity.CalculationHistoryPage{}, err
+		}
+		items = append(items, calculationSummary(record))
+	}
+	return appcapacity.CalculationHistoryPage{
+		Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize,
+	}, nil
 }
 
 func (r *CapacityRepository) FindLatestByUser(ctx context.Context, userID string) (appcapacity.CalculationRecord, error) {
@@ -96,6 +136,24 @@ func capacityCalculationFromModel(model CapacityCalculationModel) (appcapacity.C
 		ID: model.ID, UserID: model.UserID, Input: input.domainInput(), Result: result.domainResult(),
 		SelectionContext: selectionContext, CreatedAt: model.CreatedAt,
 	}, nil
+}
+
+func calculationSummary(record appcapacity.CalculationRecord) appcapacity.CalculationSummary {
+	summary := appcapacity.CalculationSummary{
+		ID: record.ID, CreatedAt: record.CreatedAt, PressureLevel: record.Result.PressureLevel,
+		TargetTotalPrice: record.Input.TargetTotalPrice,
+	}
+	if record.SelectionContext == nil {
+		return summary
+	}
+	if target := record.SelectionContext.TargetHome; target != nil {
+		summary.TargetNeighborhoodName = target.Property.NeighborhoodName
+		summary.TargetLayout = target.Property.Layout
+	}
+	if oldHome := record.SelectionContext.OldHome; oldHome != nil && oldHome.Mode == appcapacity.OldHomeAsset {
+		summary.OldHomeName = oldHome.AssetName
+	}
+	return summary
 }
 
 type capacityPersistenceInput struct {
